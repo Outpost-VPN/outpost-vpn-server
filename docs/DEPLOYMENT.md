@@ -57,7 +57,7 @@ MATRESHKA_REQUIRE_SIGNATURE=1 bun run release:linux
 
 Updater сначала проверяет detached Minisign signature ключом из уже доверенной установленной версии и только затем распаковывает archive и сверяет внутренний `SHA256SUMS`, включая `manifest.json`. Он оставляет минимум две предыдущие версии. После неуспешного readiness автоматически восстанавливаются code symlink и предмиграционный SQLite snapshot.
 
-GitHub workflow `Signed release` запускается только вручную для уже существующего `v*` tag. Build/test выполняются без ключа; отдельный job в environment `release` получает private key, подписывает archive, повторно проверяет подпись и публикует immutable GitHub Release. Текущий тариф приватного репозитория не поддерживает required reviewer для environment, поэтому ручной `workflow_dispatch` является обязательным approval gate.
+GitHub workflow `Signed release` запускается только вручную из ветки `main` для уже существующего `v*` tag и делает checkout по точному `refs/tags/<tag>`. Build/test выполняются без ключа; отдельный job в environment `release`, ограниченном веткой `main`, получает private key, подписывает archive, повторно проверяет подпись и публикует immutable GitHub Release. Текущий тариф приватного репозитория не поддерживает required reviewer для environment, поэтому ручной `workflow_dispatch` является обязательным approval gate.
 
 ## Backup и restore
 

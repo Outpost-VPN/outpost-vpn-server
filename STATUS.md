@@ -31,7 +31,7 @@
 - WebAuthn challenge не хранит raw bootstrap token, просроченные записи чистятся, незавершённые записи ограничены;
 - персистентный device-sync outbox завершает activation/revoke в БД только после Xray и повторяет interrupted/failed jobs;
 - Nginx hardening: default Host/SNI servers, fixed-domain redirect, rate/body limits, HSTS и fixed upstream Host;
-- actions pinned по commit SHA, release workflow запускается вручную, подписывает Minisign и публикует GitHub Release через environment secret;
+- actions pinned по commit SHA, release workflow запускается вручную из `main`, checkout делает только точный `refs/tags/<tag>`, затем workflow подписывает Minisign и публикует GitHub Release через environment secret;
 - release manifest входит в `SHA256SUMS`, installer/updater проверяют detached signature до распаковки;
 - dependency override перевёл Imba toolchain на `esbuild 0.25.0`, `bun audit` чист.
 
