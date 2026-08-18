@@ -8,7 +8,7 @@ dist/
 *.log
 .DS_Store
 coverage/
-release/
+/release/
 .release-verify/
 .release-final/
 
