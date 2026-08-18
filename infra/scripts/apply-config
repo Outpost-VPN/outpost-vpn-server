@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source_path=${1:-}
+target_path=${2:-}
+engine=${3:-}
+
+case "$source_path:$target_path" in
+  /var/lib/matreshka/runtime/*:/etc/matreshka/engines/*) ;;
+  *) echo "Config path is not allowed" >&2; exit 1 ;;
+esac
+
+case "$engine:$target_path" in
+  xray:/etc/matreshka/engines/xray.json)
+    service=xray
+    /opt/matreshka/engines/xray/current/xray run -test -config "$source_path"
+    ;;
+  hysteria:/etc/matreshka/engines/hysteria.yaml)
+    service=hysteria-server
+    # Hysteria has no validate-only command. The application performs a strict
+    # YAML/protected-block check; systemd health decides whether to rollback.
+    ;;
+  *) echo "Engine target is not allowed" >&2; exit 1 ;;
+esac
+
+backup_path="${target_path}.previous"
+test ! -f "$target_path" || cp -a "$target_path" "$backup_path"
+install -o root -g matreshka -m 0640 "$source_path" "${target_path}.tmp"
+mv "${target_path}.tmp" "$target_path"
+
+if ! systemctl restart "$service"; then
+  test ! -f "$backup_path" || cp -a "$backup_path" "$target_path"
+  systemctl restart "$service" || true
+  echo "Engine rejected the configuration; previous revision restored" >&2
+  exit 1
+fi
+
+test "$(systemctl is-active "$service")" = active || {
+  test ! -f "$backup_path" || cp -a "$backup_path" "$target_path"
+  systemctl restart "$service" || true
+  echo "Engine did not become active; previous revision restored" >&2
+  exit 1
+}

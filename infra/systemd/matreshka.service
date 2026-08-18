@@ -1,0 +1,25 @@
+[Unit]
+Description=Matreshka control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=matreshka
+Group=matreshka
+EnvironmentFile=/etc/matreshka/matreshka.env
+ExecStart=/opt/matreshka/current/bin/matreshka
+Restart=on-failure
+RestartSec=3
+WorkingDirectory=/opt/matreshka/current
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/matreshka
+ReadOnlyPaths=/etc/matreshka /opt/matreshka
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

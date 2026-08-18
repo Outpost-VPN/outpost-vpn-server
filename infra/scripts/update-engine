@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+engine=${1:-}
+version=${2:-}
+checksum=${3:-}
+
+test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
+[[ "$engine" = hysteria || "$engine" = xray ]] || { echo "Unsupported engine" >&2; exit 1; }
+[[ "$version" =~ ^[0-9][0-9A-Za-z.-]{0,39}$ ]] || { echo "Invalid version" >&2; exit 1; }
+[[ "$checksum" =~ ^[0-9a-f]{64}$ ]] || { echo "Invalid checksum" >&2; exit 1; }
+
+root="/opt/matreshka/engines/$engine"
+target="$root/$version"
+current="$root/current"
+previous=$(readlink -f "$current")
+update_tmp=$(mktemp -d "/var/lib/matreshka/runtime/${engine}-update.XXXXXX")
+trap 'rm -rf "$update_tmp"' EXIT
+
+test -n "$previous" && test -d "$previous" || { echo "Current engine installation is missing" >&2; exit 1; }
+test ! -e "$target" || { echo "$engine $version is already installed" >&2; exit 1; }
+
+if test "$engine" = hysteria; then
+  archive="$update_tmp/hysteria"
+  url="https://github.com/apernet/hysteria/releases/download/app%2Fv${version}/hysteria-linux-amd64"
+  service="hysteria-server"
+else
+  archive="$update_tmp/xray.zip"
+  url="https://github.com/XTLS/Xray-core/releases/download/v${version}/Xray-linux-64.zip"
+  service="xray"
+fi
+
+curl -fL --retry 3 -o "$archive" "$url"
+printf '%s  %s\n' "$checksum" "$archive" | sha256sum -c -
+
+rollback() {
+  ln -sfn "$previous" "$current"
+  rm -rf "$target"
+  systemctl restart "$service" || true
+  echo "Engine update failed and was rolled back to $previous" >&2
+}
+trap rollback ERR
+
+install -d -m 0755 "$target"
+if test "$engine" = hysteria; then
+  install -m 0755 "$archive" "$target/hysteria"
+else
+  unzip -tq "$archive" >/dev/null
+  unzip -q "$archive" -d "$target"
+  chmod 0755 "$target/xray"
+fi
+
+ln -sfn "$version" "$current"
+systemctl restart "$service"
+systemctl is-active --quiet "$service"
+trap - ERR
+
+find "$root" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | awk 'NR>3 {print $2}' | xargs -r rm -rf --
+echo "$engine updated to $version"

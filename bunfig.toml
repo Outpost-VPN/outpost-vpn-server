@@ -1,0 +1,3 @@
+# Imba is compiled explicitly by the bimba CLI in package scripts. Keeping the
+# plugin out of global Bun preloads lets standalone server/CLI binaries run from
+# any working directory without resolving development dependencies.

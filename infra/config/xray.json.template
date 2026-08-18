@@ -1,0 +1,20 @@
+{
+  "log": { "loglevel": "warning", "access": "none" },
+  "stats": {},
+  "policy": {
+    "levels": { "0": { "statsUserUplink": true, "statsUserDownlink": true } },
+    "system": { "statsInboundUplink": true, "statsInboundDownlink": true }
+  },
+  "api": { "tag": "api", "listen": "127.0.0.1:10085", "services": ["HandlerService", "StatsService", "LoggerService"] },
+  "inbounds": [
+    {
+      "tag": "vless-xhttp",
+      "listen": "127.0.0.1",
+      "port": 10000,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": { "network": "xhttp", "xhttpSettings": { "path": "__XHTTP_PATH__", "mode": "auto" } }
+    }
+  ],
+  "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+}

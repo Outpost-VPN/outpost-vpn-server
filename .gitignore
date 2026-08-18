@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.artifacts/
+.data/
+.data-*/
+.cache/
+.env
+*.log
+.DS_Store
+coverage/
+release/
+.release-verify/
+.release-final/
+
+# Local visual QA captures (product assets live under assets/ and public/).
+/design-qa.md
+/design-qa-*.png
+/implementation-*.png
+/implementation-*.jpg
+/journal-*.png
+/maintenance-*.png
+/proxy-*.png
+/status-*.png

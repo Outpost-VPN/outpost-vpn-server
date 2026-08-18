@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+target=${1:-}
+domain=${2:-}
+email=${3:-"admin@${domain}"}
+test -n "$target" && test -n "$domain" || { echo "Usage: deploy-remote root@server domain [email]" >&2; exit 1; }
+
+repo_root=$(cd "$(dirname "$0")/../.." && pwd)
+cd "$repo_root"
+if test -z "${MATRESHKA_AGENT_BINARY:-}" -a -x dist/matreshka-agent; then
+  export MATRESHKA_AGENT_BINARY=dist/matreshka-agent
+fi
+export MATRESHKA_MINISIGN_SECRET_KEY=${MATRESHKA_MINISIGN_SECRET_KEY:-"$HOME/.config/matreshka/release.key"}
+export MATRESHKA_REQUIRE_SIGNATURE=1
+MATRESHKA_VERSION=${MATRESHKA_VERSION:-"$(date -u +%Y.%m.%d.%H%M)"} bun scripts/release.ts
+archive=$(find release -maxdepth 1 -name 'matreshka-*-linux-amd64.tar.gz' -type f -print | sort | tail -1)
+test -n "$archive"
+signature="${archive}.minisig"
+test -f "$signature"
+
+remote_archive="/tmp/$(basename "$archive")"
+remote_signature="${remote_archive}.minisig"
+scp "$archive" "$signature" "$target:/tmp/"
+printf -v remote_command '%q ' bash -s -- "$remote_archive" "$remote_signature" "$domain" "$email"
+# remote_command is fully escaped with bash printf %q above.
+# shellcheck disable=SC2029
+ssh "$target" "$remote_command" <infra/scripts/install

@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+release_archive=${1:-}
+release_signature=${2:-"${release_archive}.minisig"}
+domain=${3:-}
+email=${4:-"admin@${domain}"}
+release_public_key="RWQIi2TPWGnwEuL3XnEdwUYwcd194z3YYWM3sDdZNMhfEPf5xsFAk1FY"
+
+test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
+test -f "$release_archive" || { echo "Release archive not found" >&2; exit 1; }
+test -f "$release_signature" || { echo "Release signature not found" >&2; exit 1; }
+[[ "$domain" =~ ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$ ]] || { echo "Invalid domain" >&2; exit 1; }
+test "$(dpkg --print-architecture)" = "amd64" || { echo "Ubuntu amd64 is required" >&2; exit 1; }
+# shellcheck source=/dev/null
+. /etc/os-release
+test "$ID" = "ubuntu" && test "$VERSION_ID" = "24.04" || { echo "Ubuntu 24.04 is required" >&2; exit 1; }
+
+resolved=$(getent ahostsv4 "$domain" | awk 'NR==1 {print $1}')
+public_ip=$(curl -4fsS --max-time 10 https://api.ipify.org)
+test -n "$resolved" && test "$resolved" = "$public_ip" || { echo "DNS $domain resolves to ${resolved:-nothing}, server IP is $public_ip" >&2; exit 1; }
+
+if ss -Hlnptu | awk '{print $5}' | grep -Eq ':(80|443)$'; then
+  echo "Ports 80 or 443 are already occupied; a clean Ubuntu install is required" >&2
+  exit 1
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends nginx certbot ufw unzip curl ca-certificates age sqlite3 minisign
+
+# The installer pins the release key out-of-band and verifies the detached
+# signature before parsing the manifest or extracting a single archive entry.
+minisign -Vm "$release_archive" -x "$release_signature" -P "$release_public_key"
+
+id matreshka >/dev/null 2>&1 || useradd --system --home /var/lib/matreshka --shell /usr/sbin/nologin matreshka
+install -d -o root -g root -m 0755 /opt/matreshka/releases /opt/matreshka/engines
+install -d -o matreshka -g matreshka -m 0700 /var/lib/matreshka /var/lib/matreshka/incoming /var/lib/matreshka/runtime
+install -d -o root -g matreshka -m 0750 /etc/matreshka /etc/matreshka/engines
+install -d -o root -g root -m 0755 /var/lib/matreshka/acme
+
+release_tmp=$(mktemp -d)
+trap 'rm -rf "$release_tmp"' EXIT
+tar -xzf "$release_archive" -C "$release_tmp"
+release_dir=$(find "$release_tmp" -mindepth 1 -maxdepth 1 -type d | head -1)
+version=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$release_dir/manifest.json")
+test -n "$version" || { echo "Invalid release manifest" >&2; exit 1; }
+(cd "$release_dir" && sha256sum -c SHA256SUMS)
+test ! -e "/opt/matreshka/releases/$version" || { echo "Release $version already exists" >&2; exit 1; }
+cp -a "$release_dir" "/opt/matreshka/releases/$version"
+ln -sfn "/opt/matreshka/releases/$version" /opt/matreshka/current
+
+xhttp_path="/$(openssl rand -hex 18)"
+stats_secret=$(openssl rand -hex 24)
+admin_path="/admin"
+sed -e "s|__DOMAIN__|$domain|g" -e "s|__XHTTP_PATH__|$xhttp_path|g" \
+  /opt/matreshka/current/infra/nginx/matreshka.conf.template >/etc/nginx/sites-available/matreshka
+sed -e "s|__DOMAIN__|$domain|g" -e "s|__STATS_SECRET__|$stats_secret|g" \
+  /opt/matreshka/current/infra/config/hysteria.yaml.template >/etc/matreshka/engines/hysteria.yaml
+sed -e "s|__XHTTP_PATH__|$xhttp_path|g" \
+  /opt/matreshka/current/infra/config/xray.json.template >/etc/matreshka/engines/xray.json
+cat >/etc/matreshka/matreshka.env <<ENV
+NODE_ENV=production
+MATRESHKA_VERSION=$version
+MATRESHKA_DOMAIN=$domain
+MATRESHKA_RP_ID=$domain
+MATRESHKA_ORIGIN=https://$domain
+MATRESHKA_ADMIN_PATH=$admin_path
+MATRESHKA_XHTTP_PATH=$xhttp_path
+MATRESHKA_LISTEN=127.0.0.1:8181
+MATRESHKA_DATA_DIR=/var/lib/matreshka
+MATRESHKA_CONFIG_DIR=/etc/matreshka
+MATRESHKA_WEB_ROOT=/opt/matreshka/current/public
+MATRESHKA_HYSTERIA_STATS_URL=http://127.0.0.1:9999
+MATRESHKA_HYSTERIA_STATS_SECRET=$stats_secret
+MATRESHKA_XRAY_BINARY=/opt/matreshka/engines/xray/current/xray
+MATRESHKA_XRAY_API=127.0.0.1:10085
+ENV
+chmod 0640 /etc/matreshka/matreshka.env /etc/matreshka/engines/*
+chown root:matreshka /etc/matreshka/matreshka.env /etc/matreshka/engines/*
+
+systemctl stop nginx
+certbot certonly --standalone -d "$domain" --non-interactive --agree-tos -m "$email"
+ln -sfn /etc/nginx/sites-available/matreshka /etc/nginx/sites-enabled/matreshka
+rm -f /etc/nginx/sites-enabled/default
+install -m 0755 /opt/matreshka/current/infra/renewal-hooks/deploy/matreshka /etc/letsencrypt/renewal-hooks/deploy/matreshka
+
+/opt/matreshka/current/infra/scripts/install-engines
+install -m 0644 /opt/matreshka/current/infra/systemd/*.service /etc/systemd/system/
+systemctl daemon-reload
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw allow 443/udp
+ufw --force enable
+nginx -t
+systemctl enable --now nginx matreshka-agent matreshka xray hysteria-server
+
+for _ in {1..30}; do
+  curl -fsS http://127.0.0.1:8181/readyz >/dev/null && break
+  sleep 1
+done
+curl -fsS http://127.0.0.1:8181/readyz >/dev/null
+systemctl restart matreshka
+journalctl -u matreshka -n 20 --no-pager | grep -E 'Одноразовая ссылка|https://' | tail -2 || true

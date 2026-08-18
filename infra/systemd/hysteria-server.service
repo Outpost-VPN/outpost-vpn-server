@@ -1,0 +1,20 @@
+[Unit]
+Description=Matreshka Hysteria 2
+After=network-online.target matreshka.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/matreshka/engines/hysteria/current/hysteria server --config /etc/matreshka/engines/hysteria.yaml
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/etc/matreshka /etc/letsencrypt /opt/matreshka/engines
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+output=${1:-}
+test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
+test -n "$output" || { echo "Usage: export-backup-plain /var/lib/matreshka/runtime/backup.tar" >&2; exit 1; }
+case "$output" in /var/lib/matreshka/*) ;; *) echo "Output must be inside /var/lib/matreshka" >&2; exit 1 ;; esac
+
+install -d -o matreshka -g matreshka -m 0700 "$(dirname "$output")"
+backup_tmp=$(mktemp -d /var/lib/matreshka/backup.XXXXXX)
+trap 'rm -rf "$backup_tmp"' EXIT
+
+sqlite3 /var/lib/matreshka/matreshka.sqlite 'PRAGMA wal_checkpoint(TRUNCATE);'
+sqlite3 /var/lib/matreshka/matreshka.sqlite ".backup '$backup_tmp/matreshka.sqlite'"
+install -m 0600 /var/lib/matreshka/master.key "$backup_tmp/master.key"
+cp -a /etc/matreshka "$backup_tmp/config"
+install -m 0600 /etc/nginx/sites-available/matreshka "$backup_tmp/nginx.conf"
+printf '{"format":1,"createdAt":"%s"}\n' "$(date -u +%FT%TZ)" >"$backup_tmp/manifest.json"
+
+tar -C "$backup_tmp" -cf "${output}.tmp" manifest.json matreshka.sqlite master.key config nginx.conf
+chmod 0600 "${output}.tmp"
+mv "${output}.tmp" "$output"

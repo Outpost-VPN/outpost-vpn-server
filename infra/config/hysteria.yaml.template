@@ -1,0 +1,16 @@
+listen: :443
+tls:
+  cert: /etc/letsencrypt/live/__DOMAIN__/fullchain.pem
+  key: /etc/letsencrypt/live/__DOMAIN__/privkey.pem
+auth:
+  type: http
+  http:
+    url: http://127.0.0.1:8181/internal/hysteria/auth
+trafficStats:
+  listen: 127.0.0.1:9999
+  secret: __STATS_SECRET__
+masquerade:
+  type: proxy
+  proxy:
+    url: https://www.wikipedia.org/
+    rewriteHost: true

@@ -1,0 +1,21 @@
+[Unit]
+Description=Matreshka Xray
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=matreshka
+Group=matreshka
+ExecStart=/opt/matreshka/engines/xray/current/xray run -config /etc/matreshka/engines/xray.json
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/etc/matreshka /opt/matreshka/engines
+
+[Install]
+WantedBy=multi-user.target

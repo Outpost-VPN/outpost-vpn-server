@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+archive=${1:-}
+test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
+test -f "$archive" || { echo "Backup archive not found" >&2; exit 1; }
+if test -s /var/lib/matreshka/matreshka.sqlite; then
+  current_owners=$(sqlite3 /var/lib/matreshka/matreshka.sqlite 'SELECT COUNT(*) FROM owners;' 2>/dev/null || echo 1)
+  test "$current_owners" = 0 || { echo "Restore is allowed only on an installation without an owner" >&2; exit 1; }
+fi
+
+restore_tmp=$(mktemp -d /var/lib/matreshka/restore.XXXXXX)
+trap 'rm -rf "$restore_tmp"' EXIT
+if tar -tf "$archive" >/dev/null 2>&1; then
+  tar -xf "$archive" -C "$restore_tmp"
+else
+  age -d "$archive" | tar -xf - -C "$restore_tmp"
+fi
+test -f "$restore_tmp/manifest.json" -a -f "$restore_tmp/matreshka.sqlite" -a -f "$restore_tmp/master.key" -a -f "$restore_tmp/nginx.conf"
+test "$(wc -c <"$restore_tmp/master.key")" -eq 32 || { echo "Invalid master key" >&2; exit 1; }
+sqlite3 "$restore_tmp/matreshka.sqlite" 'PRAGMA integrity_check;' | grep -qx ok
+
+systemctl stop matreshka hysteria-server xray nginx 2>/dev/null || true
+install -o matreshka -g matreshka -m 0600 "$restore_tmp/matreshka.sqlite" /var/lib/matreshka/matreshka.sqlite
+install -o matreshka -g matreshka -m 0600 "$restore_tmp/master.key" /var/lib/matreshka/master.key
+cp -a "$restore_tmp/config/." /etc/matreshka/
+chown -R root:matreshka /etc/matreshka
+chmod 0750 /etc/matreshka /etc/matreshka/engines
+install -o root -g root -m 0644 "$restore_tmp/nginx.conf" /etc/nginx/sites-available/matreshka
+nginx -t
+systemctl start nginx matreshka-agent matreshka xray hysteria-server
+echo "Backup restored and services started. Existing clients continue to work when the original domain points to this server."

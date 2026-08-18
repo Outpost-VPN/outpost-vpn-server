@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+output=${1:-}
+test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
+test -n "$output" || { echo "Usage: export-backup /var/lib/matreshka/backups/name.age" >&2; exit 1; }
+case "$output" in /var/lib/matreshka/*) ;; *) echo "Output must be inside /var/lib/matreshka" >&2; exit 1 ;; esac
+
+plain=$(mktemp /var/lib/matreshka/runtime/backup.XXXXXX.tar)
+trap 'rm -f "$plain"' EXIT
+/opt/matreshka/current/infra/scripts/export-backup-plain "$plain"
+age -p -o "${output}.tmp" "$plain"
+chmod 0600 "${output}.tmp"
+mv "${output}.tmp" "$output"
+echo "$output"

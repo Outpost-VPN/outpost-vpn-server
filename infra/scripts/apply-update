@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+archive=${1:-}
+signature=${2:-"${archive}.minisig"}
+test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
+test -f "$archive" || { echo "Release archive not found" >&2; exit 1; }
+test -f "$signature" || { echo "Release signature not found" >&2; exit 1; }
+test -f /opt/matreshka/current/infra/release/minisign.pub || { echo "Trusted release public key not found" >&2; exit 1; }
+command -v minisign >/dev/null || { echo "minisign is required" >&2; exit 1; }
+
+# The detached signature is verified against the key from the already trusted
+# installed release before any archive entry is parsed or extracted.
+minisign -Vm "$archive" -x "$signature" -p /opt/matreshka/current/infra/release/minisign.pub
+
+update_tmp=$(mktemp -d /var/lib/matreshka/update.XXXXXX)
+snapshot="/var/lib/matreshka/update-snapshots/$(date -u +%Y%m%dT%H%M%SZ).sqlite"
+previous=$(readlink -f /opt/matreshka/current)
+next=""
+trap 'rm -rf "$update_tmp"' EXIT
+
+tar -xzf "$archive" -C "$update_tmp"
+source_dir=$(find "$update_tmp" -mindepth 1 -maxdepth 1 -type d | head -1)
+version=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$source_dir/manifest.json")
+test -n "$version" || { echo "Invalid release manifest" >&2; exit 1; }
+(cd "$source_dir" && sha256sum -c SHA256SUMS)
+
+next="/opt/matreshka/releases/$version"
+test ! -e "$next" || { echo "Release $version is already installed" >&2; exit 1; }
+cp -a "$source_dir" "$next"
+install -d -o matreshka -g matreshka -m 0700 /var/lib/matreshka/update-snapshots
+
+systemctl stop matreshka
+sqlite3 /var/lib/matreshka/matreshka.sqlite 'PRAGMA wal_checkpoint(TRUNCATE);'
+sqlite3 /var/lib/matreshka/matreshka.sqlite ".backup '$snapshot'"
+
+rollback() {
+  ln -sfn "$previous" /opt/matreshka/current
+  install -o matreshka -g matreshka -m 0600 "$snapshot" /var/lib/matreshka/matreshka.sqlite
+  systemctl daemon-reload
+  systemctl restart matreshka
+  echo "Update failed and was rolled back to $previous" >&2
+}
+trap 'rollback' ERR
+
+MATRESHKA_DATABASE=/var/lib/matreshka/matreshka.sqlite "$next/bin/matreshkactl" migrate
+ln -sfn "$next" /opt/matreshka/current
+install -m 0644 "$next"/infra/systemd/*.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl start matreshka
+
+for _ in {1..30}; do
+  curl -fsS http://127.0.0.1:8181/readyz >/dev/null && break
+  sleep 1
+done
+curl -fsS http://127.0.0.1:8181/readyz >/dev/null
+trap - ERR
+
+# Keep current plus two previous immutable releases.
+find /opt/matreshka/releases -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | awk 'NR>3 {print $2}' | xargs -r rm -rf --
+find /var/lib/matreshka/update-snapshots -type f -name '*.sqlite' -printf '%T@ %p\n' | sort -nr | awk 'NR>5 {print $2}' | xargs -r rm -f --
+echo "Updated to $version"

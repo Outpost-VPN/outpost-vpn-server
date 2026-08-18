@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HYSTERIA_VERSION="2.12.1"
+HYSTERIA_SHA256="ffc032c7ca6b78676d337097ca7f61bebc3a90a4f3a656693adf368f304cdbc7"
+XRAY_VERSION="26.3.27"
+XRAY_SHA256="23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae"
+
+test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
+
+engine_tmp=$(mktemp -d)
+trap 'rm -rf "$engine_tmp"' EXIT
+
+install -d -m 0755 "/opt/matreshka/engines/hysteria/${HYSTERIA_VERSION}"
+curl -fL --retry 3 -o "$engine_tmp/hysteria" "https://github.com/apernet/hysteria/releases/download/app%2Fv${HYSTERIA_VERSION}/hysteria-linux-amd64"
+printf '%s  %s\n' "$HYSTERIA_SHA256" "$engine_tmp/hysteria" | sha256sum -c -
+install -m 0755 "$engine_tmp/hysteria" "/opt/matreshka/engines/hysteria/${HYSTERIA_VERSION}/hysteria"
+ln -sfn "$HYSTERIA_VERSION" /opt/matreshka/engines/hysteria/current
+
+install -d -m 0755 "/opt/matreshka/engines/xray/${XRAY_VERSION}"
+curl -fL --retry 3 -o "$engine_tmp/xray.zip" "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-64.zip"
+printf '%s  %s\n' "$XRAY_SHA256" "$engine_tmp/xray.zip" | sha256sum -c -
+unzip -q "$engine_tmp/xray.zip" -d "/opt/matreshka/engines/xray/${XRAY_VERSION}"
+chmod 0755 "/opt/matreshka/engines/xray/${XRAY_VERSION}/xray"
+ln -sfn "$XRAY_VERSION" /opt/matreshka/engines/xray/current
+
+printf 'hysteria %s %s\nxray %s %s\n' "$HYSTERIA_VERSION" "$HYSTERIA_SHA256" "$XRAY_VERSION" "$XRAY_SHA256" >/opt/matreshka/engines/VERSIONS
