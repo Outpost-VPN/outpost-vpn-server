@@ -14,13 +14,14 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"filippo.io/age"
 
-	"github.com/matreshka-proxy/matreshka-panel/agent/internal/policy"
+	"github.com/Outpost-VPN/outpost-vpn-server/agent/internal/policy"
 )
 
-const defaultSocket = "/run/matreshka/agent.sock"
+const defaultSocket = "/run/outpost/agent.sock"
 
 type response struct {
 	OK     bool   `json:"ok"`
@@ -29,7 +30,7 @@ type response struct {
 }
 
 func main() {
-	socket := os.Getenv("MATRESHKA_AGENT_SOCKET")
+	socket := os.Getenv("OUTPOST_AGENT_SOCKET")
 	if socket == "" {
 		socket = defaultSocket
 	}
@@ -45,7 +46,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer listener.Close()
-	log.Printf("matreshka-agent listening on %s", socket)
+	log.Printf("outpost-agent listening on %s", socket)
 	for {
 		connection, err := listener.Accept()
 		if err != nil {
@@ -100,20 +101,20 @@ func execute(request policy.Request) (string, error) {
 	case "setup.finalize":
 		return run(
 			"systemd-run", "--wait", "--collect", "--pipe", "--quiet",
-			"/opt/matreshka/current/infra/scripts/finalize-domain",
+			"/opt/outpost/current/infra/scripts/finalize-domain",
 			request.Payload["domain"].(string),
 			request.Payload["publicIp"].(string),
 		)
 	case "engine.update":
 		return run(
-			"/opt/matreshka/current/infra/scripts/update-engine",
+			"/opt/outpost/current/infra/scripts/update-engine",
 			request.Payload["engine"].(string),
 			request.Payload["version"].(string),
 			request.Payload["checksum"].(string),
 		)
 	case "update.apply":
 		return run(
-			"/opt/matreshka/current/infra/scripts/apply-update",
+			"/opt/outpost/current/infra/scripts/apply-update",
 			request.Payload["bundle"].(string),
 			request.Payload["signature"].(string),
 		)
@@ -121,45 +122,52 @@ func execute(request policy.Request) (string, error) {
 		if passphrase, ok := request.Payload["passphrase"].(string); ok {
 			return exportBackup(request.Payload["output"].(string), passphrase)
 		}
-		return run("/opt/matreshka/current/infra/scripts/export-backup-plain", request.Payload["output"].(string))
+		return run("/opt/outpost/current/infra/scripts/export-backup-plain", request.Payload["output"].(string))
 	case "config.apply":
 		return run(
-			"/opt/matreshka/current/infra/scripts/apply-config",
+			"/opt/outpost/current/infra/scripts/apply-config",
 			request.Payload["source"].(string),
 			request.Payload["target"].(string),
 			request.Payload["engine"].(string),
 		)
 	case "xray.user.add":
-		installed, err := install(request.Payload["rendered"].(string), "/etc/matreshka/engines/xray.json")
+		installed, err := install(request.Payload["rendered"].(string), "/etc/outpost/engines/xray.json")
 		if err != nil {
 			return installed, err
 		}
-		output, err := run("/opt/matreshka/engines/xray/current/xray", "api", "adu", "--server=127.0.0.1:10085", request.Payload["source"].(string))
-		if err == nil {
+		output, err := run("/opt/outpost/engines/xray/current/xray", "api", "adu", "--server=127.0.0.1:10085", request.Payload["source"].(string))
+		if err == nil && xrayUserUpdateSucceeded(output, "Added", 2) {
 			return installed + "; " + output, nil
 		}
 		restarted, restartErr := run("systemctl", "restart", "xray")
-		return installed + "; API unavailable, loaded recovery config; " + restarted, restartErr
+		return installed + "; API hot-add failed, loaded recovery config; " + restarted, restartErr
 	case "xray.user.revoke":
-		installed, err := install(request.Payload["rendered"].(string), "/etc/matreshka/engines/xray.json")
+		installed, err := install(request.Payload["rendered"].(string), "/etc/outpost/engines/xray.json")
 		if err != nil {
 			return installed, err
 		}
-		output, err := run("/opt/matreshka/engines/xray/current/xray", "api", "rmu", "--server=127.0.0.1:10085", "-tag=vless-xhttp", request.Payload["email"].(string))
-		if err == nil {
+		xhttpOutput, xhttpErr := run("/opt/outpost/engines/xray/current/xray", "api", "rmu", "--server=127.0.0.1:10085", "-tag=vless-xhttp", request.Payload["email"].(string))
+		grpcOutput, grpcErr := run("/opt/outpost/engines/xray/current/xray", "api", "rmu", "--server=127.0.0.1:10085", "-tag=vless-grpc", request.Payload["email"].(string))
+		output := xhttpOutput + grpcOutput
+		if xhttpErr == nil && grpcErr == nil && xrayUserUpdateSucceeded(output, "Removed", 2) {
 			return installed + "; " + output, nil
 		}
 		restarted, restartErr := run("systemctl", "restart", "xray")
-		return installed + "; API unavailable, loaded recovery config; " + restarted, restartErr
+		return installed + "; API hot-remove failed, loaded recovery config; " + restarted, restartErr
 	default:
 		return "", errors.New("unsupported action")
 	}
 }
 
+func xrayUserUpdateSucceeded(output, action string, expected int) bool {
+	needle := action + " 1 user(s)"
+	return strings.Count(output, needle) == expected || strings.Contains(output, fmt.Sprintf("%s %d user(s)", action, expected))
+}
+
 func exportBackup(output, passphrase string) (string, error) {
 	plain := output + ".plain"
 	defer os.Remove(plain)
-	if result, err := run("/opt/matreshka/current/infra/scripts/export-backup-plain", plain); err != nil {
+	if result, err := run("/opt/outpost/current/infra/scripts/export-backup-plain", plain); err != nil {
 		return result, err
 	}
 	input, err := os.Open(plain)
@@ -196,7 +204,7 @@ func exportBackup(output, passphrase string) (string, error) {
 		_ = os.Remove(temporary)
 		return "", err
 	}
-	group, err := user.LookupGroup("matreshka")
+	group, err := user.LookupGroup("outpost")
 	if err != nil {
 		_ = os.Remove(temporary)
 		return "", err
@@ -246,13 +254,13 @@ func install(source, target string) (string, error) {
 	if err = output.Close(); err != nil {
 		return "", fmt.Errorf("could not close rendered config: %w", err)
 	}
-	group, err := user.LookupGroup("matreshka")
+	group, err := user.LookupGroup("outpost")
 	if err != nil {
-		return "", fmt.Errorf("could not resolve matreshka group: %w", err)
+		return "", fmt.Errorf("could not resolve outpost group: %w", err)
 	}
 	gid, err := strconv.Atoi(group.Gid)
 	if err != nil {
-		return "", fmt.Errorf("could not parse matreshka group: %w", err)
+		return "", fmt.Errorf("could not parse outpost group: %w", err)
 	}
 	if err = os.Chown(temporary, 0, gid); err != nil {
 		return "", fmt.Errorf("could not set config ownership: %w", err)

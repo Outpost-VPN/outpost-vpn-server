@@ -1,7 +1,7 @@
 import {t} from './i18n.imba'
 import {fmt, localNetworkValues, routeActions, routeIcons, routeMatchers} from './context.imba'
 
-tag matreshka-action-picker
+tag outpost-action-picker
 	value = 'DIRECT'
 	change = null
 	plain = false
@@ -23,7 +23,7 @@ tag matreshka-action-picker
 		<button.trigger type="button" .direct=(value == 'DIRECT') .proxy=(value == 'PROXY') .block=(value == 'BLOCK') @click.stop=toggle aria-haspopup="menu" aria-expanded=open>
 			<span.dot>
 			<span> fmt.action(value)
-			<matreshka-icon name="caret-down">
+			<outpost-icon name="caret-down">
 		if open
 			<div.menu role="menu" ease>
 				for item in routeActions
@@ -31,33 +31,33 @@ tag matreshka-action-picker
 						<span.dot>
 						<span> item.label
 						if item.id == value
-							<matreshka-icon name="check">
+							<outpost-icon name="check">
 
 	css self
 		d:block pos:relative miw:0
 		.trigger w:100% mih:34px d:grid gtc:8px minmax(0, 1fr) 13px ai:center g:7px p:0 9px bd:0 rd:8px ta:left fs:12px fw:750 cur:pointer tween:background-color 150ms ease, color 150ms ease
 		.trigger > span:nth-child(2) of:hidden text-overflow:ellipsis white-space:nowrap
-		.trigger > matreshka-icon fs:13px tween:transform 150ms ease
-		&.open .trigger > matreshka-icon transform:rotate(180deg)
-		.trigger.direct bgc:var(--matreshka-success-soft) c:var(--matreshka-success)
-		.trigger.proxy bgc:var(--matreshka-auth-start) c:var(--matreshka-brand)
+		.trigger > outpost-icon fs:13px tween:transform 150ms ease
+		&.open .trigger > outpost-icon transform:rotate(180deg)
+		.trigger.direct bgc:var(--outpost-success-soft) c:var(--outpost-success)
+		.trigger.proxy bgc:var(--outpost-auth-start) c:var(--outpost-brand)
 		.trigger.block bgc:red1 c:red6
 		.dot s:7px rd:50% bgc:currentColor
-		.menu pos:absolute t:calc(100% + 7px) r:0 zi:30 w:190px p:6px bd:1px solid var(--matreshka-line) rd:11px bgc:white bxs:0 14px 34px black/14 ease:180ms cubic-bezier(.22,1,.36,1) o@off:0 y@off:-6px scale@off:.98 transform-origin:top right
-		.option w:100% mih:42px d:grid gtc:8px 1fr 18px ai:center g:10px p:0 10px bd:0 rd:8px bgc:white c:var(--matreshka-text) ta:left fs:13px fw:650
-		.option bgc@hover:var(--matreshka-soft)
-		.option.active bgc:var(--matreshka-soft)
-		.option > matreshka-icon c:var(--matreshka-brand) fs:15px
-		.option.direct .dot c:var(--matreshka-success)
-		.option.proxy .dot c:var(--matreshka-brand)
+		.menu pos:absolute t:calc(100% + 7px) r:0 zi:30 w:190px p:6px bd:1px solid var(--outpost-line) rd:11px bgc:white bxs:0 14px 34px black/14 ease:180ms cubic-bezier(.22,1,.36,1) o@off:0 y@off:-6px scale@off:.98 transform-origin:top right
+		.option w:100% mih:42px d:grid gtc:8px 1fr 18px ai:center g:10px p:0 10px bd:0 rd:8px bgc:white c:var(--outpost-text) ta:left fs:13px fw:650
+		.option bgc@hover:var(--outpost-soft)
+		.option.active bgc:var(--outpost-soft)
+		.option > outpost-icon c:var(--outpost-brand) fs:15px
+		.option.direct .dot c:var(--outpost-success)
+		.option.proxy .dot c:var(--outpost-brand)
 		.option.block .dot c:red6
-		&.plain .trigger h:42px bd:1px solid var(--matreshka-line) bgc:white c:var(--matreshka-text)
-		&.plain .trigger bgc@hover:var(--matreshka-soft)
-		&.plain .trigger.direct .dot c:var(--matreshka-success)
-		&.plain .trigger.proxy .dot c:var(--matreshka-brand)
+		&.plain .trigger h:42px bd:1px solid var(--outpost-line) bgc:white c:var(--outpost-text)
+		&.plain .trigger bgc@hover:var(--outpost-soft)
+		&.plain .trigger.direct .dot c:var(--outpost-success)
+		&.plain .trigger.proxy .dot c:var(--outpost-brand)
 		&.plain .trigger.block .dot c:red6
 
-tag matreshka-matcher-picker
+tag outpost-matcher-picker
 	value = 'DOMAIN'
 	change = null
 	open = false
@@ -80,7 +80,7 @@ tag matreshka-matcher-picker
 			<global @click.outside=close @keydown.esc=close>
 		<button.trigger type="button" @click.stop=toggle aria-haspopup="listbox" aria-expanded=open>
 			<span> selected.label
-			<matreshka-icon name="caret-down">
+			<outpost-icon name="caret-down">
 		if open
 			<div.menu role="listbox" ease>
 				for item in routeMatchers
@@ -89,26 +89,26 @@ tag matreshka-matcher-picker
 							<strong> item.label
 							<small> item.hint
 						if item.id == value
-							<matreshka-icon name="check">
+							<outpost-icon name="check">
 
 	css self
 		d:block pos:relative miw:0
-		.trigger w:100% h:42px d:grid gtc:minmax(0, 1fr) 14px ai:center g:8px p:0 12px bd:1px solid var(--matreshka-line) rd:9px bgc:white c:var(--matreshka-text) ta:left fs:13px fw:700 cur:pointer tween:border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease
-		.trigger bd-c@hover:var(--matreshka-brand) bgc@hover:var(--matreshka-soft)
+		.trigger w:100% h:42px d:grid gtc:minmax(0, 1fr) 14px ai:center g:8px p:0 12px bd:1px solid var(--outpost-line) rd:9px bgc:white c:var(--outpost-text) ta:left fs:13px fw:700 cur:pointer tween:border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease
+		.trigger bd-c@hover:var(--outpost-brand) bgc@hover:var(--outpost-soft)
 		.trigger > span of:hidden text-overflow:ellipsis white-space:nowrap
-		.trigger > matreshka-icon fs:14px c:var(--matreshka-muted) tween:transform 150ms ease
-		&.open .trigger bd-c:var(--matreshka-brand) bxs:0 0 0 2px var(--matreshka-auth-start)
-		&.open .trigger > matreshka-icon transform:rotate(180deg)
-		.menu pos:absolute t:calc(100% + 7px) l:0 zi:40 w:230px p:6px bd:1px solid var(--matreshka-line) rd:11px bgc:white bxs:0 16px 36px black/15 ease:180ms cubic-bezier(.22,1,.36,1) o@off:0 y@off:-6px scale@off:.98 transform-origin:top left
-		.option w:100% mih:48px d:grid gtc:minmax(0, 1fr) 18px ai:center g:10px p:7px 10px bd:0 rd:8px bgc:white c:var(--matreshka-text) ta:left cur:pointer
-		.option bgc@hover:var(--matreshka-soft)
-		.option.active bgc:var(--matreshka-auth-start)
+		.trigger > outpost-icon fs:14px c:var(--outpost-muted) tween:transform 150ms ease
+		&.open .trigger bd-c:var(--outpost-brand) bxs:0 0 0 2px var(--outpost-auth-start)
+		&.open .trigger > outpost-icon transform:rotate(180deg)
+		.menu pos:absolute t:calc(100% + 7px) l:0 zi:40 w:230px p:6px bd:1px solid var(--outpost-line) rd:11px bgc:white bxs:0 16px 36px black/15 ease:180ms cubic-bezier(.22,1,.36,1) o@off:0 y@off:-6px scale@off:.98 transform-origin:top left
+		.option w:100% mih:48px d:grid gtc:minmax(0, 1fr) 18px ai:center g:10px p:7px 10px bd:0 rd:8px bgc:white c:var(--outpost-text) ta:left cur:pointer
+		.option bgc@hover:var(--outpost-soft)
+		.option.active bgc:var(--outpost-auth-start)
 		.option strong, .option small d:block
 		.option strong fs:13px fw:700
-		.option small mt:3px c:var(--matreshka-muted) fs:10px
-		.option > matreshka-icon c:var(--matreshka-brand) fs:15px
+		.option small mt:3px c:var(--outpost-muted) fs:10px
+		.option > outpost-icon c:var(--outpost-brand) fs:15px
 
-tag matreshka-route-create
+tag outpost-route-create
 	store = null
 	routes = null
 	index = 1
@@ -143,19 +143,19 @@ tag matreshka-route-create
 	<self ease>
 		<form @submit.prevent=submit>
 			<button.save type="submit" disabled=(saving or !valid?) aria-label=(saving ? 'Сохраняем правило' : 'Сохранить правило')>
-				<matreshka-icon name=(saving ? 'spinner-gap' : 'floppy-disk')>
+				<outpost-icon name=(saving ? 'spinner-gap' : 'floppy-disk')>
 			<span.number>
 				index
 				<span.mark title="Новое правило">
 			<div.field>
-				<matreshka-icon name=routeIcons[matcher]>
+				<outpost-icon name=routeIcons[matcher]>
 				<input bind=value placeholder=selected.placeholder aria-label=selected.label autofocus>
-			<matreshka-matcher-picker value=matcher change=(do(next) matcher = next)>
-			<matreshka-action-picker value=action change=(do(next) action = next)>
+			<outpost-matcher-picker value=matcher change=(do(next) matcher = next)>
+			<outpost-action-picker value=action change=(do(next) action = next)>
 			<button.remove type="button" @click=close aria-label="Удалить новое правило">
-				<matreshka-icon name="trash">
+				<outpost-icon name="trash">
 			if error
-				<div.error><matreshka-icon name="warning-circle">; <span> error
+				<div.error><outpost-icon name="warning-circle">; <span> error
 
 	css self
 		position:relative
@@ -166,9 +166,9 @@ tag matreshka-route-create
 		align-items:center
 		gap:12px
 		padding:10px 14px
-		border-top:1px solid var(--matreshka-line)
-		background:var(--matreshka-soft)
-		box-shadow:inset 3px 0 0 var(--matreshka-brand)
+		border-top:1px solid var(--outpost-line)
+		background:var(--outpost-soft)
+		box-shadow:inset 3px 0 0 var(--outpost-brand)
 		ease:240ms cubic-bezier(.22,1,.36,1)
 		o@off:0
 		y@off:-8px
@@ -176,23 +176,23 @@ tag matreshka-route-create
 		transform-origin:top center
 		.remove, .save s:32px d:grid ja:center p:0 bd:0 rd:8px bgc:transparent cur:pointer tween:background-color 150ms ease, color 150ms ease
 		.save w:24px
-		.remove c:var(--matreshka-muted) fs:16px
+		.remove c:var(--outpost-muted) fs:16px
 		.remove@hover bgc:red1 c:red6
-		.number s:32px pos:relative d:grid ja:center bd:1px solid var(--matreshka-brand) rd:8px bgc:var(--matreshka-auth-start) c:var(--matreshka-brand) fs:13px fw:750
-		.mark pos:absolute t:-4px r:-4px s:10px bd:2px solid white rd:50% bgc:var(--matreshka-brand) bxs:0 2px 6px black/18
+		.number s:32px pos:relative d:grid ja:center bd:1px solid var(--outpost-brand) rd:8px bgc:var(--outpost-auth-start) c:var(--outpost-brand) fs:13px fw:750
+		.mark pos:absolute t:-4px r:-4px s:10px bd:2px solid white rd:50% bgc:var(--outpost-brand) bxs:0 2px 6px black/18
 		form d:contents
 		.field d:grid gtc:24px minmax(0, 1fr) ai:center g:9px miw:0
-		.field > matreshka-icon c:var(--matreshka-navy) fs:21px
+		.field > outpost-icon c:var(--outpost-navy) fs:21px
 		input
-			w:100% h:42px p:0 12px bd:1px solid var(--matreshka-line) rd:9px bgc:white c:var(--matreshka-text) fs:13px ol:none tween:border-color 150ms ease, box-shadow 150ms ease
-			@focus border-color:var(--matreshka-brand); bxs:0 0 0 2px var(--matreshka-auth-start)
+			w:100% h:42px p:0 12px bd:1px solid var(--outpost-line) rd:9px bgc:white c:var(--outpost-text) fs:13px ol:none tween:border-color 150ms ease, box-shadow 150ms ease
+			@focus border-color:var(--outpost-brand); bxs:0 0 0 2px var(--outpost-auth-start)
 		.save
-			c:var(--matreshka-brand) fs:17px
-			@hover bgc:var(--matreshka-auth-start)
+			c:var(--outpost-brand) fs:17px
+			@hover bgc:var(--outpost-auth-start)
 			@disabled o:.45 cur:not-allowed
-		.save matreshka-icon.ph-spinner-gap animation:spin 1s linear infinite
+		.save outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
 		.error grid-column:3 / -1 d:flex ai:center g:7px mt:-1px c:red6 fs:11px
-		.error matreshka-icon fs:15px
+		.error outpost-icon fs:15px
 		@media(max-width: 760px)
 			grid-template-columns:22px 32px minmax(0, 1fr) 34px
 			g:7px
@@ -200,14 +200,14 @@ tag matreshka-route-create
 			.save grid-column:1; grid-row:1 / 4
 			.number grid-column:2; grid-row:1 / 4
 			.field grid-column:3; grid-row:1
-			matreshka-matcher-picker grid-column:3; grid-row:2; mt:7px
-			matreshka-action-picker grid-column:3; grid-row:3; w:152px; mt:7px
+			outpost-matcher-picker grid-column:3; grid-row:2; mt:7px
+			outpost-action-picker grid-column:3; grid-row:3; w:152px; mt:7px
 			.remove grid-column:4; grid-row:1 / 4
 			.error grid-column:3 / -1
 		@media(prefers-reduced-motion: reduce)
 			ease:1ms linear
 
-tag matreshka-route-system
+tag outpost-route-system
 	rules = []
 	changed = false
 	update = null
@@ -219,18 +219,18 @@ tag matreshka-route-system
 		update(rules[0].id, {action: value}) if update and rules[0]
 
 	<self.system-route .changed=changed>
-		<span.pin title="Системное правило закреплено"><matreshka-icon name="lock-key">
+		<span.pin title="Системное правило закреплено"><outpost-icon name="lock-key">
 		<span.number>
 			'1'
 			if changed
 				<span.mark title="Неопубликованное изменение">
 		<div.rule>
-			<matreshka-icon name="network">
+			<outpost-icon name="network">
 			<div>
 				<strong> 'Локальная сеть'
 				<small> 'Системное правило · 3 частных диапазона'
 		<span.kind> 'IP / CIDR × 3'
-		<matreshka-action-picker value=action change=change>
+		<outpost-action-picker value=action change=change>
 
 	css self
 		min-height:74px
@@ -241,20 +241,20 @@ tag matreshka-route-system
 		align-items:center
 		gap:12px
 		padding:0 14px
-		border-top:1px solid var(--matreshka-line)
-		background:var(--matreshka-section)
-		box-shadow:inset 3px 0 0 var(--matreshka-line)
+		border-top:1px solid var(--outpost-line)
+		background:var(--outpost-section)
+		box-shadow:inset 3px 0 0 var(--outpost-line)
 		&:focus-within z-index:4
-		.pin s:24px d:grid ja:center c:var(--matreshka-brand) fs:15px
-		.number s:32px pos:relative d:grid ja:center bd:1px solid var(--matreshka-line) rd:8px bgc:white c:var(--matreshka-text) fs:13px fw:700
-		&.changed .number bd-c:var(--matreshka-brand) bgc:var(--matreshka-auth-start) c:var(--matreshka-brand)
-		.mark pos:absolute t:-4px r:-4px s:10px bd:2px solid white rd:50% bgc:var(--matreshka-brand) bxs:0 2px 6px black/18
+		.pin s:24px d:grid ja:center c:var(--outpost-brand) fs:15px
+		.number s:32px pos:relative d:grid ja:center bd:1px solid var(--outpost-line) rd:8px bgc:white c:var(--outpost-text) fs:13px fw:700
+		&.changed .number bd-c:var(--outpost-brand) bgc:var(--outpost-auth-start) c:var(--outpost-brand)
+		.mark pos:absolute t:-4px r:-4px s:10px bd:2px solid white rd:50% bgc:var(--outpost-brand) bxs:0 2px 6px black/18
 		.rule miw:0 d:grid gtc:24px minmax(0, 1fr) ai:center g:9px
-		.rule > matreshka-icon c:var(--matreshka-navy) fs:21px
+		.rule > outpost-icon c:var(--outpost-navy) fs:21px
 		.rule strong, .rule small d:block
-		.rule strong of:hidden c:var(--matreshka-navy) fs:14px fw:700 text-overflow:ellipsis white-space:nowrap
-		.rule small mt:3px c:var(--matreshka-muted) fs:10px
-		.kind c:var(--matreshka-muted) fs:12px ta:center white-space:nowrap
+		.rule strong of:hidden c:var(--outpost-navy) fs:14px fw:700 text-overflow:ellipsis white-space:nowrap
+		.rule small mt:3px c:var(--outpost-muted) fs:10px
+		.kind c:var(--outpost-muted) fs:12px ta:center white-space:nowrap
 		@media(max-width: 680px)
 			grid-template-columns:22px 32px minmax(0, 1fr) 34px
 			g:7px
@@ -262,10 +262,10 @@ tag matreshka-route-system
 			.pin grid-column:1; grid-row:1 / 3
 			.number grid-column:2; grid-row:1 / 3
 			.rule grid-column:3; grid-row:1
-			matreshka-action-picker grid-column:3; grid-row:2; w:152px; mt:7px
+			outpost-action-picker grid-column:3; grid-row:2; w:152px; mt:7px
 			.kind d:none
 
-tag matreshka-route-row
+tag outpost-route-row
 	routes = null
 	rule = null
 	index = 0
@@ -303,27 +303,27 @@ tag matreshka-route-row
 
 	<self.route-row .system=rule.locked .changed=changed .hinting=hinting .dragging=(drag == rule.id) .over=(over == rule.id and drag != rule.id) data-id=rule.id>
 		<button.handle type="button" disabled=rule.locked @touch.moved(5px,'y')=routes.touch(rule,e) @keydown=key aria-label=(rule.locked ? 'Системное правило закреплено' : 'Перетащить правило. Стрелки вверх и вниз меняют порядок')>
-			<matreshka-icon name=(rule.locked ? 'lock-key' : 'dots-six-vertical')>
+			<outpost-icon name=(rule.locked ? 'lock-key' : 'dots-six-vertical')>
 		<span.number>
 			index + 1
 			if changed
 				<span.mark title="Неопубликованное изменение">
 		<div.rule>
-			<matreshka-icon name=icon!>
+			<outpost-icon name=icon!>
 			<div>
 				<strong> fixed? ? 'Всё остальное' : rule.value
 				<small> note!
 			if exception
 				<span.marker tabindex="0" aria-describedby="hint-{rule.id}" @mouseenter=(hinting = true) @mouseleave=(hinting = false) @focus=(hinting = true) @blur=(hinting = false)>
-					<matreshka-icon name="info">
+					<outpost-icon name="info">
 					<span.hint id="hint-{rule.id}" role="tooltip">
 						<strong> "Исключение для {exception.rule.value} · правило {exception.index + 1}"
 						<span> "Проверяется раньше, поэтому идёт {fmt.action(rule.action).toLowerCase!}."
 		<span.kind> fixed? ? '' : label!
-		<matreshka-action-picker value=rule.action change=(do(value) update(rule.id, {action: value}))>
+		<outpost-action-picker value=rule.action change=(do(value) update(rule.id, {action: value}))>
 		if !rule.locked
 			<button.remove type="button" @click.stop=remove(rule.id) aria-label="Удалить правило">
-				<matreshka-icon name="trash">
+				<outpost-icon name="trash">
 
 	css self
 		min-height: 74px
@@ -333,10 +333,10 @@ tag matreshka-route-row
 		align-items: center
 		gap: 12px
 		padding: 0 14px
-		border-top: 1px solid var(--matreshka-line)
+		border-top: 1px solid var(--outpost-line)
 		background: #fff
 		transition: background .16s ease, box-shadow .16s ease, opacity .16s ease
-		&.system background:var(--matreshka-section); box-shadow:inset 3px 0 0 var(--matreshka-line)
+		&.system background:var(--outpost-section); box-shadow:inset 3px 0 0 var(--outpost-line)
 		&:hover z-index: 4
 		&:focus-within z-index: 4
 		&.hinting z-index: 20
@@ -370,20 +370,20 @@ tag matreshka-route-row
 			position: relative
 			display: grid
 			place-items: center
-			border: 1px solid var(--matreshka-line)
+			border: 1px solid var(--outpost-line)
 			border-radius: 8px
 			color: #273452
 			font-size: 13px
 			font-weight: 700
-		&.changed .number border-color:var(--matreshka-brand); background:var(--matreshka-auth-start); color:var(--matreshka-brand)
-		.mark pos:absolute t:-4px r:-4px s:10px bd:2px solid white rd:50% bgc:var(--matreshka-brand) bxs:0 2px 6px black/18
+		&.changed .number border-color:var(--outpost-brand); background:var(--outpost-auth-start); color:var(--outpost-brand)
+		.mark pos:absolute t:-4px r:-4px s:10px bd:2px solid white rd:50% bgc:var(--outpost-brand) bxs:0 2px 6px black/18
 		.rule
 			min-width: 0
 			display: grid
 			grid-template-columns: 24px minmax(0, 1fr) auto
 			align-items: center
 			gap: 9px
-			> matreshka-icon color: #17213D; font-size: 21px
+			> outpost-icon color: #17213D; font-size: 21px
 			strong, small display: block
 			strong
 				overflow: hidden
@@ -412,7 +412,7 @@ tag matreshka-route-row
 				z-index: 10
 				display: block
 				padding: 12px 14px
-				border: 1px solid var(--matreshka-line)
+				border: 1px solid var(--outpost-line)
 				border-radius: 9px
 				background: #fff
 				box-shadow: 0 10px 28px #14213D24
@@ -439,12 +439,12 @@ tag matreshka-route-row
 			.handle grid-column: 1; grid-row: 1 / 3
 			.number grid-column: 2; grid-row: 1 / 3
 			.rule grid-column: 3; grid-row: 1
-			matreshka-action-picker grid-column: 3; grid-row: 2; width: 152px; margin-top: 7px
+			outpost-action-picker grid-column: 3; grid-row: 2; width: 152px; margin-top: 7px
 			.remove grid-column: 4; grid-row: 1 / 3
 			.kind display: none
 			.rule small display: none
 
-tag matreshka-route-modes
+tag outpost-route-modes
 	basics = false
 	clients = false
 
@@ -457,11 +457,11 @@ tag matreshka-route-modes
 	<self>
 		<section.guide .expanded=basics>
 			<button.guide-head type="button" @click=toggle('basics') aria-expanded=basics>
-				<span.guide-icon><matreshka-icon name="info">
+				<span.guide-icon><outpost-icon name="info">
 				<span.guide-label>
 					<strong> 'Как работают правила'
 					<small> 'Что выбирает правило, почему важен порядок и откуда берутся GeoSite и GeoIP'
-				<matreshka-icon.chevron name="caret-down">
+				<outpost-icon.chevron name="caret-down">
 			<div.guide-body .open=basics>
 				<div.guide-content>
 					<div.guide-inner>
@@ -484,14 +484,14 @@ tag matreshka-route-modes
 									<h3> 'GeoSite и GeoIP'
 									<p> 'GeoSite — готовый набор доменов сервиса или категории, GeoIP — набор диапазонов IP страны. В правиле хранится имя набора, а его состав берётся из geo-базы приложения.'
 									<small> 'Пример: GeoSite google · GeoIP ru'
-						<p.delivery> 'Matreshka передаёт ссылку на геонабор, а не разворачивает его сам. Поэтому точный состав GeoSite и GeoIP зависит от базы и версии приложения.'
+						<p.delivery> 'Outpost передаёт ссылку на геонабор, а не разворачивает его сам. Поэтому точный состав GeoSite и GeoIP зависит от базы и версии приложения.'
 		<section.guide .expanded=clients>
 			<button.guide-head type="button" @click=toggle('clients') aria-expanded=clients>
-				<span.guide-icon><matreshka-icon name="devices">
+				<span.guide-icon><outpost-icon name="devices">
 				<span.guide-label>
 					<strong> 'Правила в клиентских приложениях'
 					<small> 'Почему один опубликованный список может выглядеть по-разному'
-				<matreshka-icon.chevron name="caret-down">
+				<outpost-icon.chevron name="caret-down">
 			<div.guide-body .open=clients>
 				<div.guide-content>
 					<div.guide-inner>
@@ -508,45 +508,45 @@ tag matreshka-route-modes
 									<strong> 'Правила по группам'
 									<span> 'Адаптация'
 								<p.clients> 'Три группы · по типу действия'
-								<p.summary> 'Приложение ожидает не общий список, а три отдельные группы: «Напрямую», «Прокси» и «Блокировать». Matreshka раскладывает каждое правило в группу его действия.'
+								<p.summary> 'Приложение ожидает не общий список, а три отдельные группы: «Напрямую», «Прокси» и «Блокировать». Outpost раскладывает каждое правило в группу его действия.'
 								<small.example> 'Например: INCY'
-						<p.delivery> 'После публикации Matreshka выбирает подходящий формат при выдаче подписки. Настраивать отдельные наборы правил для разных приложений не нужно.'
+						<p.delivery> 'После публикации Outpost выбирает подходящий формат при выдаче подписки. Настраивать отдельные наборы правил для разных приложений не нужно.'
 
 	css self
 		d:grid g:12px
-		.guide d:block bd:1px solid var(--matreshka-line) rd:13px bgc:white of:hidden
-		.guide-head w:100% d:grid gtc:42px 1fr 18px ai:center g:12px p:14px 18px bd:0 bgc:var(--matreshka-soft) c:var(--matreshka-text) ta:left cur:pointer
-		.guide-icon s:42px d:grid ja:center rd:11px bgc:var(--matreshka-auth-start) c:var(--matreshka-brand) fs:20px
+		.guide d:block bd:1px solid var(--outpost-line) rd:13px bgc:white of:hidden
+		.guide-head w:100% d:grid gtc:42px 1fr 18px ai:center g:12px p:14px 18px bd:0 bgc:var(--outpost-soft) c:var(--outpost-text) ta:left cur:pointer
+		.guide-icon s:42px d:grid ja:center rd:11px bgc:var(--outpost-auth-start) c:var(--outpost-brand) fs:20px
 		.guide-label strong, .guide-label small d:block
-		.guide-label strong c:var(--matreshka-navy) fs:15px fw:750
-		.guide-label small mt:4px c:var(--matreshka-muted) fs:12px
-		.chevron c:var(--matreshka-muted) fs:15px tween:transform 160ms ease
+		.guide-label strong c:var(--outpost-navy) fs:15px fw:750
+		.guide-label small mt:4px c:var(--outpost-muted) fs:12px
+		.chevron c:var(--outpost-muted) fs:15px tween:transform 160ms ease
 		.guide.expanded .chevron transform:rotate(180deg)
 		.guide-body d:grid gtr:0fr o:0 tween:grid-template-rows 260ms cubic-bezier(.22,1,.36,1), opacity 180ms ease
 		.guide-body.open gtr:1fr o:1
 		.guide-content mih:0 of:hidden
 		.guide-inner p:0 18px 18px
 		.basics d:grid gtc:repeat(3, minmax(0, 1fr)) g:12px
-		.concept d:grid gtc:28px minmax(0, 1fr) ai:start g:11px p:16px bd:1px solid var(--matreshka-line) rd:10px bgc:var(--matreshka-soft)
-		.step s:28px d:grid ja:center rd:8px bgc:var(--matreshka-auth-start) c:var(--matreshka-brand) fs:11px fw:800
-		.concept h3 c:var(--matreshka-text) fs:14px fw:750 lh:1.4
-		.concept p mt:8px c:var(--matreshka-muted) fs:12px lh:1.55
-		.concept small d:block mt:12px c:var(--matreshka-brand) fs:11px fw:650 lh:1.45
+		.concept d:grid gtc:28px minmax(0, 1fr) ai:start g:11px p:16px bd:1px solid var(--outpost-line) rd:10px bgc:var(--outpost-soft)
+		.step s:28px d:grid ja:center rd:8px bgc:var(--outpost-auth-start) c:var(--outpost-brand) fs:11px fw:800
+		.concept h3 c:var(--outpost-text) fs:14px fw:750 lh:1.4
+		.concept p mt:8px c:var(--outpost-muted) fs:12px lh:1.55
+		.concept small d:block mt:12px c:var(--outpost-brand) fs:11px fw:650 lh:1.45
 		.modes d:grid gtc:repeat(2, 1fr) gar:1fr ai:stretch g:12px
 		.mode
-			h:100% mih:172px d:flex fld:column p:18px bd:1px solid var(--matreshka-line) rd:10px bgc:var(--matreshka-soft) c:var(--matreshka-muted)
+			h:100% mih:172px d:flex fld:column p:18px bd:1px solid var(--outpost-line) rd:10px bgc:var(--outpost-soft) c:var(--outpost-muted)
 			.mode-head
 				d:flex ai:flex-start jc:space-between g:12px
-				strong c:var(--matreshka-text) fs:14px fw:750 lh:1.4
-				span fl:0 0 auto p:5px 8px rd:7px bgc:white c:var(--matreshka-muted) fs:10px fw:750
-			.clients mt:20px c:var(--matreshka-muted) fs:12px fw:650 lh:1.45
-			.summary mt:12px c:var(--matreshka-text) fs:13px lh:1.6
-			.example d:block mt:auto pt:14px c:var(--matreshka-brand) fs:11px fw:650
+				strong c:var(--outpost-text) fs:14px fw:750 lh:1.4
+				span fl:0 0 auto p:5px 8px rd:7px bgc:white c:var(--outpost-muted) fs:10px fw:750
+			.clients mt:20px c:var(--outpost-muted) fs:12px fw:650 lh:1.45
+			.summary mt:12px c:var(--outpost-text) fs:13px lh:1.6
+			.example d:block mt:auto pt:14px c:var(--outpost-brand) fs:11px fw:650
 			&.exact
-				.mode-head span bgc:var(--matreshka-success-soft) c:var(--matreshka-success)
+				.mode-head span bgc:var(--outpost-success-soft) c:var(--outpost-success)
 			&.grouped
-				.mode-head span bgc:var(--matreshka-auth-start) c:var(--matreshka-brand)
-		.delivery mt:16px pt:14px border-top:1px solid var(--matreshka-line) c:var(--matreshka-muted) fs:12px lh:1.55
+				.mode-head span bgc:var(--outpost-auth-start) c:var(--outpost-brand)
+		.delivery mt:16px pt:14px border-top:1px solid var(--outpost-line) c:var(--outpost-muted) fs:12px lh:1.55
 		@media(max-width: 1080px)
 			.basics gtc:1fr
 			.modes gtc:1fr
@@ -558,7 +558,7 @@ tag matreshka-route-modes
 			.mode h:auto mih:0 p:16px
 			.mode-head fld:column g:10px
 
-tag matreshka-routes
+tag outpost-routes
 	store = null
 	drag = null
 	over = null
@@ -771,64 +771,64 @@ tag matreshka-routes
 	<self>
 		<div.route-top>
 			<span.eyebrow> 'УПРАВЛЕНИЕ ТРАФИКОМ'
-			<matreshka-header title=t('routes.title') subtitle="Один порядок правил — сервер подберёт формат при запросе подписки">
-		<section.rule-card.matreshka-card>
+			<outpost-header title=t('routes.title') subtitle="Один порядок правил — сервер подберёт формат при запросе подписки">
+		<section.rule-card.outpost-card>
 			<header.card-head>
 				<div>
 					<h2> 'Порядок правил'
 					<p> 'Правила применяются сверху вниз. Перетаскивайте их, чтобы изменить приоритет.'
-				<button.matreshka-button.secondary.small type="button" disabled=creating @click=add>
-					<matreshka-icon name="plus">
+				<button.outpost-button.secondary.small type="button" disabled=creating @click=add>
+					<outpost-icon name="plus">
 					<span> t('routes.add')
 			if locals.length
-				<matreshka-route-system rules=locals changed=grouped? update=update>
+				<outpost-route-system rules=locals changed=grouped? update=update>
 			if creating
-				<matreshka-route-create key="new-route" store=store routes=self index=2>
+				<outpost-route-create key="new-route" store=store routes=self index=2>
 			for rule in shown
-				<matreshka-route-row key=rule.id routes=self rule=rule index=slot(rule) changed=changed(rule) exception=exception(rule,position(rule)) drag=drag over=over remove=remove update=update>
+				<outpost-route-row key=rule.id routes=self rule=rule index=slot(rule) changed=changed(rule) exception=exception(rule,position(rule)) drag=drag over=over remove=remove update=update>
 			<div.rule-footer .dirty=dirty?>
 				<div.change-state>
-					<span.state-icon><matreshka-icon name=(dirty? ? 'pencil-simple' : 'check-circle')>
+					<span.state-icon><outpost-icon name=(dirty? ? 'pencil-simple' : 'check-circle')>
 					<div>
 						<strong> dirty? ? "Изменено правил: {changes}" : 'Изменений нет'
 						<small> dirty? ? 'Синие точки показывают, что изменится после публикации.' : 'Все текущие правила уже опубликованы.'
 				<div.footer-actions>
-					<button.matreshka-button.quiet type="button" disabled=!undoable? @click=discard>
-						<matreshka-icon name=(discarding ? 'spinner-gap' : 'arrow-counter-clockwise')>
+					<button.outpost-button.quiet type="button" disabled=!undoable? @click=discard>
+						<outpost-icon name=(discarding ? 'spinner-gap' : 'arrow-counter-clockwise')>
 						<span> discarding ? 'Отменяем…' : 'Отменить изменения'
-					<button.matreshka-button type="button" disabled=!publishable? @click=publish>
-						<matreshka-icon name=(publishing ? 'spinner-gap' : 'upload-simple')>
+					<button.outpost-button type="button" disabled=!publishable? @click=publish>
+						<outpost-icon name=(publishing ? 'spinner-gap' : 'upload-simple')>
 						<span> publishing ? 'Публикуем…' : t('action.publish')
-		<matreshka-route-modes>
+		<outpost-route-modes>
 
 	css self
 		display: block
 		.route-top d:block
 		.eyebrow display: block; margin-bottom: 14px; color: #0B56D9; font-size: 12px; font-weight: 750; letter-spacing: .1em
-		matreshka-route-modes margin-top: 18px
+		outpost-route-modes margin-top: 18px
 		.rule-card
 			margin-top: 30px
 			overflow: visible
 			.card-head display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 18px
 			h2 color: #17213D; font-size: 18px
 			.card-head p margin-top: 10px; color: #71809D; font-size: 13px
-		.rule-footer d:flex ai:center jc:space-between g:18px p:16px 18px border-top:1px solid var(--matreshka-line)
+		.rule-footer d:flex ai:center jc:space-between g:18px p:16px 18px border-top:1px solid var(--outpost-line)
 		.change-state d:grid gtc:38px minmax(0, 1fr) ai:center g:11px
-		.state-icon s:38px d:grid ja:center rd:10px bgc:var(--matreshka-success-soft) c:var(--matreshka-success) fs:19px
-		.rule-footer.dirty .state-icon bgc:var(--matreshka-auth-start) c:var(--matreshka-brand)
+		.state-icon s:38px d:grid ja:center rd:10px bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:19px
+		.rule-footer.dirty .state-icon bgc:var(--outpost-auth-start) c:var(--outpost-brand)
 		.change-state strong, .change-state small d:block
-		.change-state strong c:var(--matreshka-text) fs:13px fw:750
-		.change-state small mt:4px c:var(--matreshka-muted) fs:11px lh:1.35
+		.change-state strong c:var(--outpost-text) fs:13px fw:750
+		.change-state small mt:4px c:var(--outpost-muted) fs:11px lh:1.35
 		.footer-actions d:flex fl:0 0 auto g:9px
-		.footer-actions .matreshka-button matreshka-icon.ph-spinner-gap animation:spin 1s linear infinite
+		.footer-actions .outpost-button outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
 		@media(min-width: 1361px)
 			width: calc(100% + 48px)
 			margin-left: -24px
 		@media(max-width: 760px)
-			matreshka-route-modes margin-top: 18px
+			outpost-route-modes margin-top: 18px
 			.rule-card margin-top:24px
 			.rule-card .card-head align-items: stretch; flex-direction: column
-			.rule-card .card-head .matreshka-button width: 100%
+			.rule-card .card-head .outpost-button width: 100%
 			.rule-footer ai:stretch fld:column
 			.footer-actions d:grid gtc:1fr 1fr
-			.footer-actions .matreshka-button p:0 10px
+			.footer-actions .outpost-button p:0 10px

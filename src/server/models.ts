@@ -1,11 +1,10 @@
 export type RouteAction = "DIRECT" | "PROXY" | "BLOCK";
 export type RouteMatcher = "DOMAIN" | "SUFFIX" | "IP_CIDR" | "GEOSITE" | "GEOIP";
-export type ClientKind = "incy" | "mihomo";
+export type SubscriptionFormat = "mihomo" | "sing-box" | "xray" | "xray-json" | "links";
 export type EngineId = "hysteria" | "xray";
-export type DeviceStatus = "invited" | "active" | "revoked";
-export type DeviceKind = "phone" | "tablet" | "computer" | "vr" | "television" | "other";
+export type ConnectionStatus = "provisioning" | "active" | "rotating" | "archiving" | "archived";
 export type PresenceStatus = "online" | "offline" | "unknown";
-export type JournalCategory = "people" | "routes" | "engines" | "maintenance" | "security" | "system";
+export type JournalCategory = "connections" | "routes" | "engines" | "maintenance" | "security" | "system";
 export type JournalKind = "change" | "activity" | "incident";
 export type JournalSeverity = "info" | "warning" | "error" | "critical";
 export type JournalOutcome = "started" | "succeeded" | "failed" | "recovered" | null;
@@ -19,12 +18,32 @@ export interface EnginePresence {
   changed_at: string;
 }
 
-export interface DevicePresence {
+export interface ConnectionPresence {
   status: PresenceStatus;
   first_seen_at: string | null;
   last_seen_at: string | null;
   changed_at: string | null;
   engines: Partial<Record<EngineId, EnginePresence>>;
+}
+
+export interface Connection {
+  id: string;
+  serial: number;
+  name: string;
+  color: string;
+  avatar: string;
+  status: ConnectionStatus;
+  generation: number;
+  created_at: string;
+  updated_at: string;
+  activated_at: string | null;
+  first_used_at: string | null;
+  last_fetched_at: string | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  absence_notified_at: string | null;
+  archived_at: string | null;
+  presence?: ConnectionPresence;
 }
 
 export interface JournalEventInput {
@@ -44,38 +63,6 @@ export interface JournalEventInput {
   occurredAt?: string;
 }
 
-export interface Person {
-  id: string;
-  name: string;
-  note: string;
-  color: string;
-  avatar: string;
-  created_at: string;
-  updated_at: string;
-  archived_at: string | null;
-}
-
-export interface Device {
-  id: string;
-  person_id: string;
-  person_name?: string;
-  name: string;
-  kind: DeviceKind;
-  platform: string;
-  client: ClientKind;
-  status: DeviceStatus;
-  created_at: string;
-  updated_at: string;
-  activated_at: string | null;
-  first_seen_at: string | null;
-  last_seen_at: string | null;
-  profile_fetched_at: string | null;
-  last_routes_version: number | null;
-  absence_notified_at: string | null;
-  presence?: DevicePresence;
-  revoked_at: string | null;
-}
-
 export interface RouteRule {
   id: string;
   position: number;
@@ -89,8 +76,9 @@ export interface RouteRule {
   updated_at: string;
 }
 
-export interface DeviceCredential {
-  deviceId: string;
+export interface ConnectionCredential {
+  connectionId: string;
+  generation: number;
   hysteria: {
     id: string;
     password: string;
@@ -102,7 +90,7 @@ export interface DeviceCredential {
 }
 
 export interface TrafficPoint {
-  deviceId: string;
+  connectionId: string;
   upload: number;
   download: number;
 }

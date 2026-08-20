@@ -1,4 +1,4 @@
-module github.com/matreshka-proxy/matreshka-panel/agent
+module github.com/Outpost-VPN/outpost-vpn-server/agent
 
 go 1.24.0
 

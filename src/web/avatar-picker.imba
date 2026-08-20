@@ -221,7 +221,7 @@ const avatarCatalog = [
 	{id: 'avatar-219', sex: 'male', age: 'senior', glasses: true, facial: 'full', hair: 'hair'}
 ]
 
-const avatarIds = new Set(avatarCatalog.map(do(item) item.id))
+const avatarIds = new Set([...avatarCatalog.map(do(item) item.id), 'avatar-person', 'avatar-group'])
 const filters = {
 	sex: [{id: 'all', label: 'Все'}, {id: 'male', label: 'Мужчины'}, {id: 'female', label: 'Женщины'}]
 	age: [{id: 'all', label: 'Любой'}, {id: 'young', label: 'Молодые'}, {id: 'adult', label: 'Взрослые'}, {id: 'mature', label: 'Зрелые'}, {id: 'senior', label: 'Старшие'}]
@@ -229,6 +229,11 @@ const filters = {
 	facial: [{id: 'all', label: 'Любая'}, {id: 'none', label: 'Без'}, {id: 'stubble', label: 'Щетина'}, {id: 'moustache', label: 'Усы'}, {id: 'beard', label: 'Борода'}, {id: 'full', label: 'Борода с усами'}]
 	hair: [{id: 'all', label: 'Любые'}, {id: 'hair', label: 'С волосами'}, {id: 'shaved', label: 'Бритая голова'}, {id: 'balding', label: 'Лысина'}]
 }
+
+const defaults = [
+	{id: 'avatar-person', label: 'Неизвестный человек'}
+	{id: 'avatar-group', label: 'Группа людей'}
+]
 
 const labels = {
 	young: 'Молодой возраст'
@@ -241,8 +246,19 @@ export def avatarUrl value
 	const id = avatarIds.has(value) ? value : 'avatar-current'
 	"/assets/avatars/{id}.avif"
 
-tag matreshka-avatar-picker
-	value = 'avatar-current'
+tag outpost-avatar
+	value = 'avatar-person'
+	size = '48'
+
+	<self style="--avatar-size:{size}px" aria-hidden="true">
+		<img src=avatarUrl(value) alt="">
+
+	css self
+		s:var(--avatar-size) d:grid jai:center fl:0 0 var(--avatar-size) of:hidden rd:full bgc:var(--outpost-brand-soft)
+		img s:100% d:block object-fit:cover
+
+tag outpost-avatar-picker
+	value = 'avatar-person'
 	busy = false
 	change = null
 	compact = false
@@ -261,6 +277,9 @@ tag matreshka-avatar-picker
 			return false if hair != 'all' and item.hair != hair
 			true
 
+	get choices
+		defaults.concat(filtered)
+
 	def set key, value
 		self[key] = value
 		if key == 'sex' and value != 'male'
@@ -276,85 +295,89 @@ tag matreshka-avatar-picker
 		"{sexLabel}, {labels[item.age]}, {glassesLabel}"
 
 	<self .compact=compact>
-		<div.filters aria-label="Фильтры аватаров">
-			<div.filter-row>
-				<strong> 'Пол'
-				<div.chips>
-					for option in filters.sex
-						<button type="button" .active=(sex == option.id) aria-pressed=(sex == option.id) @click=(do set('sex', option.id))> option.label
-			<div.filter-row>
-				<strong> 'Возраст'
-				<div.chips>
-					for option in filters.age
-						<button type="button" .active=(age == option.id) aria-pressed=(age == option.id) @click=(do set('age', option.id))> option.label
-			<div.filter-row>
-				<strong> 'Очки'
-				<div.chips>
-					for option in filters.glasses
-						<button type="button" .active=(glasses == option.id) aria-pressed=(glasses == option.id) @click=(do set('glasses', option.id))> option.label
-			if sex == 'male'
-				<div.filter-row.male-filter>
-					<strong> 'Растительность'
+		<div.picker-layout>
+			<div.filters aria-label="Фильтры аватаров">
+				<div.filter-row>
+					<strong> 'Пол'
 					<div.chips>
-						for option in filters.facial
-							<button type="button" .active=(facial == option.id) aria-pressed=(facial == option.id) @click=(do set('facial', option.id))> option.label
-				<div.filter-row.male-filter>
-					<strong> 'Волосы'
+						for option in filters.sex
+							<button type="button" .active=(sex == option.id) aria-pressed=(sex == option.id) @click=(do set('sex', option.id))> option.label
+				<div.filter-row>
+					<strong> 'Возраст'
 					<div.chips>
-						for option in filters.hair
-							<button type="button" .active=(hair == option.id) aria-pressed=(hair == option.id) @click=(do set('hair', option.id))> option.label
-		<div.results-head>
-			<strong> "Подходят: {filtered.length}"
-			if sex == 'all'
-				<span> 'Выберите пол, чтобы открыть дополнительные признаки'
-		<div.avatar-grid role="listbox" aria-label="Подходящие аватары">
-			for item in filtered
-				<button type="button" role="option" aria-selected=(item.id == value) .selected=(item.id == value) disabled=busy @click=(do choose(item)) aria-label=description(item)>
-					<img src=avatarUrl(item.id) alt="">
-					<span><matreshka-icon name="check">
-		if !filtered.length
-			<div.empty>
-				<matreshka-icon name="magnifying-glass">
-				<strong> 'Такого сочетания пока нет'
-				<span> 'Сбросьте один из тегов — ближайшие варианты появятся сразу'
+						for option in filters.age
+							<button type="button" .active=(age == option.id) aria-pressed=(age == option.id) @click=(do set('age', option.id))> option.label
+				<div.filter-row>
+					<strong> 'Очки'
+					<div.chips>
+						for option in filters.glasses
+							<button type="button" .active=(glasses == option.id) aria-pressed=(glasses == option.id) @click=(do set('glasses', option.id))> option.label
+				if sex == 'male'
+					<div.filter-row.male-filter>
+						<strong> 'Растительность'
+						<div.chips>
+							for option in filters.facial
+								<button type="button" .active=(facial == option.id) aria-pressed=(facial == option.id) @click=(do set('facial', option.id))> option.label
+					<div.filter-row.male-filter>
+						<strong> 'Волосы'
+						<div.chips>
+							for option in filters.hair
+								<button type="button" .active=(hair == option.id) aria-pressed=(hair == option.id) @click=(do set('hair', option.id))> option.label
+			<div.results>
+				<div.results-head>
+					<strong> "Подходят: {filtered.length}"
+					if sex == 'all'
+						<span> 'Выберите пол, чтобы открыть дополнительные признаки'
+				<div.avatar-grid role="listbox" aria-label="Аватары подключения">
+					for item in choices
+						<button type="button" role="option" aria-selected=(item.id == value) .selected=(item.id == value) disabled=busy @click=(do choose(item)) aria-label=(item.label or description(item))>
+							<img src=avatarUrl(item.id) alt="">
+							<span><outpost-icon name="check">
 
 	css self
 		d:block
-		.filters d:grid g:10px p:14px rd:12px bgc:var(--matreshka-soft)
+		.picker-layout d:block
+		.results min-width:0
+		.filters d:grid ac:start g:10px p:14px rd:12px bgc:var(--outpost-soft)
 		.filter-row d:grid gtc:112px minmax(0, 1fr) ai:start g:12px
-		.filter-row > strong pt:7px c:var(--matreshka-muted) fs:11px fw:700
+		.filter-row > strong pt:7px c:var(--outpost-muted) fs:11px fw:700
 		.chips d:flex g:6px flex-wrap:wrap
-		.chips button h:30px px:10px bd:1px solid transparent rd:999px bgc:var(--matreshka-white) c:#55637B fs:11px fw:650 cur:pointer tween:background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease
-		.chips button@hover bd-c:#B8CEF0 c:var(--matreshka-brand)
-		.chips button.active bd-c:#AFC8F2 bgc:var(--matreshka-auth-start) c:var(--matreshka-brand) bxs:0 1px 2px black/4
+		.chips button h:30px px:10px bd:1px solid transparent rd:999px bgc:var(--outpost-white) c:#55637B fs:11px fw:650 cur:pointer tween:background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease
+		.chips button@hover bd-c:#B8CEF0 c:var(--outpost-brand)
+		.chips button.active bd-c:#AFC8F2 bgc:var(--outpost-auth-start) c:var(--outpost-brand) bxs:0 1px 2px black/4
 		.male-filter > strong c:#5B6D89
 		.results-head d:flex ai:center jc:space-between g:14px mt:16px mb:10px px:2px
-		.results-head strong c:var(--matreshka-text) fs:12px
-		.results-head span c:var(--matreshka-muted) fs:10px ta:right
+		.results-head strong c:var(--outpost-text) fs:12px
+		.results-head span c:var(--outpost-muted) fs:10px ta:right
 		.avatar-grid mah:330px d:grid gtc:repeat(10, 64px) gar:64px jc:space-between row-gap:12px column-gap:6px p:4px ofy:auto overscroll-behavior:contain scrollbar-gutter:stable
 		.avatar-grid button pos:relative s:64px p:0 bd:0 rd:full bgc:transparent cur:pointer
-		.avatar-grid img s:64px d:block rd:full object-fit:cover bgc:var(--matreshka-soft)
+		.avatar-grid img s:64px d:block rd:full object-fit:cover bgc:var(--outpost-soft)
 		.avatar-grid button@hover img bxs:0 0 0 2px #B8D0F9
-		.avatar-grid button.selected img bxs:0 0 0 3px var(--matreshka-brand)
-		.avatar-grid button > span pos:absolute r:-2px b:-2px s:20px d:none jai:center bd:2px solid white rd:full bgc:var(--matreshka-brand) c:white fs:10px
+		.avatar-grid button.selected img bxs:0 0 0 3px var(--outpost-brand)
+		.avatar-grid button > span pos:absolute r:-2px b:-2px s:20px d:none jai:center bd:2px solid white rd:full bgc:var(--outpost-brand) c:white fs:10px
 		.avatar-grid button.selected > span d:grid
-		.empty mih:150px d:grid jai:center ac:center g:6px p:24px rd:12px bgc:var(--matreshka-soft) c:var(--matreshka-muted) ta:center
-		.empty matreshka-icon fs:24px c:#8DA0BC
-		.empty strong fs:13px c:var(--matreshka-text)
+		.empty mih:150px d:grid jai:center ac:center g:6px p:24px rd:12px bgc:var(--outpost-soft) c:var(--outpost-muted) ta:center
+		.empty outpost-icon fs:24px c:#8DA0BC
+		.empty strong fs:13px c:var(--outpost-text)
 		.empty span fs:11px
 		&.compact .filters p:12px
+		&.compact .picker-layout d:grid gtc:250px minmax(0,1fr) ai:stretch g:14px
+		&.compact .results pos:relative; min-height:0
 		&.compact .filter-row gtc:1fr g:5px
 		&.compact .filter-row > strong pt:0
 		&.compact .chips g:5px
 		&.compact .chips button h:28px px:9px fs:10px
-		&.compact .results-head mt:13px
+		&.compact .results-head mt:0
 		&.compact .results-head span d:none
-		&.compact .avatar-grid mah:230px gtc:repeat(auto-fill, 54px) gar:54px g:10px
+		&.compact .avatar-grid pos:absolute t:24px r:0 b:0 l:0 h:auto mih:0 mah:none gtc:repeat(6,54px) gar:54px jc:start g:10px
 		&.compact .avatar-grid button, &.compact .avatar-grid img s:54px
 		@media(max-width: 800px)
 			.avatar-grid gtc:repeat(auto-fill, 54px) gar:54px g:10px
 			.avatar-grid button, .avatar-grid img s:54px
 		@media(max-width: 620px)
+			&.compact .picker-layout gtc:1fr
+			&.compact .results pos:static
+			&.compact .avatar-grid pos:static h:auto mah:244px gtc:repeat(auto-fill,54px)
 			.filter-row gtc:1fr g:5px
 			.filter-row > strong pt:0
 			.results-head span d:none

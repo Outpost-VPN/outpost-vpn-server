@@ -9,7 +9,7 @@ import (
 )
 
 var allowedServices = map[string]bool{
-	"matreshka":       true,
+	"outpost":       true,
 	"nginx":           true,
 	"hysteria-server": true,
 	"xray":            true,
@@ -21,9 +21,9 @@ var allowedEngineServices = map[string]bool{
 }
 
 var allowedRoots = []string{
-	"/opt/matreshka",
-	"/etc/matreshka",
-	"/var/lib/matreshka",
+	"/opt/outpost",
+	"/etc/outpost",
+	"/var/lib/outpost",
 }
 
 type Request struct {
@@ -70,12 +70,12 @@ func Validate(request Request) error {
 		}
 		return nil
 	case "update.apply":
-		if err := requirePath(request.Payload, "bundle", "/var/lib/matreshka/incoming"); err != nil {
+		if err := requirePath(request.Payload, "bundle", "/var/lib/outpost/incoming"); err != nil {
 			return err
 		}
-		return requirePath(request.Payload, "signature", "/var/lib/matreshka/incoming")
+		return requirePath(request.Payload, "signature", "/var/lib/outpost/incoming")
 	case "backup.export":
-		if err := requirePath(request.Payload, "output", "/var/lib/matreshka/backups"); err != nil {
+		if err := requirePath(request.Payload, "output", "/var/lib/outpost/backups"); err != nil {
 			return err
 		}
 		if passphrase, ok := request.Payload["passphrase"]; ok {
@@ -86,10 +86,10 @@ func Validate(request Request) error {
 		}
 		return nil
 	case "config.apply":
-		if err := requirePath(request.Payload, "source", "/var/lib/matreshka"); err != nil {
+		if err := requirePath(request.Payload, "source", "/var/lib/outpost"); err != nil {
 			return err
 		}
-		if err := requirePath(request.Payload, "target", "/etc/matreshka/engines"); err != nil {
+		if err := requirePath(request.Payload, "target", "/etc/outpost/engines"); err != nil {
 			return err
 		}
 		engine, ok := request.Payload["engine"].(string)
@@ -98,16 +98,16 @@ func Validate(request Request) error {
 		}
 		return nil
 	case "xray.user.add":
-		if err := requirePath(request.Payload, "source", "/var/lib/matreshka/runtime"); err != nil {
+		if err := requirePath(request.Payload, "source", "/var/lib/outpost/runtime"); err != nil {
 			return err
 		}
-		return requirePath(request.Payload, "rendered", "/var/lib/matreshka/runtime")
+		return requirePath(request.Payload, "rendered", "/var/lib/outpost/runtime")
 	case "xray.user.revoke":
 		email, ok := request.Payload["email"].(string)
 		if !ok || len(email) < 10 || len(email) > 200 {
 			return errors.New("valid email is required")
 		}
-		return requirePath(request.Payload, "rendered", "/var/lib/matreshka/runtime")
+		return requirePath(request.Payload, "rendered", "/var/lib/outpost/runtime")
 	default:
 		return errors.New("action is not allowed")
 	}

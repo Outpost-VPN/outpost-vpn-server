@@ -6,16 +6,16 @@ target_path=${2:-}
 engine=${3:-}
 
 case "$source_path:$target_path" in
-  /var/lib/matreshka/runtime/*:/etc/matreshka/engines/*) ;;
+  /var/lib/outpost/runtime/*:/etc/outpost/engines/*) ;;
   *) echo "Config path is not allowed" >&2; exit 1 ;;
 esac
 
 case "$engine:$target_path" in
-  xray:/etc/matreshka/engines/xray.json)
+  xray:/etc/outpost/engines/xray.json)
     service=xray
-    /opt/matreshka/engines/xray/current/xray run -test -config "$source_path"
+    /opt/outpost/engines/xray/current/xray run -test -config "$source_path"
     ;;
-  hysteria:/etc/matreshka/engines/hysteria.yaml)
+  hysteria:/etc/outpost/engines/hysteria.yaml)
     service=hysteria-server
     # Hysteria has no validate-only command. The application performs a strict
     # YAML/protected-block check; systemd health decides whether to rollback.
@@ -25,7 +25,7 @@ esac
 
 backup_path="${target_path}.previous"
 test ! -f "$target_path" || cp -a "$target_path" "$backup_path"
-install -o root -g matreshka -m 0640 "$source_path" "${target_path}.tmp"
+install -o root -g outpost -m 0640 "$source_path" "${target_path}.tmp"
 mv "${target_path}.tmp" "$target_path"
 
 if ! systemctl restart "$service"; then

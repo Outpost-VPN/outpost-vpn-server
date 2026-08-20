@@ -2,14 +2,6 @@ import {avatarUrl} from './avatar-picker.imba'
 import {t} from './i18n.imba'
 import YAML from 'yaml'
 
-export const deviceTypes = [
-	{id: 'phone', label: 'Телефон', name: 'iPhone', platform: 'ios'}
-	{id: 'tablet', label: 'Планшет', name: 'iPad', platform: 'ios'}
-	{id: 'computer', label: 'Компьютер', name: 'Ноутбук', platform: 'macos'}
-	{id: 'vr', label: 'VR-очки', name: 'VR-очки', platform: 'unknown'}
-	{id: 'television', label: 'Телевизор', name: 'Телевизор', platform: 'unknown'}
-	{id: 'other', label: 'Другое', name: 'Устройство', platform: 'unknown'}
-]
 export const routeActions = [
 	{id: 'DIRECT', label: 'Напрямую'}
 	{id: 'PROXY', label: 'Через прокси'}
@@ -54,28 +46,8 @@ export const trafficPeriods = [
 export const fmt = {
 	initials: do(name)
 		name.split(/\s+/).map(do(word) word[0]).join('').slice(0, 2).toUpperCase!
-	deviceWord: do(count)
-		const mod10 = count % 10
-		const mod100 = count % 100
-		return 'устройств' if mod100 >= 11 and mod100 <= 14
-		return 'устройство' if mod10 == 1
-		return 'устройства' if mod10 >= 2 and mod10 <= 4
-		'устройств'
-	status: do(status)
-		return t('people.connected') if status == 'active'
-		return t('people.pending') if status == 'invited'
-		t('people.revoked')
 	avatar: do(value)
 		avatarUrl(value)
-	deviceKind: do(device)
-		return device.kind if device.kind
-		const name = (device.name or '').toLowerCase!
-		return 'tablet' if name.includes('ipad') or name.includes('планшет') or name.includes('tablet')
-		return 'vr' if name.includes('vr') or name.includes('очки')
-		return 'television' if name.includes('tv') or name.includes('телевиз')
-		return 'computer' if device.platform == 'macos' or device.platform == 'windows' or device.platform == 'linux'
-		return 'other' if device.platform == 'unknown'
-		'phone'
 	action: do(action)
 		return t('routes.direct') if action == 'DIRECT'
 		return t('routes.proxy') if action == 'PROXY'
@@ -84,7 +56,7 @@ export const fmt = {
 		const labels = {DOMAIN: 'Точный домен', SUFFIX: 'Доменный суффикс', IP_CIDR: 'IP / CIDR', GEOSITE: 'Geosite', GEOIP: 'GeoIP'}
 		labels[matcher]
 	serviceName: do(name)
-		const names = {'matreshka': 'Matreshka', nginx: 'Nginx', 'hysteria-server': 'Hysteria 2', xray: 'Xray'}
+		const names = {'outpost': 'Outpost', nginx: 'Nginx', 'hysteria-server': 'Hysteria 2', xray: 'Xray'}
 		names[name] or name
 	serviceIcon: do(name)
 		return 'activity' if name == 'hysteria-server'
@@ -95,7 +67,7 @@ export const fmt = {
 		const amount = Number(value or 0)
 		return '0 Б' if !amount
 		const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ']
-		const index = Math.min(Math.floor(Math.log(amount) / Math.log(1024)), units.length - 1)
+		const index = Math.max(0, Math.min(Math.floor(Math.log(amount) / Math.log(1024)), units.length - 1))
 		"{(amount / Math.pow(1024, index)).toFixed(index > 2 ? 1 : 0)} {units[index]}"
 	rate: do(value)
 		const amount = Number(value or 0) * 8
@@ -107,69 +79,24 @@ export const fmt = {
 	percent: do(value, total)
 		return '0%' if !total
 		"{Math.round(value / total * 100)}%"
-	deviceTraffic: do(device, traffic)
-		let total = 0
-		for item in traffic.devices
-			total += item.upload + item.download if item.device_id == device.id
-		total
-	personTraffic: do(person, traffic)
-		const row = traffic.people.find(do(item) item.person_id == person.id)
+	connectionTrafficRow: do(connection, traffic)
+		traffic.connections.find do(item) item.connection_id == connection.id
+	connectionTraffic: do(connection, traffic)
+		const row = fmt.connectionTrafficRow(connection, traffic)
 		row ? row.upload + row.download : 0
-	online: do(device)
-		device.status == 'active' and device.presence..status == 'online'
-	presence: do(device)
-		return 'Ждёт подключения' if device.status == 'invited'
-		return 'Доступ отозван' if device.status == 'revoked'
-		return 'Онлайн' if fmt.online(device)
-		return 'Статус неизвестен' if device.presence..status == 'unknown' or !device.presence
-		return 'Офлайн' unless device.last_seen_at
-		const minutes = Math.max(1, Math.round((Date.now! - new Date(device.last_seen_at).getTime!) / 60000))
-		return "Офлайн · {minutes} мин" if minutes < 60
-		"Офлайн · {Math.round(minutes / 60)} ч"
-	signal: do(value)
-		if value.devices
-			return value.devices.map(do(device) fmt.signal(device)).filter(Boolean).join(' · ')
-		const engines = value.presence..engines or {}
-		const parts = []
-		const hysteria = engines.hysteria
-		const xray = engines.xray
-		if hysteria
-			if hysteria.status == 'online'
-				parts.push("Hysteria: {hysteria.connections or 1} подключение")
-			elif hysteria.status == 'unknown'
-				parts.push('Hysteria: данные недоступны')
-			else
-				parts.push('Hysteria: нет подключений')
-		if xray
-			if xray.status == 'unknown'
-				parts.push('Xray: данные недоступны')
-			elif xray.last_active_at
-				const minutes = Math.max(0, Math.floor((Date.now! - new Date(xray.last_active_at).getTime!) / 60000))
-				parts.push(minutes < 1 ? 'Xray: активность только что' : "Xray: активность {minutes} мин назад")
-			else
-				parts.push('Xray: активности не было')
-		parts.join(' · ')
-	personOnline: do(person)
-		person.devices.some(do(device) fmt.online(device))
-	personPresence: do(person)
-		return 'Онлайн' if fmt.personOnline(person)
-		return 'Статус неизвестен' if person.devices.some(do(device) device.status == 'active' and device.presence..status == 'unknown')
-		let latest = null
-		for device in person.devices
-			if device.last_seen_at and (!latest or new Date(device.last_seen_at).getTime! > new Date(latest.last_seen_at).getTime!)
-				latest = device
-		return fmt.presence(latest) if latest
-		return 'Ждёт подключения' if person.devices.some(do(device) device.status == 'invited')
-		return 'Нет устройств' unless person.devices.length
-		'Офлайн'
-	seen: do(person)
-		return 'В сети' if fmt.personOnline(person)
-		let latest = null
-		for device in person.devices
-			if device.last_seen_at and (!latest or new Date(device.last_seen_at).getTime! > new Date(latest).getTime!)
-				latest = device.last_seen_at
-		return 'Не подключался' unless latest
-		const value = new Date(latest)
+	connectionOnline: do(connection)
+		connection.presence == 'online'
+	connectionPresence: do(connection)
+		return 'Онлайн' if fmt.connectionOnline(connection)
+		return 'Готовим' if connection.status == 'provisioning'
+		return 'Перевыпускаем' if connection.status == 'rotating'
+		return 'Архивируем' if connection.status == 'archiving'
+		return 'Статус неизвестен' if connection.presence == 'unknown'
+		'Не в сети'
+	seen: do(connection)
+		return 'В сети' if fmt.connectionOnline(connection)
+		return 'Не использовалось' unless connection.last_seen_at
+		const value = new Date(connection.last_seen_at)
 		const today = new Date
 		const start = new Date(today.getFullYear!, today.getMonth!, today.getDate!).getTime!
 		const day = new Date(value.getFullYear!, value.getMonth!, value.getDate!).getTime!
@@ -182,10 +109,10 @@ export const fmt = {
 		return 'Проверено только что' if minutes < 1
 		return "Проверено {minutes} мин назад" if minutes < 60
 		"Проверено в {fmt.time(value)}"
-	spark: do(person, traffic)
-		const values = [18, 25, 21, 32, 26, 37, 31, 48, 35, 42, 29, 54]
-		const shift = person.name.length % 4
-		values.map(do(value, index) value + ((index + shift) % 3) * 3).join(',')
+	spark: do(connection, traffic)
+		const row = fmt.connectionTrafficRow(connection, traffic)
+		return [] unless row and row.series
+		row.series.map do(point) point.upload + point.download
 	sample: do(series)
 		return [] if !series.length
 		const step = Math.max(1, Math.ceil(series.length / 80))

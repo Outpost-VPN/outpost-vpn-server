@@ -2,7 +2,7 @@ import { resolve4 } from "node:dns/promises";
 import { z } from "zod";
 import { config } from "../config";
 import type { AuthService } from "../auth/webauthn";
-import { ServiceError } from "./people";
+import { ServiceError } from "./connections";
 import { callAgent } from "./operations";
 
 const domainSchema = z.string().trim().toLowerCase().max(253).refine(validDomain, "Укажите корректный домен");

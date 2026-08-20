@@ -15,7 +15,7 @@ func TestServiceAllowlist(t *testing.T) {
 	if err := Validate(stop); err != nil {
 		t.Fatalf("allowed engine service rejected: %v", err)
 	}
-	protected := Request{Action: "service.stop", Payload: map[string]any{"service": "matreshka"}}
+	protected := Request{Action: "service.stop", Payload: map[string]any{"service": "outpost"}}
 	if err := Validate(protected); err == nil {
 		t.Fatal("protected service accepted")
 	}
@@ -23,8 +23,8 @@ func TestServiceAllowlist(t *testing.T) {
 
 func TestRejectsPathTraversal(t *testing.T) {
 	request := Request{Action: "config.apply", Payload: map[string]any{
-		"source": "/var/lib/matreshka/rendered/xray.json",
-		"target": "/etc/matreshka/../../etc/shadow",
+		"source": "/var/lib/outpost/rendered/xray.json",
+		"target": "/etc/outpost/../../etc/shadow",
 		"engine": "xray",
 	}}
 	if err := Validate(request); err == nil {
@@ -34,8 +34,8 @@ func TestRejectsPathTraversal(t *testing.T) {
 
 func TestConfigEngineAllowlist(t *testing.T) {
 	request := Request{Action: "config.apply", Payload: map[string]any{
-		"source": "/var/lib/matreshka/runtime/xray.json",
-		"target": "/etc/matreshka/engines/xray.json",
+		"source": "/var/lib/outpost/runtime/xray.json",
+		"target": "/etc/outpost/engines/xray.json",
 		"engine": "shell",
 	}}
 	if err := Validate(request); err == nil {
@@ -45,21 +45,21 @@ func TestConfigEngineAllowlist(t *testing.T) {
 
 func TestBackupPassphraseAndPath(t *testing.T) {
 	good := Request{Action: "backup.export", Payload: map[string]any{
-		"output":     "/var/lib/matreshka/backups/operation.age",
+		"output":     "/var/lib/outpost/backups/operation.age",
 		"passphrase": "correct horse battery staple",
 	}}
 	if err := Validate(good); err != nil {
 		t.Fatalf("valid backup rejected: %v", err)
 	}
 	bad := Request{Action: "backup.export", Payload: map[string]any{
-		"output":     "/var/lib/matreshka/backups/operation.age",
+		"output":     "/var/lib/outpost/backups/operation.age",
 		"passphrase": "short",
 	}}
 	if err := Validate(bad); err == nil {
 		t.Fatal("weak passphrase accepted")
 	}
 	plain := Request{Action: "backup.export", Payload: map[string]any{
-		"output": "/var/lib/matreshka/backups/operation.tar",
+		"output": "/var/lib/outpost/backups/operation.tar",
 	}}
 	if err := Validate(plain); err != nil {
 		t.Fatalf("unencrypted backup rejected: %v", err)
@@ -83,20 +83,20 @@ func TestEngineUpdatePinsStructuredValues(t *testing.T) {
 
 func TestApplicationUpdateRequiresBundleAndSignatureInsideIncoming(t *testing.T) {
 	good := Request{Action: "update.apply", Payload: map[string]any{
-		"bundle":    "/var/lib/matreshka/incoming/update.tar.gz",
-		"signature": "/var/lib/matreshka/incoming/update.tar.gz.minisig",
+		"bundle":    "/var/lib/outpost/incoming/update.tar.gz",
+		"signature": "/var/lib/outpost/incoming/update.tar.gz.minisig",
 	}}
 	if err := Validate(good); err != nil {
 		t.Fatalf("signed application update rejected: %v", err)
 	}
 	missing := Request{Action: "update.apply", Payload: map[string]any{
-		"bundle": "/var/lib/matreshka/incoming/update.tar.gz",
+		"bundle": "/var/lib/outpost/incoming/update.tar.gz",
 	}}
 	if err := Validate(missing); err == nil {
 		t.Fatal("unsigned application update accepted")
 	}
 	outside := Request{Action: "update.apply", Payload: map[string]any{
-		"bundle":    "/var/lib/matreshka/incoming/update.tar.gz",
+		"bundle":    "/var/lib/outpost/incoming/update.tar.gz",
 		"signature": "/tmp/update.tar.gz.minisig",
 	}}
 	if err := Validate(outside); err == nil {

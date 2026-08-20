@@ -1,0 +1,46 @@
+name: Signed rule-set bundle
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rulesets-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: release
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.3.13"
+      - name: Install signing tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+      - name: Build, sign and verify bundle index
+        run: |
+          test -n "$MINISIGN_SECRET_KEY"
+          umask 077
+          key="$RUNNER_TEMP/minisign.key"
+          printf '%s\n' "$MINISIGN_SECRET_KEY" >"$key"
+          OUTPOST_MINISIGN_SECRET_KEY="$key" OUTPOST_REQUIRE_SIGNATURE=1 bun run release:rulesets
+          rm -f "$key"
+      - name: Publish separately from application releases
+        run: |
+          if ! gh release view rulesets >/dev/null 2>&1; then
+            gh release create rulesets --title "Outpost rule sets" --notes "Signed daily SagerNet rule-set bundle for Outpost servers."
+          fi
+          bundle="$(find release -maxdepth 1 -name 'rulesets-*.tar.gz' -type f -print -quit)"
+          test -n "$bundle"
+          gh release upload rulesets --clobber release/rulesets.json release/rulesets.json.minisig "$bundle"

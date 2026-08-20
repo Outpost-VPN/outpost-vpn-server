@@ -46,7 +46,7 @@ jobs:
       - name: Build release archive
         run: |
           version="${RELEASE_TAG#v}"
-          MATRESHKA_VERSION="$version" bun run release:linux
+          OUTPOST_VERSION="$version" bun run release:linux
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unsigned-release
@@ -82,7 +82,7 @@ jobs:
           printf '%s\n' "$MINISIGN_SECRET_KEY" >"$key"
           archive="$(find release -maxdepth 1 -name '*.tar.gz' -type f -print -quit)"
           test -n "$archive"
-          minisign -S -W -s "$key" -m "$archive" -x "${archive}.minisig" -t "Matreshka ${RELEASE_TAG#v} linux-amd64"
+          minisign -S -W -s "$key" -m "$archive" -x "${archive}.minisig" -t "Outpost ${RELEASE_TAG#v} linux-amd64"
           minisign -Vm "$archive" -x "${archive}.minisig" -p infra/release/minisign.pub
           sha256sum "$archive" >"${archive}.sha256"
           rm -f "$key"
@@ -95,6 +95,6 @@ jobs:
           fi
           gh release create "$RELEASE_TAG" "$archive" "${archive}.minisig" "${archive}.sha256" \
             --verify-tag \
-            --title "Matreshka ${RELEASE_TAG#v}" \
+            --title "Outpost ${RELEASE_TAG#v}" \
             "${prerelease[@]}" \
             --generate-notes

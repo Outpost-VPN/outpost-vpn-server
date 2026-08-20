@@ -9,14 +9,13 @@ import {
 } from "@simplewebauthn/server";
 import { z } from "zod";
 import { config } from "../config";
-import type { MatreshkaDatabase } from "../db/database";
+import type { OutpostDatabase } from "../db/database";
 import { addHours, now } from "../db/database";
 import { createToken, hashToken, tokensEqual } from "../security";
-import { ServiceError } from "../services/people";
+import { ServiceError } from "../services/connections";
 import { JournalService, parseUserAgent } from "../services/journal";
 
 const registrationContext = z.object({
-  name: z.string().trim().min(1).max(80),
   timezone: z.string().trim().min(1).max(80),
   bootstrapToken: z.string().optional(),
 });
@@ -40,7 +39,7 @@ export class AuthService {
   private bootstrapToken?: string;
   private journal: JournalService;
 
-  constructor(private db: MatreshkaDatabase, journal?: JournalService) {
+  constructor(private db: OutpostDatabase, journal?: JournalService) {
     this.journal = journal ?? new JournalService(db);
   }
 
@@ -71,7 +70,7 @@ export class AuthService {
     const owner = this.owner();
     return {
       initialized: Boolean(owner),
-      owner: owner ? { id: owner.id, name: owner.name, timezone: owner.timezone } : null,
+      owner: owner ? { id: owner.id, timezone: owner.timezone } : null,
       demo: config.demo,
     };
   }
@@ -80,13 +79,12 @@ export class AuthService {
     const owner = this.owner();
     if (!owner) throw new ServiceError(404, "Владелец ещё не создан");
     const data = z.object({
-      name: z.string().trim().min(1).max(80).optional(),
-      timezone: z.string().trim().min(1).max(80).optional(),
-    }).refine((value) => value.name !== undefined || value.timezone !== undefined, "Нет изменений").parse(input);
+      timezone: z.string().trim().min(1).max(80),
+    }).strict().parse(input);
     const timestamp = now();
-    const updated = { ...owner, name: data.name ?? owner.name, timezone: data.timezone ?? owner.timezone };
-    this.db.raw.query("UPDATE owners SET name = ?, timezone = ?, updated_at = ? WHERE id = ?")
-      .run(updated.name, updated.timezone, timestamp, owner.id);
+    const updated = { ...owner, timezone: data.timezone };
+    this.db.raw.query("UPDATE owners SET timezone = ?, updated_at = ? WHERE id = ?")
+      .run(updated.timezone, timestamp, owner.id);
     this.db.audit({ actor, action: "owner.update", resource: "owner", resourceId: owner.id, before: owner, after: updated });
     return updated;
   }
@@ -102,11 +100,11 @@ export class AuthService {
       ? this.db.raw.query<{ id: string; transports_json: string }, string>("SELECT id, transports_json FROM passkeys WHERE owner_id = ?").all(owner.id)
       : [];
     const options = await generateRegistrationOptions({
-      rpName: "Matreshka",
+      rpName: "Outpost",
       rpID: config.rpID,
       userID: new TextEncoder().encode(ownerId),
-      userName: context.name,
-      userDisplayName: context.name,
+      userName: "owner",
+      userDisplayName: "Владелец",
       attestationType: "none",
       excludeCredentials: passkeys.map((key) => ({ id: key.id, transports: JSON.parse(key.transports_json) })),
       authenticatorSelection: {
@@ -115,7 +113,6 @@ export class AuthService {
       },
     });
     const challengeId = this.storeChallenge("registration", options.challenge, {
-      name: context.name,
       timezone: context.timezone,
       ownerId,
       bootstrapHash: bootstrap?.hash,
@@ -139,8 +136,8 @@ export class AuthService {
     const timestamp = now();
     this.db.raw.transaction(() => {
       if (!this.owner()) {
-        this.db.raw.query("INSERT INTO owners (id, name, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-          .run(context.ownerId, context.name, context.timezone, timestamp, timestamp);
+        this.db.raw.query("INSERT INTO owners (id, timezone, created_at, updated_at) VALUES (?, ?, ?, ?)")
+          .run(context.ownerId, context.timezone, timestamp, timestamp);
       }
       this.db.raw.query(`
         INSERT INTO passkeys (id, owner_id, public_key, counter, transports_json, device_type, backed_up, created_at)
@@ -228,7 +225,7 @@ export class AuthService {
       `).get(hashToken(token));
       if (api && (!api.expires_at || api.expires_at > now())) {
         this.db.raw.query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").run(now(), api.id);
-        return { id: `token:${api.id}`, name: "API", timezone: "UTC", scopes: JSON.parse(api.scopes_json) as string[] };
+        return { id: `token:${api.id}`, timezone: "UTC", scopes: JSON.parse(api.scopes_json) as string[] };
       }
     }
     const row = this.db.raw.query<{ id: string; owner_id: string; expires_at: string }, string>(`
@@ -316,7 +313,7 @@ export class AuthService {
     const cleanName = name.trim();
     if (!cleanName || cleanName.length > 80) throw new ServiceError(400, "Укажите имя токена до 80 символов");
     const allowed = new Set([
-      "status:read", "traffic:read", "people:read", "people:write", "routes:read", "routes:write",
+      "status:read", "traffic:read", "connections:read", "connections:write", "routes:read", "routes:write",
       "operations:read", "operations:write", "settings:read", "settings:write", "engines:read", "engines:write",
       "system:read", "backups:read",
     ]);
@@ -364,16 +361,16 @@ export class AuthService {
   }
 
   private owner() {
-    return this.db.raw.query<{ id: string; name: string; timezone: string }, []>("SELECT id, name, timezone FROM owners LIMIT 1").get() ?? null;
+    return this.db.raw.query<{ id: string; timezone: string }, []>("SELECT id, timezone FROM owners LIMIT 1").get() ?? null;
   }
 
   private demoOwner() {
     let owner = this.owner();
     if (owner) return owner;
     const timestamp = now();
-    owner = { id: crypto.randomUUID(), name: "Федор", timezone: "Europe/Moscow" };
-    this.db.raw.query("INSERT INTO owners (id, name, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-      .run(owner.id, owner.name, owner.timezone, timestamp, timestamp);
+    owner = { id: crypto.randomUUID(), timezone: "UTC" };
+    this.db.raw.query("INSERT INTO owners (id, timezone, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run(owner.id, owner.timezone, timestamp, timestamp);
     return owner;
   }
 

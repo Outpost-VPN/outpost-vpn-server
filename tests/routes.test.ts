@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { OutpostDatabase } from "../src/server/db/database";
 import { RouteService } from "../src/server/services/routes";
 import { JournalService } from "../src/server/services/journal";
 import { database } from "./helpers";
@@ -20,6 +22,35 @@ describe("route revisions", () => {
       ["192.168.0.0/16", "DIRECT", "system"],
       ["*", "PROXY", "system"],
     ]);
+    expect(routes.state()).toMatchObject({ activeVersion: 1, dirty: false });
+    expect(routes.revisions()).toEqual([expect.objectContaining({ version: 1, note: "Базовые правила", actor: "system" })]);
+  });
+
+  test("promotes untouched defaults left unpublished by an earlier installation", () => {
+    fixture.db.raw.exec("DELETE FROM route_revisions");
+    fixture.db.setSetting("active_route_version", 0);
+    const reopened = new OutpostDatabase(join(fixture.directory, "test.sqlite"));
+    try {
+      routes = new RouteService(reopened);
+      expect(routes.state()).toMatchObject({ activeVersion: 1, dirty: false });
+      expect(routes.revisions()).toHaveLength(1);
+    } finally {
+      reopened.close();
+    }
+  });
+
+  test("does not publish an edited legacy draft automatically", () => {
+    fixture.db.raw.exec("DELETE FROM route_revisions");
+    fixture.db.setSetting("active_route_version", 0);
+    fixture.db.raw.query("UPDATE route_drafts SET action = 'BLOCK' WHERE value = '*'").run();
+    const reopened = new OutpostDatabase(join(fixture.directory, "test.sqlite"));
+    try {
+      routes = new RouteService(reopened);
+      expect(routes.state()).toMatchObject({ activeVersion: 0, dirty: true });
+      expect(routes.revisions()).toHaveLength(0);
+    } finally {
+      reopened.close();
+    }
   });
 
   test("keeps catch-all last and publishes immutable revisions", () => {
@@ -36,7 +67,7 @@ describe("route revisions", () => {
     expect(routes.state().dirty).toBeTrue();
     const second = routes.publish("exception", "test");
     expect(second.activeVersion).toBe(first.activeVersion + 1);
-    expect(routes.revisions()).toHaveLength(2);
+    expect(routes.revisions()).toHaveLength(3);
     expect(() => routes.add({ action: "DIRECT", matcher: "SUFFIX", value: "*" }, "test")).toThrow("уже существует");
     expect(() => routes.update(draft.find((rule) => rule.value === "example.com")!.id, { matcher: "SUFFIX", value: "*" })).toThrow("уже существует");
   });
@@ -46,7 +77,7 @@ describe("route revisions", () => {
     expect(new JournalService(fixture.db).latest(1)[0]).toMatchObject({
       type: "routes.published",
       category: "routes",
-      title: "Опубликована ревизия маршрутов №1",
+      title: "Опубликована ревизия маршрутов №2",
     });
   });
 
@@ -83,7 +114,7 @@ describe("route revisions", () => {
     expect(restored.dirty).toBeFalse();
     expect(restored.draft.map((rule) => rule.id)).toEqual(published.published!.rules.map((rule) => rule.id));
     expect(restored.draft.map((rule) => rule.action)).toEqual(published.published!.rules.map((rule) => rule.action));
-    expect(routes.revisions()).toHaveLength(1);
+    expect(routes.revisions()).toHaveLength(2);
   });
 
 });

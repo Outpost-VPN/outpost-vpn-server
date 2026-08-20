@@ -10,11 +10,11 @@ test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
 [[ "$version" =~ ^[0-9][0-9A-Za-z.-]{0,39}$ ]] || { echo "Invalid version" >&2; exit 1; }
 [[ "$checksum" =~ ^[0-9a-f]{64}$ ]] || { echo "Invalid checksum" >&2; exit 1; }
 
-root="/opt/matreshka/engines/$engine"
+root="/opt/outpost/engines/$engine"
 target="$root/$version"
 current="$root/current"
 previous=$(readlink -f "$current")
-update_tmp=$(mktemp -d "/var/lib/matreshka/runtime/${engine}-update.XXXXXX")
+update_tmp=$(mktemp -d "/var/lib/outpost/runtime/${engine}-update.XXXXXX")
 trap 'rm -rf "$update_tmp"' EXIT
 
 test -n "$previous" && test -d "$previous" || { echo "Current engine installation is missing" >&2; exit 1; }

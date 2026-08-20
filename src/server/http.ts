@@ -1,10 +1,11 @@
 import { ZodError } from "zod";
 import QRCode from "qrcode";
 import { config } from "./config";
-import type { MatreshkaDatabase } from "./db/database";
+import type { OutpostDatabase } from "./db/database";
 import { AuthService } from "./auth/webauthn";
-import { clients } from "./adapters/clients";
-import { PeopleService, ServiceError } from "./services/people";
+import { renderLinkRoutes, renderers } from "./adapters/subscriptions";
+import { catalog, catalogVersion, detectPlatform, renderCatalogPage } from "./adapters/catalog";
+import { ConnectionService, ServiceError } from "./services/connections";
 import { RouteService } from "./services/routes";
 import { TrafficService, configuredCollectors, type TrafficPeriod } from "./services/traffic";
 import { OperationService } from "./services/operations";
@@ -12,12 +13,13 @@ import { SystemService } from "./services/system";
 import { EngineRuntimeService } from "./services/engine-runtime";
 import { EngineConfigService } from "./adapters/engines";
 import { JournalService, type JournalScope } from "./services/journal";
-import type { JournalCategory } from "./models";
+import type { JournalCategory, SubscriptionFormat } from "./models";
 import { MonitoringService } from "./services/monitoring";
-import { DeviceSyncService } from "./services/device-sync";
+import { ConnectionSyncService } from "./services/connection-sync";
 import { SetupService } from "./services/setup";
+import { RuleSetService } from "./services/rulesets";
 
-type Owner = { id: string; name: string; timezone: string; scopes?: string[] };
+type Owner = { id: string; timezone: string; scopes?: string[] };
 type Handler = (context: RequestContext) => Response | Promise<Response>;
 
 type RequestContext = {
@@ -32,7 +34,7 @@ type Route = { method: string; pattern: URLPattern; public: boolean; handler: Ha
 
 export class HttpApplication {
   readonly auth: AuthService;
-  readonly people: PeopleService;
+  readonly connections: ConnectionService;
   readonly routes: RouteService;
   readonly traffic: TrafficService;
   readonly operations: OperationService;
@@ -41,24 +43,26 @@ export class HttpApplication {
   readonly engineConfigs: EngineConfigService;
   readonly journal: JournalService;
   readonly monitoring: MonitoringService;
-  readonly deviceSync: DeviceSyncService;
+  readonly connectionSync: ConnectionSyncService;
   readonly setup: SetupService;
+  readonly rulesets: RuleSetService;
   private registry: Route[] = [];
 
   constructor(
-    readonly db: MatreshkaDatabase,
-    deviceEngine?: Pick<EngineRuntimeService, "add" | "revoke">,
+    readonly db: OutpostDatabase,
+    connectionEngine?: Pick<EngineRuntimeService, "add" | "rotate" | "revoke">,
   ) {
     this.journal = new JournalService(db);
     this.auth = new AuthService(db, this.journal);
     this.setup = new SetupService(this.auth);
-    this.people = new PeopleService(db, this.journal);
-    this.routes = new RouteService(db, this.journal);
+    this.connections = new ConnectionService(db, this.journal);
+    this.rulesets = new RuleSetService(db, this.journal);
+    this.routes = new RouteService(db, this.journal, this.rulesets);
     this.traffic = new TrafficService(db, configuredCollectors(), this.journal);
     this.engines = new EngineRuntimeService(db);
-    this.deviceSync = new DeviceSyncService(db, this.people, deviceEngine ?? this.engines, this.journal);
+    this.connectionSync = new ConnectionSyncService(db, this.connections, connectionEngine ?? this.engines);
     this.engineConfigs = new EngineConfigService(db, this.journal);
-    this.operations = new OperationService(db, this.people, this.engines, this.journal, undefined, this.deviceSync);
+    this.operations = new OperationService(db, this.journal);
     this.system = new SystemService(db, this.journal);
     this.monitoring = new MonitoringService(db, this.journal);
     this.registerRoutes();
@@ -74,7 +78,7 @@ export class HttpApplication {
       if (endpoint) {
         const result = endpoint.pattern.exec(url);
         const params = Object.fromEntries(Object.entries(result?.pathname.groups ?? {}).map(([key, value]) => [key, value ?? ""]));
-        const owner = this.auth.authenticate(cookie(request, "matreshka_session"), request.headers.get("authorization") ?? undefined);
+        const owner = this.auth.authenticate(cookie(request, "outpost_session"), request.headers.get("authorization") ?? undefined);
         if (!endpoint.public && !owner) throw new ServiceError(401, "Сессия истекла — войдите снова");
         if (!endpoint.public && owner && "scopes" in owner && !authorized(request.method, url.pathname, owner.scopes)) {
           throw new ServiceError(403, "API token не имеет нужного scope");
@@ -118,12 +122,12 @@ export class HttpApplication {
       return sessionResponse(session);
     });
     this.post("/api/v1/auth/logout", false, (ctx) => {
-      this.auth.logout(cookie(ctx.request, "matreshka_session"));
+      this.auth.logout(cookie(ctx.request, "outpost_session"));
       return json({ ok: true }, 200, { "set-cookie": expiredSessionCookie() });
     });
     this.get("/api/v1/security", false, (ctx) => {
       ownerOnly(ctx);
-      return json(this.auth.security(cookie(ctx.request, "matreshka_session")));
+      return json(this.auth.security(cookie(ctx.request, "outpost_session")));
     });
     this.delete("/api/v1/passkeys/:id", false, (ctx) => {
       ownerOnly(ctx);
@@ -132,11 +136,11 @@ export class HttpApplication {
     });
     this.delete("/api/v1/sessions", false, (ctx) => {
       ownerOnly(ctx);
-      return json(this.auth.endOtherSessions(cookie(ctx.request, "matreshka_session"), actor(ctx)));
+      return json(this.auth.endOtherSessions(cookie(ctx.request, "outpost_session"), actor(ctx)));
     });
     this.delete("/api/v1/sessions/:id", false, (ctx) => {
       ownerOnly(ctx);
-      this.auth.revokeSession(ctx.params.id!, cookie(ctx.request, "matreshka_session"), actor(ctx));
+      this.auth.revokeSession(ctx.params.id!, cookie(ctx.request, "outpost_session"), actor(ctx));
       return empty();
     });
     this.get("/api/v1/me", false, (ctx) => json({ owner: ctx.owner }));
@@ -147,7 +151,7 @@ export class HttpApplication {
       ownerOnly(ctx);
       return json({
         auth: this.auth.state(),
-        people: this.people.list(),
+        connections: publicConnections(this.connections.list()),
         routes: this.routes.state(),
         traffic: this.traffic.overview(period(ctx.url.searchParams.get("period")), ctx.owner?.timezone),
         system: await this.system.state(),
@@ -158,36 +162,32 @@ export class HttpApplication {
       });
     });
 
-    this.get("/api/v1/people", false, () => json({ people: this.people.list() }));
-    this.post("/api/v1/people", false, async (ctx) => json(this.people.create(await ctx.json(), actor(ctx)), 201));
-    this.get("/api/v1/people/:id", false, (ctx) => json(this.people.get(ctx.params.id!)));
-    this.patch("/api/v1/people/:id", false, async (ctx) => json(this.people.update(ctx.params.id!, await ctx.json(), actor(ctx))));
-    this.delete("/api/v1/people/:id", false, (ctx) => {
-      this.people.archive(ctx.params.id!, actor(ctx));
-      return empty();
+    this.get("/api/v1/connections", false, () => json({ connections: publicConnections(this.connections.list()) }));
+    this.post("/api/v1/connections", false, async (ctx) => {
+      const created = this.connections.create(await ctx.json(), actor(ctx));
+      const state = await this.connectionSync.activate(created.id);
+      return json(await this.connectionResult(state), state.state === "ready" ? 201 : 202);
     });
-    this.post("/api/v1/people/:id/devices", false, async (ctx) => {
-      const created = this.people.createDevice(ctx.params.id!, await ctx.json(), actor(ctx));
-      return json(created, 201);
+    this.get("/api/v1/connections/:id", false, (ctx) => json(publicConnection(this.connections.get(ctx.params.id!))));
+    this.patch("/api/v1/connections/:id", false, async (ctx) => {
+      return json(publicConnection(this.connections.update(ctx.params.id!, await ctx.json(), actor(ctx))));
     });
-    this.patch("/api/v1/devices/:id", false, async (ctx) => json(this.people.updateDevice(ctx.params.id!, await ctx.json(), actor(ctx))));
-    this.post("/api/v1/devices/:id/invitations", false, (ctx) => json(this.people.createInvitation(ctx.params.id!), 201));
-    this.post("/api/v1/devices/:id/revoke", false, async (ctx) => {
-      return json(await this.deviceSync.revoke(ctx.params.id!, actor(ctx)));
+    this.delete("/api/v1/connections/:id", false, async (ctx) => {
+      ownerOnly(ctx);
+      return json(await this.connectionResult(await this.connectionSync.archive(ctx.params.id!, actor(ctx))), 202);
     });
-
-    this.get("/api/v1/invitations/:token", true, (ctx) => json(this.people.invitation(ctx.params.token!)));
-    this.post("/api/v1/invitations/:token/redeem", true, async (ctx) => {
-      const redeemed = await this.deviceSync.redeem(ctx.params.token!);
-      return redeemed.pending
-        ? json(redeemed, 202)
-        : json(await this.installationResult(redeemed));
+    this.get("/api/v1/connections/:id/subscription", false, async (ctx) => {
+      ownerOnly(ctx);
+      return json(await this.connectionResult(this.connectionSync.connection(ctx.params.id!)));
     });
-    this.get("/api/v1/redemptions/:token", true, async (ctx) => {
-      const redeemed = this.deviceSync.redemption(ctx.params.token!);
-      return redeemed.pending
-        ? json(redeemed, 202)
-        : json(await this.installationResult(redeemed));
+    this.post("/api/v1/connections/:id/retry", false, async (ctx) => {
+      const state = await this.connectionSync.retry(ctx.params.id!);
+      return json(await this.connectionResult(state), state.state === "ready" ? 200 : 202);
+    });
+    this.post("/api/v1/connections/:id/rotate", false, async (ctx) => {
+      ownerOnly(ctx);
+      const state = await this.connectionSync.rotate(ctx.params.id!, actor(ctx));
+      return json(await this.connectionResult(state), state.state === "ready" ? 200 : 202);
     });
 
     this.get("/api/v1/routes", false, () => json(this.routes.state()));
@@ -206,9 +206,20 @@ export class HttpApplication {
     });
     this.post("/api/v1/routes/discard", false, (ctx) => json(this.routes.discard(actor(ctx))));
     this.post("/api/v1/routes/rollback/:version", false, (ctx) => json(this.routes.rollback(Number(ctx.params.version), actor(ctx))));
+    this.get("/api/v1/rulesets", false, (ctx) => {
+      ownerOnly(ctx);
+      return json(this.rulesets.state());
+    });
+    this.post("/api/v1/rulesets/refresh", false, async (ctx) => {
+      ownerOnly(ctx);
+      return json(await this.rulesets.refresh(true));
+    });
 
     this.get("/api/v1/traffic", false, (ctx) => json(this.traffic.overview(period(ctx.url.searchParams.get("period")), ctx.owner?.timezone)));
-    this.get("/api/v1/system", false, async () => json(await this.system.state()));
+    this.get("/api/v1/system", false, async () => {
+      await this.monitoring.refreshServices();
+      return json(await this.system.state());
+    });
     this.get("/api/v1/system/events", false, (ctx) => {
       const scope = journalScope(ctx.url.searchParams.get("scope"));
       const category = journalCategories(ctx.url.searchParams.get("category"));
@@ -270,37 +281,62 @@ export class HttpApplication {
 
     this.post("/internal/hysteria/auth", true, async (ctx) => {
       const body = await ctx.json<{ auth?: string }>();
-      return json(this.people.authenticateHysteria(body.auth ?? ""));
+      return json(this.connections.authenticateHysteria(body.auth ?? ""));
     });
 
-    this.get("/subscriptions/:client/:token", true, (ctx) => this.subscription(ctx.params.client!, ctx.params.token!));
-    this.get("/routes/:token.json", true, (ctx) => this.clientRoutes(ctx.params.token!));
+    this.get("/s/:token/routes", true, (ctx) => this.linkRoutes(ctx.params.token!));
+    this.get("/s/:token", true, (ctx) => this.subscription(ctx));
+    this.get("/rulesets/:family/:code", true, (ctx) => this.ruleSet(ctx));
   }
 
-  private subscription(clientId: string, token: string) {
-    const adapter = clients[clientId as keyof typeof clients];
-    if (!adapter) throw new ServiceError(404, "Формат клиента не поддерживается");
-    const device = this.people.bySubscriptionToken(token);
-    const credentials = this.people.credentials(device.id);
-    const rendered = adapter.renderSubscription({
-      device,
+  private subscription(ctx: RequestContext) {
+    const token = ctx.params.token!;
+    const connection = this.connections.bySubscriptionToken(token);
+    const format = subscriptionFormat(ctx.request, ctx.url.searchParams.get("format"));
+    if (!format) {
+      const baseUrl = `${config.origin}/s/${token}`;
+      const platform = detectPlatform(ctx.request.headers.get("user-agent") ?? "");
+      return new Response(renderCatalogPage(connection, baseUrl, platform), {
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "private, no-store" },
+      });
+    }
+    const credentials = this.connections.credentials(connection.id);
+    const rendered = renderers[format].render({
+      connection,
       credentials,
       routes: this.routes.published(),
       subscriptionToken: token,
       engineOrder: this.system.engineOrder(),
+      clientPlatform: detectPlatform(ctx.request.headers.get("user-agent") ?? ""),
     });
-    this.people.markProfileFetched(device.id);
+    this.connections.markFetched(connection.id, format);
     return new Response(rendered.body, { headers: { "content-type": rendered.contentType, ...rendered.headers } });
   }
 
-  private clientRoutes(token: string) {
-    const device = this.people.bySubscriptionToken(token);
-    const adapter = clients[device.client];
-    const rendered = adapter.renderRoutes(this.routes.published());
+  private linkRoutes(token: string) {
+    this.connections.bySubscriptionToken(token);
+    const rendered = renderLinkRoutes(this.routes.published());
     const version = this.db.setting("active_route_version", 0);
-    this.people.markRoutesFetched(device.id, version);
     return new Response(rendered.body, {
-      headers: { "content-type": rendered.contentType, "cache-control": "private, no-cache", "x-routes-version": String(version) },
+      headers: { "content-type": rendered.contentType, "cache-control": "private, no-store", "x-routes-version": String(version) },
+    });
+  }
+
+  private ruleSet(ctx: RequestContext) {
+    const result = this.rulesets.file(ctx.params.family!, ctx.params.code!);
+    if (ctx.request.headers.get("if-none-match") === result.etag) {
+      return new Response(null, {
+        status: 304,
+        headers: { etag: result.etag, "cache-control": "public, max-age=86400, stale-if-error=604800" },
+      });
+    }
+    return new Response(result.file, {
+      headers: {
+        "content-type": "application/octet-stream",
+        "cache-control": "public, max-age=86400, stale-if-error=604800",
+        etag: result.etag,
+        "x-ruleset-version": result.version,
+      },
     });
   }
 
@@ -323,7 +359,7 @@ export class HttpApplication {
   }
 
   private backupDownload(name: string) {
-    if (!/^matreshka-[0-9a-f-]+\.(age|tar)$/.test(name)) throw new ServiceError(404, "Резервная копия не найдена");
+    if (!/^outpost-[0-9a-f-]+\.(age|tar)$/.test(name)) throw new ServiceError(404, "Резервная копия не найдена");
     const path = `${config.dataDir}/backups/${name}`;
     const file = Bun.file(path);
     if (!file.size) throw new ServiceError(404, "Резервная копия не найдена");
@@ -338,7 +374,6 @@ export class HttpApplication {
 
   private async staticResponse(url: URL) {
     if (url.pathname === "/") return coverPage();
-    if (url.pathname.startsWith("/invite/")) return fileResponse(`${config.webRoot}/index.html`);
     if (url.pathname === config.adminPath) return Response.redirect(`${config.origin}${config.adminPath}/`, 302);
     if (url.pathname.startsWith(`${config.adminPath}/`)) return fileResponse(`${config.webRoot}/index.html`);
     const safePath = decodeURIComponent(url.pathname).replace(/^\/+/, "");
@@ -348,22 +383,26 @@ export class HttpApplication {
     return new Response("Not found", { status: 404 });
   }
 
-  private async installationResult(result: {
-    device: ReturnType<PeopleService["device"]>;
-    subscriptionUrl: string;
-    expiresAt: string;
-    redemptionToken?: string;
-  }) {
-    const adapter = clients[result.device.client];
-    const deepLink = adapter.renderDeepLink(result.subscriptionUrl);
-    const qrDataUrl = await QRCode.toDataURL(deepLink, { margin: 1, width: 320, errorCorrectionLevel: "M" });
-    return { ...result, deepLink, qrDataUrl, instructions: adapter.installationInstructions() };
+  private async connectionResult(result: ReturnType<ConnectionSyncService["connection"]>) {
+    if (!result.subscription) return { ...result, connection: publicConnection(result.connection), catalogVersion, applications: [] };
+    const qrDataUrl = await QRCode.toDataURL(result.subscription.url, { margin: 1, width: 320, errorCorrectionLevel: "M" });
+    const formats = Object.fromEntries(await Promise.all(
+      Object.entries(result.subscription.formats).map(async ([format, url]) => [
+        format,
+        { url, qrDataUrl: await QRCode.toDataURL(url, { margin: 1, width: 320, errorCorrectionLevel: "M" }) },
+      ]),
+    ));
+    return {
+      ...result,
+      connection: publicConnection(result.connection),
+      subscription: { ...result.subscription, qrDataUrl, formats },
+      catalogVersion,
+      applications: catalog(result.subscription.url),
+    };
   }
 
   private activeCredentials() {
-    return this.people.list().flatMap((person) => person.devices)
-      .filter((device) => device.status === "active")
-      .map((device) => this.people.credentials(device.id));
+    return this.connections.activeCredentials();
   }
 
   private route(method: string, path: string, isPublic: boolean, handler: Handler) {
@@ -374,6 +413,15 @@ export class HttpApplication {
   private post(path: string, isPublic: boolean, handler: Handler) { this.route("POST", path, isPublic, handler); }
   private patch(path: string, isPublic: boolean, handler: Handler) { this.route("PATCH", path, isPublic, handler); }
   private delete(path: string, isPublic: boolean, handler: Handler) { this.route("DELETE", path, isPublic, handler); }
+}
+
+function publicConnection<T extends { presence?: { status?: unknown } }>(connection: T) {
+  const { presence, ...visible } = connection;
+  return { ...visible, presence: presence?.status ?? "unknown" };
+}
+
+function publicConnections<T extends { presence?: { status?: unknown } }>(connections: T[]) {
+  return connections.map(publicConnection);
 }
 
 function json(value: unknown, status = 200, headers?: HeadersInit) {
@@ -421,11 +469,11 @@ function sessionResponse(session: { token: string; expiresAt: string }) {
 
 function sessionCookie(token: string, expiresAt: string) {
   const secure = config.origin.startsWith("https://") ? "; Secure" : "";
-  return `matreshka_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Expires=${new Date(expiresAt).toUTCString()}${secure}`;
+  return `outpost_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Expires=${new Date(expiresAt).toUTCString()}${secure}`;
 }
 
 function expiredSessionCookie() {
-  return "matreshka_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0";
+  return "outpost_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0";
 }
 
 function canonicalDemoUrl(request: Request, url: URL) {
@@ -449,8 +497,9 @@ function authorized(method: string, path: string, scopes: string[]) {
   const required = path === "/api/v1/status" ? "status:read"
     : path === "/api/v1/dashboard" ? "owner:session"
     : path.startsWith("/api/v1/me") ? `settings:${read ? "read" : "write"}`
-    : path.startsWith("/api/v1/people") || path.startsWith("/api/v1/devices") ? `people:${read ? "read" : "write"}`
+    : path.startsWith("/api/v1/connections") ? `connections:${read ? "read" : "write"}`
       : path.startsWith("/api/v1/routes") ? `routes:${read ? "read" : "write"}`
+        : path.startsWith("/api/v1/rulesets") ? `routes:${read ? "read" : "write"}`
         : path.startsWith("/api/v1/traffic") ? "traffic:read"
           : path.startsWith("/api/v1/backups") ? "backups:read"
           : path.startsWith("/api/v1/operations") ? `operations:${read ? "read" : "write"}`
@@ -473,7 +522,7 @@ function journalScope(value: string | null): JournalScope {
 }
 
 function journalCategories(value: string | null): JournalCategory[] | undefined {
-  const categories: JournalCategory[] = ["people", "routes", "engines", "maintenance", "security", "system"];
+  const categories: JournalCategory[] = ["connections", "routes", "engines", "maintenance", "security", "system"];
   const selected = (value ?? "").split(",").filter((item) => categories.includes(item as JournalCategory)) as JournalCategory[];
   return selected.length ? [...new Set(selected)] : undefined;
 }
@@ -482,6 +531,21 @@ function optionalPositiveInteger(value: string | null) {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function subscriptionFormat(request: Request, requested: string | null): SubscriptionFormat | null {
+  const formats: SubscriptionFormat[] = ["mihomo", "sing-box", "xray", "xray-json", "links"];
+  if (requested) {
+    if (!formats.includes(requested as SubscriptionFormat)) throw new ServiceError(404, "Формат подписки не поддерживается");
+    return requested as SubscriptionFormat;
+  }
+  const agent = (request.headers.get("user-agent") ?? "").toLowerCase();
+  if (/mihomo|clash|everywhere|flclash/.test(agent)) return "mihomo";
+  if (/sing-box|singbox|sfa|sfi|sfm/.test(agent)) return "sing-box";
+  if (/incy/.test(agent)) return "links";
+  if (/xray|v2ray|happ|foxray|streisand/.test(agent)) return "xray";
+  if ((request.headers.get("accept") ?? "").includes("text/html")) return null;
+  return "xray";
 }
 
 function engineName(value: string) {

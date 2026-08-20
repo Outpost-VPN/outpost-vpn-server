@@ -7,7 +7,7 @@ import { defaultRoutes, migrations } from "./schema";
 
 export type SqlValue = string | number | bigint | boolean | Uint8Array | null;
 
-export class MatreshkaDatabase {
+export class OutpostDatabase {
   readonly raw: Database;
 
   constructor(path = config.databasePath) {
@@ -55,8 +55,9 @@ export class MatreshkaDatabase {
       })();
     }
     this.setDefault("active_route_version", 0);
+    this.publishInitialRoutes();
     this.setDefault("interface", { language: "ru", compact: false });
-    this.setDefault("system", { timezone: "Europe/Moscow", updateChannel: "stable" });
+    this.setDefault("system", { timezone: "UTC", updateChannel: "stable" });
     this.setDefault("engine_order", ["hysteria", "xray"]);
     this.raw.query(`
       INSERT OR IGNORE INTO engine_versions (engine, installed_version, desired_version, checksum, updated_at)
@@ -65,7 +66,46 @@ export class MatreshkaDatabase {
     this.raw.query(`
       INSERT OR IGNORE INTO engine_versions (engine, installed_version, desired_version, checksum, updated_at)
       VALUES (?, ?, ?, ?, ?)
-    `).run("xray", "26.3.27", "26.3.27", "23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae", now());
+    `).run("xray", "26.7.28", "26.7.28", "8195d909f1109b8f3d99eefe401a3c451d7bf4af71f24d3815420f77e5dd2a40", now());
+  }
+
+  private publishInitialRoutes() {
+    const active = this.setting<number>("active_route_version", 0);
+    const revisions = this.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM route_revisions").get()?.count ?? 0;
+    if (active !== 0 || revisions !== 0) return;
+
+    const rules = this.raw.query<{
+      id: string;
+      position: number;
+      action: string;
+      matcher: string;
+      value: string;
+      source: string;
+      locked: number;
+      enabled: number;
+      created_at: string;
+      updated_at: string;
+    }, []>("SELECT * FROM route_drafts ORDER BY position").all();
+    const defaults = rules.length === defaultRoutes.length && rules.every((rule, position) => {
+      const expected = defaultRoutes[position];
+      return expected
+        && rule.action === expected.action
+        && rule.matcher === expected.matcher
+        && rule.value === expected.value
+        && rule.source === expected.source
+        && Boolean(rule.locked) === expected.locked
+        && Boolean(rule.enabled);
+    });
+    if (!defaults) return;
+
+    const timestamp = now();
+    this.raw.transaction(() => {
+      this.raw.query(`
+        INSERT INTO route_revisions (id, version, rules_json, note, created_at, actor)
+        VALUES (?, 1, ?, ?, ?, 'system')
+      `).run(crypto.randomUUID(), JSON.stringify(rules), "Базовые правила", timestamp);
+      this.setSetting("active_route_version", 1);
+    })();
   }
 
   setting<T>(key: string, fallback: T): T {

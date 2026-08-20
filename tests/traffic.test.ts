@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { PeopleService } from "../src/server/services/people";
+import { ConnectionService } from "../src/server/services/connections";
 import { TrafficService, parseXrayStats, periodStart } from "../src/server/services/traffic";
 import { database } from "./helpers";
 
@@ -8,24 +8,31 @@ describe("traffic accounting", () => {
   beforeEach(() => { fixture = database(); });
   afterEach(() => fixture.close());
 
-  test("computes deltas and handles engine counter resets", () => {
-    const people = new PeopleService(fixture.db);
-    const person = people.create({ name: "Тест" });
-    const created = people.createDevice(person.id, { name: "iPhone", platform: "ios", client: "incy" });
+  test("computes connection deltas and handles engine counter resets", () => {
+    const connections = new ConnectionService(fixture.db);
+    const connection = connections.create({ name: "Тест" });
     const service = new TrafficService(fixture.db);
     const date = new Date("2026-08-13T10:00:00Z");
-    service.recordCumulative("hysteria", { deviceId: created.device.id, upload: 100, download: 500 }, date);
-    service.recordCumulative("hysteria", { deviceId: created.device.id, upload: 180, download: 900 }, date);
-    service.recordCumulative("hysteria", { deviceId: created.device.id, upload: 20, download: 30 }, date);
-    expect(service.overview("all").totals).toEqual({ upload: 200, download: 930 });
+    service.recordCumulative("hysteria", { connectionId: connection.id, upload: 100, download: 500 }, date);
+    service.recordCumulative("hysteria", { connectionId: connection.id, upload: 180, download: 900 }, date);
+    service.recordCumulative("hysteria", { connectionId: connection.id, upload: 20, download: 30 }, date);
+    const overview = service.overview("all");
+    expect(overview.totals).toEqual({ upload: 200, download: 930 });
+    expect(overview.connections[0]).toMatchObject({ connection_id: connection.id, upload: 200, download: 930 });
+    expect(overview.connections[0]!.series).toHaveLength(1);
+    expect(overview).not.toHaveProperty("people");
+    expect(fixture.db.raw.query("SELECT connection_id, engine FROM traffic_samples LIMIT 1").get()).toEqual({
+      connection_id: connection.id,
+      engine: "hysteria",
+    });
   });
 
   test("parses Xray user counters", () => {
     const stats = parseXrayStats(JSON.stringify({ stat: [
-      { name: "user>>>device@matreshka.local>>>traffic>>>uplink", value: "123" },
-      { name: "user>>>device@matreshka.local>>>traffic>>>downlink", value: 456 },
+      { name: "user>>>connection.1@outpost.local>>>traffic>>>uplink", value: "123" },
+      { name: "user>>>connection.1@outpost.local>>>traffic>>>downlink", value: 456 },
     ] }));
-    expect(stats.get("user>>>device@matreshka.local>>>traffic>>>uplink")).toBe(123);
+    expect(stats.get("user>>>connection.1@outpost.local>>>traffic>>>uplink")).toBe(123);
   });
 
   test("uses the owner timezone for calendar periods", () => {

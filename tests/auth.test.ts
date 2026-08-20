@@ -11,8 +11,8 @@ describe("owner security", () => {
     fixture = database();
     auth = new AuthService(fixture.db);
     const created = new Date().toISOString();
-    fixture.db.raw.query("INSERT INTO owners (id, name, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-      .run("owner", "Федор", "Europe/Moscow", created, created);
+    fixture.db.raw.query("INSERT INTO owners (id, timezone, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run("owner", "Europe/Moscow", created, created);
     for (const id of ["passkey-1", "passkey-2"]) {
       fixture.db.raw.query(`
         INSERT INTO passkeys (id, owner_id, public_key, counter, transports_json, device_type, backed_up, created_at)
@@ -80,15 +80,18 @@ describe("WebAuthn challenge storage", () => {
         VALUES ('expired', 'registration', 'expired', '{}', ?, ?)
       `).run(new Date(Date.now() - 1_000).toISOString(), new Date(Date.now() - 2_000).toISOString());
 
-      await auth.registrationOptions({ name: "Федор", timezone: "Europe/Moscow", bootstrapToken });
+      const start = await auth.registrationOptions({ timezone: "Europe/Moscow", bootstrapToken });
 
       const rows = fixture.db.raw.query<{ id: string; context_json: string }, []>(
         "SELECT id, context_json FROM webauthn_challenges",
       ).all();
       expect(rows.some((row) => row.id === "expired")).toBeFalse();
       expect(JSON.stringify(rows)).not.toContain(bootstrapToken);
-      expect(JSON.parse(rows[0]!.context_json)).toMatchObject({ name: "Федор", timezone: "Europe/Moscow" });
-      expect(JSON.parse(rows[0]!.context_json).bootstrapHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(start.options.user).toMatchObject({ name: "owner", displayName: "Владелец" });
+      const context = JSON.parse(rows[0]!.context_json);
+      expect(context).toMatchObject({ timezone: "Europe/Moscow" });
+      expect(context).not.toHaveProperty("name");
+      expect(context.bootstrapHash).toMatch(/^[0-9a-f]{64}$/);
     } finally {
       fixture.close();
     }

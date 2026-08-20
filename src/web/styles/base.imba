@@ -11,20 +11,23 @@ global css html
 	$orange: #E97400
 	$orange-soft: #FFF8F1
 	$red: #D92D20
-	--matreshka-brand: $blue
-	--matreshka-brand-dark: $blue-dark
-	--matreshka-navy: $navy
-	--matreshka-text: $text
-	--matreshka-muted: $muted
-	--matreshka-line: $line
-	--matreshka-soft: $soft
-	--matreshka-section: $soft
-	--matreshka-success: $green
-	--matreshka-success-soft: $green-soft
-	--matreshka-warning: $orange
-	--matreshka-auth-start: blue1
-	--matreshka-auth-end: blue2
-	--matreshka-white: hsl(0deg, 0%, 100%)
+	--outpost-brand: $blue
+	--outpost-brand-dark: $blue-dark
+	--outpost-brand-soft: blue0
+	--outpost-navy: $navy
+	--outpost-text: $text
+	--outpost-muted: $muted
+	--outpost-line: $line
+	--outpost-soft: $soft
+	--outpost-section: $soft
+	--outpost-success: $green
+	--outpost-success-soft: $green-soft
+	--outpost-warning: $orange
+	--outpost-warning-soft: $orange-soft
+	--outpost-danger: $red
+	--outpost-auth-start: blue1
+	--outpost-auth-end: blue2
+	--outpost-white: hsl(0deg, 0%, 100%)
 
 	box-sizing: border-box
 	min-height: 100%
@@ -56,7 +59,7 @@ global css html
 		color: inherit
 		text-decoration: none
 
-	.matreshka-button
+	.outpost-button
 		height: 48px
 		display: inline-flex
 		align-items: center
@@ -66,7 +69,7 @@ global css html
 		border: 1px solid transparent
 		border-radius: 10px
 		background: $blue
-		color: var(--matreshka-white)
+		color: var(--outpost-white)
 		font-size: 16px
 		font-weight: 650
 		transition: .18s ease
@@ -95,7 +98,7 @@ global css html
 
 		&.header-action
 			margin-top: 22px
-			> matreshka-icon
+			> outpost-icon
 				transform: translateY(1px)
 			> span
 				line-height: 1
@@ -104,7 +107,7 @@ global css html
 				padding: 0
 				span display: none
 
-	.matreshka-field
+	.outpost-field
 		display: grid
 		gap: 8px
 		color: $muted
@@ -122,12 +125,26 @@ global css html
 			color: $text
 			@focus border-color: $blue
 
-	.matreshka-card
+	.outpost-card
 		border: 1px solid $line
 		border-radius: 14px
 		background: #fff
 
-	.matreshka-status
+	.outpost-inline-note
+		display: grid
+		grid-template-columns: 18px minmax(0, 1fr)
+		align-items: center
+		gap: 10px
+
+		> i
+			width: 18px
+			height: 18px
+			display: grid
+			place-items: center
+			line-height: 1
+			transform: translateY(1px)
+
+	.outpost-status
 		display: inline-flex
 		align-items: center
 		gap: 8px
@@ -144,7 +161,7 @@ global css html
 		&.pending color: $orange
 		&.revoked color: $muted
 
-	.matreshka-modal-backdrop
+	.outpost-modal-backdrop
 		pos: fixed
 		inset: 0
 		z-index: 210
@@ -154,111 +171,114 @@ global css html
 		background: black/28
 		backdrop-filter: blur(5px)
 
-	.matreshka-modal
+		&.animated
+			opacity: 0
+			transition: opacity 180ms ease-out
+
+			.outpost-modal
+				transform: translateY(12px) scale(.985)
+				transition: transform 220ms cubic-bezier(.22,1,.36,1)
+
+			&.visible
+				opacity: 1
+				.outpost-modal transform: none
+
+	.outpost-modal
 		width: min(520px, 100%)
 		max-height: calc(100vh - 48px)
-		overflow: auto
-		padding: 28px
+		display: flex
+		flex-direction: column
+		overflow: hidden
+		padding: 0
 		border-radius: 16px
-		background: var(--matreshka-white)
+		background: var(--outpost-white)
+		color: $text
 		box-shadow: 0 24px 80px black/18
 
-		h2 font-size: 24px
-		> p
-			margin-top: 8px
+		.outpost-modal-header
+			display: grid
+			grid-template-columns: 46px minmax(0, 1fr) 36px
+			align-items: center
+			gap: 13px
+			padding: 20px 22px
+			background: color-mix(in srgb,var(--outpost-brand) 7%,white)
+
+			h2
+				font-size: 23px
+				line-height: 1.2
+
+			p
+				margin-top: 2px
+				color: $muted
+				font-size: 12px
+				line-height: 1.35
+
+		.outpost-modal-mark
+			width: 46px
+			height: 46px
+			display: grid
+			place-items: center
+			border-radius: 13px
+			background: $blue
+			color: white
+			font-size: 22px
+			box-shadow: 0 8px 22px blue6/18
+
+			&.success
+				background: $green
+				box-shadow: 0 8px 22px green6/18
+
+			&.danger
+				background: $red
+				box-shadow: 0 8px 22px red6/18
+
+		.outpost-modal-close
+			width: 36px
+			height: 36px
+			display: grid
+			place-items: center
+			padding: 0
+			border: 0
+			border-radius: 9px
+			outline: none
+			background: transparent
 			color: $muted
-			line-height: 1.5
+			font-size: 18px
+			@hover
+				background: var(--outpost-white)
+				color: $blue
+			@focus-visible color: $blue
+
+		.outpost-modal-body
+			min-height: 0
+			overflow-y: auto
+			padding: 24px 28px 26px
+			background: var(--outpost-white)
+
+			> p
+				color: $muted
+				font-size: 14px
+				line-height: 1.5
 
 		.modal-form
 			display: grid
 			gap: 18px
-			margin-top: 24px
+			margin-top: 0
 
 		.modal-actions
 			display: flex
 			justify-content: flex-end
 			gap: 10px
-			margin-top: 24px
 
-	.matreshka-drawer-backdrop
-		position: fixed
-		inset: 0
-		z-index: 210
-		overflow: hidden
-
-		.matreshka-drawer-shade
-			position: absolute
-			inset: 0
-			background: black/24
-			backdrop-filter: blur(5px)
-			opacity: 0
-			transition: opacity 220ms ease-out
-
-		.matreshka-drawer
-			position: absolute
-			top: 0
-			right: 0
-			bottom: 0
-			width: min(520px, 100%)
-			display: flex
-			flex-direction: column
-			overflow: auto
-			padding: 34px 38px 30px
-			background: var(--matreshka-white)
-			color: $text
-			box-shadow: -1px 0 0 $line, -24px 0 70px black/10
-			transform: translateX(102%)
-			transition: transform 360ms cubic-bezier(.22,1,.36,1)
-
-		&.visible
-			.matreshka-drawer-shade opacity: 1
-			.matreshka-drawer transform: translateX(0)
-
-		.matreshka-drawer-header
-			display: flex
-			align-items: flex-start
-			justify-content: space-between
-			gap: 24px
-
-			.eyebrow
-				display: block
-				margin-bottom: 10px
-				color: $blue
-				font-size: 11px
-				font-weight: 750
-				letter-spacing: .1em
-
-			h2
-				color: #071127
-				font-size: 29px
-
-		.matreshka-drawer-close
-			width: 40px
-			height: 40px
-			display: grid
-			place-items: center
-			flex: 0 0 40px
-			border: 0
-			border-radius: 10px
-			background: #F4F7FB
-			color: #5F6C84
-
-			@hover
-				background: #EAF1FC
-				color: $blue
-
-		.matreshka-drawer-footer
-			display: flex
-			justify-content: flex-end
-			gap: 10px
-			margin-top: auto
-			padding-top: 34px
+		.outpost-modal-footer
+			padding: 16px 22px
+			background: color-mix(in srgb,var(--outpost-brand) 7%,white)
 
 	@media(prefers-reduced-motion: reduce)
-		.matreshka-drawer-backdrop
-			.matreshka-drawer-shade, .matreshka-drawer transition: none
+		.outpost-modal-backdrop.animated, .outpost-modal-backdrop.animated .outpost-modal
+			transition: none
 
-	.matreshka-error
+	.outpost-error
 		padding: 12px 14px
 		border: 1px solid #F8C8C4
 		border-radius: 10px
@@ -267,28 +287,26 @@ global css html
 		font-size: 14px
 
 	@media(max-width: 760px)
-		.matreshka-modal-backdrop
+		.outpost-modal-backdrop
 			align-items: end
 			padding: 0
-		.matreshka-modal
+		.outpost-modal
 			width: 100%
-			max-height: 88vh
+			max-height: 92vh
 			border-radius: 18px 18px 0 0
 
-		.matreshka-drawer-backdrop
-			.matreshka-drawer
-				width: 100%
-				padding: 25px 20px calc(22px + env(safe-area-inset-bottom))
-			.matreshka-drawer-header h2 font-size: 25px
-			.matreshka-drawer-footer .matreshka-button
-				flex: 1
-				padding: 0 12px
+			.outpost-modal-header
+				grid-template-columns: 42px minmax(0, 1fr) 36px
+				gap: 11px
+				padding: 18px 20px
+				h2 font-size: 21px
 
-			.matreshka-drawer.person-drawer .person-form .person-avatar-grid
-				@important height: 178px
-				@important grid-template-columns: repeat(5, 48px)
-				@important grid-auto-rows: 48px
+			.outpost-modal-mark
+				width: 42px
+				height: 42px
 
-				button, img
-					@important width: 48px
-					@important height: 48px
+			.outpost-modal-body padding: 22px 20px
+			.outpost-modal-footer
+				padding: 16px 20px calc(16px + env(safe-area-inset-bottom))
+				.modal-actions flex-wrap: wrap
+				.outpost-button padding: 0 14px

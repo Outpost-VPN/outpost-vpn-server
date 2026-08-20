@@ -5,7 +5,7 @@ release_archive=${1:-}
 release_signature=${2:-"${release_archive}.minisig"}
 release_public_key="RWQIi2TPWGnwEuL3XnEdwUYwcd194z3YYWM3sDdZNMhfEPf5xsFAk1FY"
 certbot=/snap/bin/certbot
-acme_webroot=/var/www/matreshka-acme
+acme_webroot=/var/www/outpost-acme
 release_tmp=
 version=
 public_ip=
@@ -13,20 +13,20 @@ rollback_armed=0
 ufw_was_active=0
 
 rollback_install() {
-  echo "Installation failed; rolling back Matreshka files and services" >&2
-  systemctl disable --now matreshka matreshka-agent xray hysteria-server >/dev/null 2>&1 || true
+  echo "Installation failed; rolling back Outpost files and services" >&2
+  systemctl disable --now outpost outpost-agent xray hysteria-server >/dev/null 2>&1 || true
   if test -n "$public_ip" && test -x "$certbot"; then
     "$certbot" delete --non-interactive --cert-name "$public_ip" >/dev/null 2>&1 || true
   fi
   systemctl stop nginx >/dev/null 2>&1 || true
-  rm -f /etc/nginx/sites-enabled/matreshka /etc/nginx/sites-available/matreshka
+  rm -f /etc/nginx/sites-enabled/outpost /etc/nginx/sites-available/outpost
   if test -f /etc/nginx/sites-available/default; then
     ln -sfn /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
   fi
-  rm -f /etc/letsencrypt/renewal-hooks/deploy/matreshka /usr/local/bin/matreshkactl
-  rm -f /etc/systemd/system/matreshka.service /etc/systemd/system/matreshka-agent.service
+  rm -f /etc/letsencrypt/renewal-hooks/deploy/outpost /usr/local/bin/outpostctl
+  rm -f /etc/systemd/system/outpost.service /etc/systemd/system/outpost-agent.service
   rm -f /etc/systemd/system/xray.service /etc/systemd/system/hysteria-server.service
-  rm -rf /opt/matreshka /etc/matreshka /var/lib/matreshka "$acme_webroot"
+  rm -rf /opt/outpost /etc/outpost /var/lib/outpost "$acme_webroot"
   if test "$ufw_was_active" -eq 0; then
     ufw --force disable >/dev/null 2>&1 || true
   fi
@@ -69,8 +69,8 @@ public_ip=$(curl -4fsS --max-time 10 https://api.ipify.org)
 if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -Fx "Status: active" >/dev/null; then
   ufw_was_active=1
 fi
-if test -e /opt/matreshka/current || test -e /etc/matreshka/matreshka.env; then
-  echo "An existing Matreshka installation was found" >&2
+if test -e /opt/outpost/current || test -e /etc/outpost/outpost.env; then
+  echo "An existing Outpost installation was found" >&2
   exit 1
 fi
 rollback_armed=1
@@ -94,69 +94,71 @@ minisign -Vm "$release_archive" -x "$release_signature" -P "$release_public_key"
 
 release_tmp=$(mktemp -d)
 tar -xzf "$release_archive" -C "$release_tmp"
-release_dir=$(find "$release_tmp" -mindepth 1 -maxdepth 1 -type d -name 'matreshka-*' -print -quit)
+release_dir=$(find "$release_tmp" -mindepth 1 -maxdepth 1 -type d -name 'outpost-*' -print -quit)
 if test -z "$release_dir" || ! test -f "$release_dir/manifest.json"; then
   echo "Invalid release archive" >&2
   exit 1
 fi
 version=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$release_dir/manifest.json")
-if test -z "$version" || test "$(basename "$release_dir")" != "matreshka-$version"; then
+if test -z "$version" || test "$(basename "$release_dir")" != "outpost-$version"; then
   echo "Invalid release manifest" >&2
   exit 1
 fi
 (cd "$release_dir" && sha256sum -c SHA256SUMS)
 
-id matreshka >/dev/null 2>&1 || useradd --system --home /var/lib/matreshka --shell /usr/sbin/nologin matreshka
-install -d -o root -g root -m 0755 /opt/matreshka/releases /opt/matreshka/engines
-install -d -o matreshka -g matreshka -m 0700 /var/lib/matreshka /var/lib/matreshka/incoming /var/lib/matreshka/runtime
+id outpost >/dev/null 2>&1 || useradd --system --home /var/lib/outpost --shell /usr/sbin/nologin outpost
+install -d -o root -g root -m 0755 /opt/outpost/releases /opt/outpost/engines
+install -d -o outpost -g outpost -m 0700 /var/lib/outpost /var/lib/outpost/incoming /var/lib/outpost/runtime
 install -d -o root -g root -m 0755 "$acme_webroot"
-install -d -o root -g matreshka -m 0750 /etc/matreshka /etc/matreshka/engines
+install -d -o root -g outpost -m 0750 /etc/outpost /etc/outpost/engines
 
-test ! -e "/opt/matreshka/releases/$version" || { echo "Release $version already exists" >&2; exit 1; }
-cp -a "$release_dir" "/opt/matreshka/releases/$version"
-ln -sfn "/opt/matreshka/releases/$version" /opt/matreshka/current
+test ! -e "/opt/outpost/releases/$version" || { echo "Release $version already exists" >&2; exit 1; }
+cp -a "$release_dir" "/opt/outpost/releases/$version"
+ln -sfn "/opt/outpost/releases/$version" /opt/outpost/current
 
 xhttp_path="/$(openssl rand -hex 18)"
+grpc_service="$(openssl rand -hex 18)"
 stats_secret=$(openssl rand -hex 24)
 admin_path=/admin
 
 sed -e "s|__DOMAIN__|$public_ip|g" -e "s|__STATS_SECRET__|$stats_secret|g" \
-  /opt/matreshka/current/infra/config/hysteria.yaml.template >/etc/matreshka/engines/hysteria.yaml
-sed -e "s|__XHTTP_PATH__|$xhttp_path|g" \
-  /opt/matreshka/current/infra/config/xray.json.template >/etc/matreshka/engines/xray.json
-cat >/etc/matreshka/matreshka.env <<ENV
+  /opt/outpost/current/infra/config/hysteria.yaml.template >/etc/outpost/engines/hysteria.yaml
+sed -e "s|__XHTTP_PATH__|$xhttp_path|g" -e "s|__GRPC_SERVICE__|$grpc_service|g" \
+  /opt/outpost/current/infra/config/xray.json.template >/etc/outpost/engines/xray.json
+cat >/etc/outpost/outpost.env <<ENV
 NODE_ENV=production
-MATRESHKA_VERSION=$version
-MATRESHKA_SETUP=1
-MATRESHKA_PUBLIC_IP=$public_ip
-MATRESHKA_DOMAIN=$public_ip
-MATRESHKA_RP_ID=$public_ip
-MATRESHKA_ORIGIN=https://$public_ip
-MATRESHKA_ADMIN_PATH=$admin_path
-MATRESHKA_XHTTP_PATH=$xhttp_path
-MATRESHKA_LISTEN=127.0.0.1:8181
-MATRESHKA_DATA_DIR=/var/lib/matreshka
-MATRESHKA_CONFIG_DIR=/etc/matreshka
-MATRESHKA_WEB_ROOT=/opt/matreshka/current/public
-MATRESHKA_HYSTERIA_STATS_URL=http://127.0.0.1:9999
-MATRESHKA_HYSTERIA_STATS_SECRET=$stats_secret
-MATRESHKA_XRAY_BINARY=/opt/matreshka/engines/xray/current/xray
-MATRESHKA_XRAY_API=127.0.0.1:10085
+OUTPOST_VERSION=$version
+OUTPOST_SETUP=1
+OUTPOST_PUBLIC_IP=$public_ip
+OUTPOST_DOMAIN=$public_ip
+OUTPOST_RP_ID=$public_ip
+OUTPOST_ORIGIN=https://$public_ip
+OUTPOST_ADMIN_PATH=$admin_path
+OUTPOST_XHTTP_PATH=$xhttp_path
+OUTPOST_GRPC_SERVICE=$grpc_service
+OUTPOST_LISTEN=127.0.0.1:8181
+OUTPOST_DATA_DIR=/var/lib/outpost
+OUTPOST_CONFIG_DIR=/etc/outpost
+OUTPOST_WEB_ROOT=/opt/outpost/current/public
+OUTPOST_HYSTERIA_STATS_URL=http://127.0.0.1:9999
+OUTPOST_HYSTERIA_STATS_SECRET=$stats_secret
+OUTPOST_XRAY_BINARY=/opt/outpost/engines/xray/current/xray
+OUTPOST_XRAY_API=127.0.0.1:10085
 ENV
-chmod 0640 /etc/matreshka/matreshka.env /etc/matreshka/engines/*
-chown root:matreshka /etc/matreshka/matreshka.env /etc/matreshka/engines/*
+chmod 0640 /etc/outpost/outpost.env /etc/outpost/engines/*
+chown root:outpost /etc/outpost/outpost.env /etc/outpost/engines/*
 
-install -m 0644 /opt/matreshka/current/infra/nginx/matreshka-setup-http.conf.template /etc/nginx/sites-available/matreshka
-ln -sfn /etc/nginx/sites-available/matreshka /etc/nginx/sites-enabled/matreshka
+install -m 0644 /opt/outpost/current/infra/nginx/outpost-setup-http.conf.template /etc/nginx/sites-available/outpost
+ln -sfn /etc/nginx/sites-available/outpost /etc/nginx/sites-enabled/outpost
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
 
 install -d -o root -g root -m 0755 "$acme_webroot/.well-known/acme-challenge"
-printf 'matreshka-acme-ok\n' >"$acme_webroot/.well-known/acme-challenge/matreshka-probe"
-test "$(curl -fsS -H "Host: $public_ip" http://127.0.0.1/.well-known/acme-challenge/matreshka-probe)" = "matreshka-acme-ok"
-rm -f "$acme_webroot/.well-known/acme-challenge/matreshka-probe"
+printf 'outpost-acme-ok\n' >"$acme_webroot/.well-known/acme-challenge/outpost-probe"
+test "$(curl -fsS -H "Host: $public_ip" http://127.0.0.1/.well-known/acme-challenge/outpost-probe)" = "outpost-acme-ok"
+rm -f "$acme_webroot/.well-known/acme-challenge/outpost-probe"
 
 "$certbot" certonly \
   --non-interactive \
@@ -169,32 +171,32 @@ rm -f "$acme_webroot/.well-known/acme-challenge/matreshka-probe"
   --ip-address "$public_ip"
 
 sed -e "s|__PUBLIC_IP__|$public_ip|g" \
-  /opt/matreshka/current/infra/nginx/matreshka-setup.conf.template >/etc/nginx/sites-available/matreshka
-install -m 0755 /opt/matreshka/current/infra/renewal-hooks/deploy/matreshka /etc/letsencrypt/renewal-hooks/deploy/matreshka
+  /opt/outpost/current/infra/nginx/outpost-setup.conf.template >/etc/nginx/sites-available/outpost
+install -m 0755 /opt/outpost/current/infra/renewal-hooks/deploy/outpost /etc/letsencrypt/renewal-hooks/deploy/outpost
 nginx -t
 systemctl reload nginx
 
-/opt/matreshka/current/infra/scripts/install-engines
-install -m 0644 /opt/matreshka/current/infra/systemd/*.service /etc/systemd/system/
-install -m 0755 /opt/matreshka/current/infra/scripts/matreshkactl /usr/local/bin/matreshkactl
+/opt/outpost/current/infra/scripts/install-engines
+install -m 0644 /opt/outpost/current/infra/systemd/*.service /etc/systemd/system/
+install -m 0755 /opt/outpost/current/infra/scripts/outpostctl /usr/local/bin/outpostctl
 systemctl daemon-reload
 ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 443/udp
 ufw --force enable
-systemctl enable --now nginx matreshka-agent matreshka
+systemctl enable --now nginx outpost-agent outpost
 
 for _ in {1..30}; do
   curl -fsS http://127.0.0.1:8181/readyz >/dev/null && break
   sleep 1
 done
 curl -fsS http://127.0.0.1:8181/readyz >/dev/null
-setup_url=$(journalctl -u matreshka -n 80 --no-pager -o cat | sed -n 's/^Одноразовая ссылка (действует 1 час): //p' | tail -1)
-test -n "$setup_url" || { echo "Matreshka started, but the setup URL was not found in the service log" >&2; exit 1; }
+setup_url=$(journalctl -u outpost -n 80 --no-pager -o cat | sed -n 's/^Одноразовая ссылка (действует 1 час): //p' | tail -1)
+test -n "$setup_url" || { echo "Outpost started, but the setup URL was not found in the service log" >&2; exit 1; }
 rollback_armed=0
 
 echo
-echo "Matreshka $version установлена."
+echo "Outpost $version установлена."
 echo "Откройте первоначальную настройку в браузере:"
 echo "$setup_url"

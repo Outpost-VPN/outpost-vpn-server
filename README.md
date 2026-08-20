@@ -1,42 +1,49 @@
-# Matreshka
+# Outpost
 
-Matreshka is a self-hosted proxy management panel for one owner, trusted people,
-and their devices. It deploys and maintains two proxy stacks on a single domain,
-provides client subscriptions for INCY and Everywhere/Mihomo, publishes shared
-routing rules, and tracks traffic by person and device without storing browsing
-history.
+Outpost is a self-hosted proxy management panel for one owner. It deploys and
+maintains two proxy stacks on a single domain, provides universal Mihomo,
+sing-box, and Xray subscriptions, publishes shared routing rules, and tracks
+traffic by connection without storing browsing history. Every connection has
+one credential generation and one link that may be shared by any number of
+people and physical devices.
 
-> **Status:** `0.1.0-rc.5` pre-release. Local tests and production builds pass;
+> **Status:** `0.1.0-rc.6` pre-release. Local tests and production builds pass;
 > the first real-world installation is progressing through the VPS gate described
 > in [STATUS.md](STATUS.md).
 
 ## Supported protocols
 
-Matreshka currently supports two proxy stacks:
+Outpost currently supports:
 
-- **VLESS over XHTTP and TLS**, powered by Xray-core, on `TCP/443`.
-- **Hysteria 2** on `UDP/443`.
+- **Hysteria 2** on `UDP/443` as the primary connection.
+- **VLESS over XHTTP and TLS**, powered by Xray-core, as the preferred TCP fallback.
+- **VLESS over gRPC and TLS** as the compatibility TCP fallback.
 
-No other protocols are supported yet.
+All TCP transports share public `TCP/443` through Nginx. Subscription renderers
+produce Mihomo YAML, sing-box JSON, Xray URI base64, full Xray JSON, and a plain
+link list.
 
 ## Architecture
 
 ```text
 UDP/443 → Hysteria 2
 TCP/443 → Nginx → secret XHTTP path → Xray on localhost
-                 → admin/API/subscriptions → Matreshka on localhost
+                 → secret gRPC service → Xray on localhost
+                 → admin/API and /s subscriptions → Outpost on localhost
                  → all other requests → neutral fallback page
 ```
 
 - The web interface is written in Imba and built with `bimba`.
 - The control plane uses Bun, TypeScript, and SQLite.
 - Privileged operations are handled by a minimal allowlisted Go agent.
-- `matreshkactl` provides a CLI and a local MCP server.
+- `outpostctl` provides a CLI and a local MCP server.
 - Nginx, Hysteria 2, and Xray run as separate systemd services.
 - Mutable settings and revisions live in SQLite, independently of release
   directories.
-- Device activation and revocation are synchronized with Xray through a
+- Connection activation, rotation, and archival are synchronized with Xray through a
   persistent SQLite outbox.
+- Signed GeoIP/Geosite SRS bundles are published separately and updated
+  atomically with two rollback versions retained on each server.
 - Release archives are signed with Minisign, and signatures are verified before
   installation or updates.
 
@@ -56,24 +63,24 @@ available ports `TCP/80`, `TCP/443`, and `UDP/443`.
 Run the following command in your VPS web console:
 
 ```bash
-curl -fsSLo /tmp/matreshka-install https://raw.githubusercontent.com/matreshka-proxy/matreshka-panel/main/infra/scripts/bootstrap && sudo bash /tmp/matreshka-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo bash /tmp/outpost-install
 ```
 
 The installer downloads the latest GitHub Release, verifies its detached
-Minisign signature, installs only the required packages, starts Matreshka, and
+Minisign signature, installs only the required packages, starts Outpost, and
 obtains a short-lived trusted Let's Encrypt certificate for the server's IP
 address. It does not perform a full Ubuntu upgrade or reboot the server.
 
 When the installation finishes, it prints a one-time HTTPS setup URL. Open the
 URL in a browser, choose a free hostname or your own domain, and follow the setup
-flow. Matreshka shows the required DNS `A` record, waits for DNS propagation,
-issues the final domain certificate, and then lets you create the owner account
-and passkey.
+flow. Outpost shows the required DNS `A` record, waits for DNS propagation,
+issues the final domain certificate, and then lets you configure owner access
+with a passkey.
 
 To install a specific release candidate instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/matreshka-install https://raw.githubusercontent.com/matreshka-proxy/matreshka-panel/main/infra/scripts/bootstrap && sudo env MATRESHKA_VERSION=0.1.0-rc.5 bash /tmp/matreshka-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.6 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,
@@ -84,8 +91,8 @@ updates, and recovery procedures.
 Local development requires Bun `1.3.13` and Go `1.24` or newer.
 
 ```bash
-git clone https://github.com/matreshka-proxy/matreshka-panel.git
-cd matreshka-panel
+git clone https://github.com/Outpost-VPN/outpost-vpn-server.git
+cd outpost-vpn-server
 bun install --frozen-lockfile
 bun run check
 bun run dev
@@ -109,13 +116,13 @@ pre-launch preview is available at
 
 ## License
 
-Matreshka is licensed under the [GNU AGPL-3.0-only](LICENSE). See
+Outpost is licensed under the [GNU AGPL-3.0-only](LICENSE). See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for third-party dependency
 notices.
 
 ## Naming
 
-The public project name is always written as `Matreshka`. The package and GitHub
-repository use `matreshka-panel`. Services, CLI tools, data directories, and
-environment variables use the `matreshka*` and `MATRESHKA_*` prefixes. There are
+The public project name is always written as `Outpost`. The package and GitHub
+repository use `outpost-vpn-server`. Services, CLI tools, data directories, and
+environment variables use the `outpost*` and `OUTPOST_*` prefixes. There are
 no legacy aliases.

@@ -1,17 +1,22 @@
 import { readFileSync, statfsSync } from "node:fs";
 import { cpus, freemem, loadavg, totalmem } from "node:os";
+import { connect as tcpConnect } from "node:net";
+import { connect as tlsConnect } from "node:tls";
 import { config } from "../config";
-import type { MatreshkaDatabase } from "../db/database";
+import type { OutpostDatabase } from "../db/database";
 import type { JournalSeverity } from "../models";
 import { JournalService } from "./journal";
 
-const monitoredServices = ["matreshka", "nginx", "hysteria-server", "xray"] as const;
+const monitoredServices = ["outpost", "nginx", "hysteria-server", "xray"] as const;
 
 export type MonitoringSnapshot = {
   services: Record<string, boolean>;
   diskPercent: number;
   disk?: { used: number; total: number };
   tlsDays: number | null;
+  tlsExpiresAt?: string | null;
+  tlsError?: string | null;
+  transports?: { xhttp: boolean; grpc: boolean };
   metrics?: {
     cpu: { percent: number };
     memory: { used: number; total: number; percent: number };
@@ -38,24 +43,31 @@ type MonitorRow = {
   changed_at: string;
 };
 
+type ServiceStates = Record<string, boolean>;
+
 export class MonitoringService {
   private journal: JournalService;
 
   constructor(
-    private db: MatreshkaDatabase,
+    private db: OutpostDatabase,
     journal?: JournalService,
     private probe: () => Promise<MonitoringSnapshot> = defaultProbe,
+    private serviceProbe: () => Promise<ServiceStates> = defaultServiceProbe,
   ) {
     this.journal = journal ?? new JournalService(db);
   }
 
   async collect(reference = new Date()) {
     const snapshot = await this.probe();
-    const previous = this.db.setting<{ metrics?: { network?: NetworkMetric } }>("monitor_snapshot", {});
+    const previous = this.db.setting<{ metrics?: { network?: NetworkMetric }; transports?: { xhttp: boolean; grpc: boolean } }>("monitor_snapshot", {});
     const overrides = config.demo ? this.db.setting<Record<string, boolean>>("demo_service_states", {}) : {};
     const services = { ...snapshot.services, ...overrides };
     const observedAt = reference.toISOString();
     for (const service of monitoredServices) this.observeService(service, services[service] ?? false, observedAt);
+    if (snapshot.transports) {
+      this.observeService("vless-xhttp", snapshot.transports.xhttp, observedAt);
+      this.observeService("vless-grpc", snapshot.transports.grpc, observedAt);
+    }
     this.observeThreshold(
       "system:disk",
       snapshot.diskPercent >= 95 ? "critical" : snapshot.diskPercent >= 85 ? "warning" : snapshot.diskPercent < 80 ? "healthy" : "hold",
@@ -76,9 +88,11 @@ export class MonitoringService {
     const memoryUsed = snapshot.metrics?.memory.used ?? 0;
     this.db.setSetting("monitor_snapshot", {
       services: monitoredServices.map((name) => ({ name, status: services[name] ? "active" : "inactive" })),
+      transports: snapshot.transports ?? previous.transports,
       tls: {
         status: snapshot.tlsDays === null ? "unknown" : snapshot.tlsDays < 7 ? "critical" : snapshot.tlsDays < 30 ? "warning" : "valid",
-        expiresAt: snapshot.tlsDays === null ? null : new Date(reference.getTime() + snapshot.tlsDays * 24 * 60 * 60 * 1000).toISOString(),
+        expiresAt: snapshot.tlsExpiresAt ?? (snapshot.tlsDays === null ? null : new Date(reference.getTime() + snapshot.tlsDays * 24 * 60 * 60 * 1000).toISOString()),
+        error: snapshot.tlsDays === null ? snapshot.tlsError ?? "Не удалось проверить TLS-сертификат" : null,
       },
       metrics: {
         cpu: snapshot.metrics?.cpu ?? { percent: 0 },
@@ -86,6 +100,20 @@ export class MonitoringService {
         disk: { used: snapshot.disk?.used ?? 0, total: snapshot.disk?.total ?? 0, percent: snapshot.diskPercent },
         network: networkMetric(snapshot.metrics?.network, previous.metrics?.network, reference),
       },
+      checkedAt: observedAt,
+    });
+  }
+
+  async refreshServices(reference = new Date()) {
+    const probed = await this.serviceProbe();
+    const overrides = config.demo ? this.db.setting<Record<string, boolean>>("demo_service_states", {}) : {};
+    const services = { ...probed, ...overrides };
+    const observedAt = reference.toISOString();
+    for (const service of monitoredServices) this.observeService(service, services[service] ?? false, observedAt);
+    const snapshot = this.db.setting<Record<string, unknown>>("monitor_snapshot", {});
+    this.db.setSetting("monitor_snapshot", {
+      ...snapshot,
+      services: monitoredServices.map((name) => ({ name, status: services[name] ? "active" : "inactive" })),
       checkedAt: observedAt,
     });
   }
@@ -186,6 +214,7 @@ async function defaultProbe(): Promise<MonitoringSnapshot> {
       diskPercent: 42,
       disk: { used: 10_737_418_240, total: 25_769_803_776 },
       tlsDays: 90,
+      transports: { xhttp: true, grpc: true },
       metrics: {
         cpu: { percent: 18 },
         memory: { used: 1_610_612_736, total: 4_294_967_296, percent: 38 },
@@ -193,9 +222,27 @@ async function defaultProbe(): Promise<MonitoringSnapshot> {
       },
     };
   }
-  const services = Object.fromEntries(await Promise.all(monitoredServices.map(async (service) => [service, await systemdActive(service)] as const)));
+  const [services, tls, xhttp, grpc] = await Promise.all([
+    defaultServiceProbe(), certificate(), tcpPort(10000), tcpPort(10001),
+  ]);
   const disk = diskUsage(config.dataDir);
-  return { services, diskPercent: disk.percent, disk, tlsDays: await certificateDays(), metrics: resourceMetrics() };
+  return {
+    services,
+    diskPercent: disk.percent,
+    disk,
+    tlsDays: tls.days,
+    tlsExpiresAt: tls.expiresAt,
+    tlsError: tls.error,
+    transports: { xhttp, grpc },
+    metrics: resourceMetrics(),
+  };
+}
+
+async function defaultServiceProbe(): Promise<ServiceStates> {
+  if (config.demo) return Object.fromEntries(monitoredServices.map((service) => [service, true]));
+  return Object.fromEntries(await Promise.all(
+    monitoredServices.map(async (service) => [service, await systemdActive(service)] as const),
+  ));
 }
 
 async function systemdActive(service: string) {
@@ -274,18 +321,67 @@ function percent(value: number, total: number) {
   return total ? Math.max(0, Math.min(100, Math.round(value / total * 100))) : 0;
 }
 
-async function certificateDays() {
-  try {
-    const path = `/etc/letsencrypt/live/${config.domain}/cert.pem`;
-    const process = Bun.spawn(["openssl", "x509", "-enddate", "-noout", "-in", path], { stdout: "pipe", stderr: "ignore" });
-    const [output, code] = await Promise.all([new Response(process.stdout).text(), process.exited]);
-    if (code !== 0) return null;
-    const expiresAt = Date.parse(output.trim().replace(/^notAfter=/, ""));
-    if (!Number.isFinite(expiresAt)) return null;
-    return Math.floor((expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
-  } catch {
-    return null;
+async function certificate() {
+  return new Promise<{ days: number | null; expiresAt: string | null; error: string | null }>((resolve) => {
+    let settled = false;
+    const socket = tlsConnect({
+      host: config.domain,
+      port: 443,
+      servername: config.domain,
+      rejectUnauthorized: true,
+      timeout: 5_000,
+    });
+    const finish = (result: { days: number | null; expiresAt: string | null; error: string | null }) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(result);
+    };
+
+    socket.once("secureConnect", () => {
+      const expiresAt = Date.parse(socket.getPeerCertificate().valid_to);
+      if (!Number.isFinite(expiresAt)) {
+        finish({ days: null, expiresAt: null, error: "Сервер не отдал срок TLS-сертификата" });
+        return;
+      }
+      finish({
+        days: Math.floor((expiresAt - Date.now()) / (24 * 60 * 60 * 1000)),
+        expiresAt: new Date(expiresAt).toISOString(),
+        error: null,
+      });
+    });
+    socket.once("timeout", () => finish({ days: null, expiresAt: null, error: "HTTPS-проверка превысила время ожидания" }));
+    socket.once("error", (error: NodeJS.ErrnoException) => finish({ days: null, expiresAt: null, error: certificateError(error) }));
+  });
+}
+
+async function tcpPort(port: number) {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const socket = tcpConnect({ host: "127.0.0.1", port });
+    const finish = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(result);
+    };
+    socket.setTimeout(1_000);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+function certificateError(error: NodeJS.ErrnoException) {
+  if (error.code === "ENOTFOUND" || error.code === "EAI_AGAIN") return "DNS домена не отвечает";
+  if (error.code === "ECONNREFUSED") return "HTTPS на порту 443 не отвечает";
+  if (error.code === "ETIMEDOUT") return "HTTPS-проверка превысила время ожидания";
+  if (error.code === "CERT_HAS_EXPIRED") return "TLS-сертификат истёк";
+  if (error.code === "ERR_TLS_CERT_ALTNAME_INVALID") return "TLS-сертификат выпущен для другого домена";
+  if (error.code === "DEPTH_ZERO_SELF_SIGNED_CERT" || error.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
+    return "TLS-сертификат не доверен";
   }
+  return "Не удалось проверить TLS-сертификат";
 }
 
 function parseData(value?: string) {

@@ -1,5 +1,4 @@
-import type { MatreshkaDatabase } from "../db/database";
-import { now } from "../db/database";
+import type { OutpostDatabase } from "../db/database";
 import type { EngineId, PresenceStatus, TrafficPoint } from "../models";
 import { JournalService } from "./journal";
 
@@ -18,7 +17,7 @@ export type TrafficPeriod = "today" | "24h" | "week" | "7d" | "month" | "30d" | 
 export class TrafficService {
   private journal: JournalService;
 
-  constructor(private db: MatreshkaDatabase, private collectors: TrafficCollector[] = [], journal?: JournalService) {
+  constructor(private db: OutpostDatabase, private collectors: TrafficCollector[] = [], journal?: JournalService) {
     this.journal = journal ?? new JournalService(db);
   }
 
@@ -29,7 +28,7 @@ export class TrafficService {
         const active = new Set<string>();
         for (const point of snapshot.traffic) {
           const delta = this.recordCumulative(collector.id, point, reference);
-          if (delta.activity) active.add(point.deviceId);
+          if (delta.activity) active.add(point.connectionId);
         }
         if (collector.id === "hysteria") this.updateHysteriaPresence(snapshot.online ?? {}, reference);
         else this.updateXrayPresence(active, reference);
@@ -39,248 +38,36 @@ export class TrafficService {
         this.telemetryFailure(collector.id, error, reference);
       }
     }
-    this.updateDeviceFacts(reference);
+    this.updateActivityFacts(reference);
     this.compact(reference);
   }
 
   recordCumulative(engine: string, point: TrafficPoint, observedAt = new Date()) {
-    const device = this.db.raw.query<{ person_id: string }, string>("SELECT person_id FROM devices WHERE id = ?").get(point.deviceId);
-    if (!device) return { upload: 0, download: 0, activity: false, reset: false };
+    const connection = this.db.raw.query<{ id: string }, string>("SELECT id FROM connections WHERE id = ?").get(point.connectionId);
+    if (!connection) return { upload: 0, download: 0, activity: false, reset: false };
     const cursor = this.db.raw.query<{ upload: number; download: number }, [string, string]>(`
-      SELECT upload, download FROM traffic_cursors WHERE device_id = ? AND engine = ?
-    `).get(point.deviceId, engine);
+      SELECT upload, download FROM traffic_cursors WHERE connection_id = ? AND engine = ?
+    `).get(point.connectionId, engine);
     const reset = Boolean(cursor && (point.upload < cursor.upload || point.download < cursor.download));
     const upload = cursor && point.upload >= cursor.upload ? point.upload - cursor.upload : point.upload;
     const download = cursor && point.download >= cursor.download ? point.download - cursor.download : point.download;
     const bucketAt = floorDate(observedAt, 5).toISOString();
     this.db.raw.transaction(() => {
       this.db.raw.query(`
-        INSERT INTO traffic_cursors (device_id, engine, upload, download, observed_at) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(device_id, engine) DO UPDATE SET upload = excluded.upload, download = excluded.download, observed_at = excluded.observed_at
-      `).run(point.deviceId, engine, point.upload, point.download, observedAt.toISOString());
+        INSERT INTO traffic_cursors (connection_id, engine, upload, download, observed_at) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(connection_id, engine) DO UPDATE SET
+          upload = excluded.upload, download = excluded.download, observed_at = excluded.observed_at
+      `).run(point.connectionId, engine, point.upload, point.download, observedAt.toISOString());
       if (upload || download) {
         this.db.raw.query(`
-          INSERT INTO traffic_samples (bucket, bucket_at, person_id, device_id, engine, upload, download)
-          VALUES ('5m', ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(bucket, bucket_at, device_id, engine) DO UPDATE SET
+          INSERT INTO traffic_samples (bucket, bucket_at, connection_id, engine, upload, download)
+          VALUES ('5m', ?, ?, ?, ?, ?)
+          ON CONFLICT(bucket, bucket_at, connection_id, engine) DO UPDATE SET
             upload = upload + excluded.upload, download = download + excluded.download
-        `).run(bucketAt, device.person_id, point.deviceId, engine, upload, download);
+        `).run(bucketAt, point.connectionId, engine, upload, download);
       }
     })();
     return { upload, download, activity: Boolean(cursor && !reset && (upload > 0 || download > 0)), reset };
-  }
-
-  private updateHysteriaPresence(online: Record<string, number>, reference: Date) {
-    const timestamp = reference.toISOString();
-    for (const device of this.activeDevices()) {
-      const connections = Math.max(0, Math.trunc(Number(online[device.id] ?? 0)));
-      const previous = this.presence(device.id, "hysteria");
-      if (connections > 0) {
-        this.savePresence(device.id, "hysteria", "online", "connections", timestamp, {
-          connections,
-          misses: 0,
-          lastActiveAt: timestamp,
-        });
-        continue;
-      }
-      const misses = (previous?.misses ?? 0) + 1;
-      const status: PresenceStatus = misses >= 2 ? "offline" : previous?.status ?? "unknown";
-      this.savePresence(device.id, "hysteria", status, "connections", timestamp, {
-        connections: 0,
-        misses,
-        lastActiveAt: previous?.last_active_at ?? null,
-      });
-    }
-  }
-
-  private updateXrayPresence(active: Set<string>, reference: Date) {
-    const timestamp = reference.toISOString();
-    for (const device of this.activeDevices()) {
-      const previous = this.presence(device.id, "xray");
-      const lastActiveAt = active.has(device.id) ? timestamp : previous?.last_active_at ?? null;
-      const recent = lastActiveAt !== null && reference.getTime() - new Date(lastActiveAt).getTime() <= 2 * 60 * 1000;
-      this.savePresence(device.id, "xray", recent ? "online" : "offline", "traffic", timestamp, {
-        connections: null,
-        misses: 0,
-        lastActiveAt,
-      });
-    }
-  }
-
-  private markUnknown(engine: EngineId, reference: Date) {
-    const timestamp = reference.toISOString();
-    for (const device of this.activeDevices()) {
-      const previous = this.presence(device.id, engine);
-      this.savePresence(device.id, engine, "unknown", engine === "hysteria" ? "connections" : "traffic", timestamp, {
-        connections: previous?.connections ?? null,
-        misses: previous?.misses ?? 0,
-        lastActiveAt: previous?.last_active_at ?? null,
-      });
-    }
-  }
-
-  private savePresence(
-    deviceId: string,
-    engine: EngineId,
-    status: PresenceStatus,
-    signal: "connections" | "traffic",
-    observedAt: string,
-    value: { connections: number | null; misses: number; lastActiveAt: string | null },
-  ) {
-    const previous = this.presence(deviceId, engine);
-    const changedAt = previous?.status === status ? previous.changed_at : observedAt;
-    this.db.raw.query(`
-      INSERT INTO device_presence (
-        device_id, engine, status, signal, connections, misses, last_active_at, observed_at, changed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(device_id, engine) DO UPDATE SET
-        status = excluded.status,
-        signal = excluded.signal,
-        connections = excluded.connections,
-        misses = excluded.misses,
-        last_active_at = excluded.last_active_at,
-        observed_at = excluded.observed_at,
-        changed_at = excluded.changed_at
-    `).run(deviceId, engine, status, signal, value.connections, value.misses, value.lastActiveAt, observedAt, changedAt);
-  }
-
-  private updateDeviceFacts(reference: Date) {
-    const timestamp = reference.toISOString();
-    for (const device of this.activeDevices()) {
-      const presence = this.db.raw.query<{ status: PresenceStatus; last_active_at: string | null }, string>(
-        "SELECT status, last_active_at FROM device_presence WHERE device_id = ?",
-      ).all(device.id);
-      const states = presence.map((row) => row.status);
-      const aggregate: PresenceStatus = states.includes("online")
-        ? "online"
-        : states.includes("unknown") || states.length === 0
-          ? "unknown"
-          : "offline";
-      if (aggregate === "online") {
-        const seenAt = presence
-          .filter((row) => row.status === "online" && row.last_active_at)
-          .map((row) => row.last_active_at!)
-          .sort()
-          .at(-1) ?? timestamp;
-        const first = !device.first_seen_at;
-        const returned = Boolean(device.absence_notified_at);
-        this.db.raw.query(`
-          UPDATE devices SET
-            first_seen_at = COALESCE(first_seen_at, ?),
-            last_seen_at = ?,
-            absence_notified_at = NULL
-          WHERE id = ?
-        `).run(seenAt, seenAt, device.id);
-        if (first) {
-          this.journal.record("device.first_seen", {
-            actor: "telemetry",
-            subjectType: "device",
-            subjectId: device.id,
-            occurredAt: timestamp,
-            data: { deviceName: device.name, personName: device.person_name },
-          });
-        } else if (returned) {
-          this.journal.record("device.returned", {
-            actor: "telemetry",
-            subjectType: "device",
-            subjectId: device.id,
-            occurredAt: timestamp,
-            data: { deviceName: device.name, personName: device.person_name, absentSince: device.absence_notified_at },
-          });
-        }
-      } else if (
-        aggregate === "offline"
-        && device.last_seen_at
-        && !device.absence_notified_at
-        && reference.getTime() - new Date(device.last_seen_at).getTime() >= 24 * 60 * 60 * 1000
-      ) {
-        this.db.raw.query("UPDATE devices SET absence_notified_at = ? WHERE id = ?").run(timestamp, device.id);
-        this.journal.record("device.offline_long", {
-          actor: "telemetry",
-          subjectType: "device",
-          subjectId: device.id,
-          occurredAt: timestamp,
-          data: { deviceName: device.name, personName: device.person_name, lastSeenAt: device.last_seen_at },
-        });
-      }
-    }
-  }
-
-  private telemetryFailure(engine: EngineId, error: unknown, reference: Date) {
-    const key = `telemetry:${engine}`;
-    const timestamp = reference.toISOString();
-    const previous = this.monitor(key);
-    const failures = (previous?.failures ?? 0) + 1;
-    const unavailable = failures >= 2;
-    if (unavailable && previous?.status !== "unavailable") {
-      this.journal.record("engine.telemetry_unavailable", {
-        actor: "monitor",
-        source: engine,
-        subjectType: "engine",
-        subjectId: engine,
-        occurredAt: timestamp,
-        data: { engine },
-      });
-    }
-    this.saveMonitor(key, unavailable ? "unavailable" : previous?.status ?? "baseline", failures, timestamp, { error: safeCollectorError(error) });
-  }
-
-  private telemetrySuccess(engine: EngineId, reference: Date) {
-    const key = `telemetry:${engine}`;
-    const timestamp = reference.toISOString();
-    const previous = this.monitor(key);
-    if (previous?.status === "unavailable") {
-      this.journal.record("engine.telemetry_restored", {
-        actor: "monitor",
-        source: engine,
-        subjectType: "engine",
-        subjectId: engine,
-        occurredAt: timestamp,
-        data: { engine },
-      });
-    }
-    this.saveMonitor(key, "available", 0, timestamp, {});
-  }
-
-  private activeDevices() {
-    return this.db.raw.query<{
-      id: string;
-      name: string;
-      person_name: string;
-      first_seen_at: string | null;
-      last_seen_at: string | null;
-      absence_notified_at: string | null;
-    }, []>(`
-      SELECT devices.id, devices.name, people.name AS person_name,
-        devices.first_seen_at, devices.last_seen_at, devices.absence_notified_at
-      FROM devices JOIN people ON people.id = devices.person_id
-      WHERE devices.status = 'active' AND people.archived_at IS NULL
-    `).all();
-  }
-
-  private presence(deviceId: string, engine: EngineId) {
-    return this.db.raw.query<PresenceRow, [string, string]>(
-      "SELECT * FROM device_presence WHERE device_id = ? AND engine = ?",
-    ).get(deviceId, engine) ?? null;
-  }
-
-  private monitor(key: string) {
-    return this.db.raw.query<MonitorRow, string>("SELECT * FROM monitor_states WHERE key = ?").get(key) ?? null;
-  }
-
-  private saveMonitor(key: string, status: string, failures: number, observedAt: string, data: Record<string, unknown>) {
-    const previous = this.monitor(key);
-    const changedAt = previous?.status === status ? previous.changed_at : observedAt;
-    this.db.raw.query(`
-      INSERT INTO monitor_states (key, status, failures, data_json, observed_at, changed_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(key) DO UPDATE SET
-        status = excluded.status,
-        failures = excluded.failures,
-        data_json = excluded.data_json,
-        observed_at = excluded.observed_at,
-        changed_at = excluded.changed_at
-    `).run(key, status, failures, JSON.stringify(data), observedAt, changedAt);
   }
 
   overview(period: TrafficPeriod = "30d", timeZone = "UTC") {
@@ -292,35 +79,35 @@ export class TrafficService {
       SELECT COALESCE(SUM(upload), 0) AS upload, COALESCE(SUM(download), 0) AS download
       FROM traffic_samples ${filter}
     `).get(...params) ?? { upload: 0, download: 0 };
-    const people = this.db.raw.query<{
-      person_id: string; name: string; upload: number; download: number;
+    const connectionRows = this.db.raw.query<{
+      connection_id: string; name: string; upload: number; download: number;
     }, [string] | []>(`
-      SELECT people.id AS person_id, people.name,
+      SELECT connections.id AS connection_id, connections.name,
         COALESCE(SUM(traffic_samples.upload), 0) AS upload,
         COALESCE(SUM(traffic_samples.download), 0) AS download
-      FROM people LEFT JOIN traffic_samples ON traffic_samples.person_id = people.id
+      FROM connections LEFT JOIN traffic_samples ON traffic_samples.connection_id = connections.id
         ${since ? "AND traffic_samples.bucket_at >= ?" : ""}
-      WHERE people.archived_at IS NULL
-      GROUP BY people.id ORDER BY upload + download DESC
+      WHERE connections.archived_at IS NULL
+      GROUP BY connections.id ORDER BY upload + download DESC
     `).all(...params);
-    const devices = this.db.raw.query<{
-      device_id: string; name: string; person_name: string; engine: string; upload: number; download: number;
+    const connectionSeries = this.db.raw.query<{
+      connection_id: string; bucket_at: string; upload: number; download: number;
     }, [string] | []>(`
-      SELECT devices.id AS device_id, devices.name, people.name AS person_name,
-        COALESCE(traffic_samples.engine, '') AS engine,
-        COALESCE(SUM(traffic_samples.upload), 0) AS upload,
-        COALESCE(SUM(traffic_samples.download), 0) AS download
-      FROM devices JOIN people ON people.id = devices.person_id
-      LEFT JOIN traffic_samples ON traffic_samples.device_id = devices.id
-        ${since ? "AND traffic_samples.bucket_at >= ?" : ""}
-      GROUP BY devices.id, traffic_samples.engine ORDER BY upload + download DESC
+      SELECT connection_id, bucket_at, SUM(upload) AS upload, SUM(download) AS download
+      FROM traffic_samples ${filter}
+      GROUP BY connection_id, bucket_at ORDER BY bucket_at
     `).all(...params);
+    const connections = connectionRows.map((connection) => ({
+      ...connection,
+      series: connectionSeries.filter((point) => point.connection_id === connection.connection_id)
+        .map(({ connection_id: _connectionId, ...point }) => point),
+    }));
     const series = this.db.raw.query<{ bucket_at: string; upload: number; download: number }, [string] | []>(`
       SELECT bucket_at, SUM(upload) AS upload, SUM(download) AS download
       FROM traffic_samples ${filter}
       GROUP BY bucket_at ORDER BY bucket_at
     `).all(...params);
-    return { period, from: since, to: reference.toISOString(), totals, people, devices, series };
+    return { period, from: since, to: reference.toISOString(), totals, connections, series };
   }
 
   compact(reference = new Date()) {
@@ -333,41 +120,208 @@ export class TrafficService {
   }
 
   seedDemo() {
-    const people = this.db.raw.query<{ id: string }, []>("SELECT id FROM people LIMIT 1").all();
-    if (!people.length) return;
-    const devices = this.db.raw.query<{ id: string }, []>("SELECT id FROM devices WHERE status = 'active'").all();
-    if (!devices.length) return;
+    const connections = this.activeConnections();
+    if (!connections.length) return;
     const existing = this.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM traffic_samples").get()?.count ?? 0;
     if (existing) return;
     const cumulative = new Map<string, { upload: number; download: number }>();
     for (let i = 288; i >= 0; i -= 1) {
       const date = new Date(Date.now() - i * 5 * 60 * 1000);
-      for (const device of devices) {
-        const value = cumulative.get(device.id) ?? { upload: 0, download: 0 };
+      for (const connection of connections) {
+        const value = cumulative.get(connection.id) ?? { upload: 0, download: 0 };
         value.upload += Math.floor((1 + Math.sin(i / 17)) * 90_000);
         value.download += Math.floor((1 + Math.cos(i / 13)) * 540_000);
-        cumulative.set(device.id, value);
-        this.recordCumulative(i % 2 ? "hysteria" : "xray", { deviceId: device.id, ...value }, date);
+        cumulative.set(connection.id, value);
+        this.recordCumulative(i % 2 ? "hysteria" : "xray", { connectionId: connection.id, ...value }, date);
       }
     }
   }
 
+  private updateHysteriaPresence(online: Record<string, number>, reference: Date) {
+    const timestamp = reference.toISOString();
+    for (const connection of this.activeConnections()) {
+      const connections = Math.max(0, Math.trunc(Number(online[connection.id] ?? 0)));
+      const previous = this.presence(connection.id, "hysteria");
+      if (connections > 0) {
+        this.savePresence(connection.id, "hysteria", "online", "connections", timestamp, {
+          connections, misses: 0, lastActiveAt: timestamp,
+        });
+        continue;
+      }
+      const misses = (previous?.misses ?? 0) + 1;
+      const status: PresenceStatus = misses >= 2 ? "offline" : previous?.status ?? "unknown";
+      this.savePresence(connection.id, "hysteria", status, "connections", timestamp, {
+        connections: 0, misses, lastActiveAt: previous?.last_active_at ?? null,
+      });
+    }
+  }
+
+  private updateXrayPresence(active: Set<string>, reference: Date) {
+    const timestamp = reference.toISOString();
+    for (const connection of this.activeConnections()) {
+      const previous = this.presence(connection.id, "xray");
+      const lastActiveAt = active.has(connection.id) ? timestamp : previous?.last_active_at ?? null;
+      const recent = lastActiveAt !== null && reference.getTime() - new Date(lastActiveAt).getTime() <= 2 * 60 * 1000;
+      this.savePresence(connection.id, "xray", recent ? "online" : "offline", "traffic", timestamp, {
+        connections: null, misses: 0, lastActiveAt,
+      });
+    }
+  }
+
+  private markUnknown(engine: EngineId, reference: Date) {
+    const timestamp = reference.toISOString();
+    for (const connection of this.activeConnections()) {
+      const previous = this.presence(connection.id, engine);
+      this.savePresence(connection.id, engine, "unknown", engine === "hysteria" ? "connections" : "traffic", timestamp, {
+        connections: previous?.connections ?? null,
+        misses: previous?.misses ?? 0,
+        lastActiveAt: previous?.last_active_at ?? null,
+      });
+    }
+  }
+
+  private savePresence(
+    connectionId: string,
+    engine: EngineId,
+    status: PresenceStatus,
+    signal: "connections" | "traffic",
+    observedAt: string,
+    value: { connections: number | null; misses: number; lastActiveAt: string | null },
+  ) {
+    const previous = this.presence(connectionId, engine);
+    const changedAt = previous?.status === status ? previous.changed_at : observedAt;
+    this.db.raw.query(`
+      INSERT INTO connection_presence (
+        connection_id, engine, status, signal, connections, misses, last_active_at, observed_at, changed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(connection_id, engine) DO UPDATE SET
+        status = excluded.status, signal = excluded.signal, connections = excluded.connections,
+        misses = excluded.misses, last_active_at = excluded.last_active_at,
+        observed_at = excluded.observed_at, changed_at = excluded.changed_at
+    `).run(connectionId, engine, status, signal, value.connections, value.misses, value.lastActiveAt, observedAt, changedAt);
+  }
+
+  private updateActivityFacts(reference: Date) {
+    const timestamp = reference.toISOString();
+    for (const connection of this.activeConnections()) {
+      const rows = this.db.raw.query<{ status: PresenceStatus; last_active_at: string | null }, string>(`
+        SELECT status, last_active_at FROM connection_presence WHERE connection_id = ?
+      `).all(connection.id);
+      if (!rows.length) continue;
+      const online = rows.filter((row) => row.status === "online");
+      if (online.length) {
+        const seenAt = online.map((row) => row.last_active_at).filter(Boolean).sort().at(-1) ?? timestamp;
+        const first = !connection.first_seen_at;
+        const returned = Boolean(connection.absence_notified_at);
+        this.db.raw.query(`
+          UPDATE connections SET first_seen_at = COALESCE(first_seen_at, ?),
+            last_seen_at = ?, absence_notified_at = NULL WHERE id = ?
+        `).run(seenAt, seenAt, connection.id);
+        if (first) this.activity("connection.first_seen", connection.id, connection.name, timestamp);
+        else if (returned) this.activity("connection.returned", connection.id, connection.name, timestamp, {
+          absentSince: connection.absence_notified_at,
+        });
+        continue;
+      }
+      const unknown = rows.some((row) => row.status === "unknown");
+      if (
+        !unknown && connection.last_seen_at && !connection.absence_notified_at
+        && reference.getTime() - new Date(connection.last_seen_at).getTime() >= 24 * 60 * 60 * 1000
+      ) {
+        this.db.raw.query("UPDATE connections SET absence_notified_at = ? WHERE id = ?").run(timestamp, connection.id);
+        this.activity("connection.offline_long", connection.id, connection.name, timestamp, { lastSeenAt: connection.last_seen_at });
+      }
+    }
+  }
+
+  private activity(type: string, id: string, name: string, occurredAt: string, data: Record<string, unknown> = {}) {
+    this.journal.record(type, {
+      actor: "telemetry",
+      subjectType: "connection",
+      subjectId: id,
+      occurredAt,
+      data: { connectionName: name, ...data },
+    });
+  }
+
+  private telemetryFailure(engine: EngineId, error: unknown, reference: Date) {
+    const key = `telemetry:${engine}`;
+    const timestamp = reference.toISOString();
+    const previous = this.monitor(key);
+    const failures = (previous?.failures ?? 0) + 1;
+    const unavailable = failures >= 2;
+    if (unavailable && previous?.status !== "unavailable") {
+      this.journal.record("engine.telemetry_unavailable", {
+        actor: "monitor", source: engine, subjectType: "engine", subjectId: engine, occurredAt: timestamp, data: { engine },
+      });
+    }
+    this.saveMonitor(key, unavailable ? "unavailable" : previous?.status ?? "baseline", failures, timestamp, {
+      error: safeCollectorError(error),
+    });
+  }
+
+  private telemetrySuccess(engine: EngineId, reference: Date) {
+    const key = `telemetry:${engine}`;
+    const timestamp = reference.toISOString();
+    const previous = this.monitor(key);
+    if (previous?.status === "unavailable") {
+      this.journal.record("engine.telemetry_restored", {
+        actor: "monitor", source: engine, subjectType: "engine", subjectId: engine, occurredAt: timestamp, data: { engine },
+      });
+    }
+    this.saveMonitor(key, "available", 0, timestamp, {});
+  }
+
+  private activeConnections() {
+    return this.db.raw.query<{
+      id: string;
+      name: string;
+      first_seen_at: string | null;
+      last_seen_at: string | null;
+      absence_notified_at: string | null;
+    }, []>(`
+      SELECT id, name, first_seen_at, last_seen_at, absence_notified_at
+      FROM connections WHERE status = 'active' AND archived_at IS NULL
+    `).all();
+  }
+
+  private presence(connectionId: string, engine: EngineId) {
+    return this.db.raw.query<PresenceRow, [string, string]>(
+      "SELECT * FROM connection_presence WHERE connection_id = ? AND engine = ?",
+    ).get(connectionId, engine) ?? null;
+  }
+
+  private monitor(key: string) {
+    return this.db.raw.query<MonitorRow, string>("SELECT * FROM monitor_states WHERE key = ?").get(key) ?? null;
+  }
+
+  private saveMonitor(key: string, status: string, failures: number, observedAt: string, data: Record<string, unknown>) {
+    const previous = this.monitor(key);
+    const changedAt = previous?.status === status ? previous.changed_at : observedAt;
+    this.db.raw.query(`
+      INSERT INTO monitor_states (key, status, failures, data_json, observed_at, changed_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET status = excluded.status, failures = excluded.failures,
+        data_json = excluded.data_json, observed_at = excluded.observed_at, changed_at = excluded.changed_at
+    `).run(key, status, failures, JSON.stringify(data), observedAt, changedAt);
+  }
+
   private rollup(source: string, target: string, before: string, minutes: number) {
     const rows = this.db.raw.query<{
-      bucket_at: string; person_id: string; device_id: string; engine: string; upload: number; download: number;
+      bucket_at: string; connection_id: string; engine: string; upload: number; download: number;
     }, [string, string]>(`
-      SELECT bucket_at, person_id, device_id, engine, upload, download FROM traffic_samples
+      SELECT bucket_at, connection_id, engine, upload, download FROM traffic_samples
       WHERE bucket = ? AND bucket_at < ?
     `).all(source, before);
     const insert = this.db.raw.query(`
-      INSERT INTO traffic_samples (bucket, bucket_at, person_id, device_id, engine, upload, download)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(bucket, bucket_at, device_id, engine) DO UPDATE SET
+      INSERT INTO traffic_samples (bucket, bucket_at, connection_id, engine, upload, download)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(bucket, bucket_at, connection_id, engine) DO UPDATE SET
         upload = upload + excluded.upload, download = download + excluded.download
     `);
     this.db.raw.transaction(() => {
       for (const row of rows) {
-        insert.run(target, floorDate(new Date(row.bucket_at), minutes).toISOString(), row.person_id, row.device_id, row.engine, row.upload, row.download);
+        insert.run(target, floorDate(new Date(row.bucket_at), minutes).toISOString(), row.connection_id, row.engine, row.upload, row.download);
       }
     })();
   }
@@ -376,6 +330,7 @@ export class TrafficService {
 export class HysteriaCollector implements TrafficCollector {
   id = "hysteria" as const;
   constructor(private url: string, private secret?: string) {}
+
   async collect() {
     const headers = this.secret ? { authorization: this.secret } : undefined;
     const base = this.url.replace(/\/$/, "");
@@ -390,7 +345,7 @@ export class HysteriaCollector implements TrafficCollector {
       onlineResponse.json() as Promise<Record<string, number>>,
     ]);
     return {
-      traffic: Object.entries(traffic).map(([deviceId, counters]) => ({ deviceId, upload: counters.tx, download: counters.rx })),
+      traffic: Object.entries(traffic).map(([connectionId, counters]) => ({ connectionId, upload: counters.tx, download: counters.rx })),
       online,
     };
   }
@@ -401,14 +356,12 @@ export class XrayCollector implements TrafficCollector {
   constructor(private binary: string, private server = "127.0.0.1:10085") {}
 
   async collect() {
-    const process = Bun.spawn([this.binary, "api", "statsquery", `--server=${this.server}`, "-pattern", "user>>>"] , {
+    const process = Bun.spawn([this.binary, "api", "statsquery", `--server=${this.server}`, "-pattern", "user>>>"], {
       stdout: "pipe",
       stderr: "pipe",
     });
     const [stdout, stderr, code] = await Promise.all([
-      new Response(process.stdout).text(),
-      new Response(process.stderr).text(),
-      process.exited,
+      new Response(process.stdout).text(), new Response(process.stderr).text(), process.exited,
     ]);
     if (code !== 0) throw new Error(`Xray stats: ${stderr.trim()}`);
     const counters = parseXrayStats(stdout);
@@ -417,11 +370,12 @@ export class XrayCollector implements TrafficCollector {
       const match = name.match(/^user>>>([^>]+)>>>traffic>>>(uplink|downlink)$/);
       if (!match) continue;
       const email = match[1]!;
-      const deviceId = email.endsWith("@matreshka.local") ? email.slice(0, -"@matreshka.local".length) : email;
-      const point = points.get(deviceId) ?? { deviceId, upload: 0, download: 0 };
+      const local = email.endsWith("@outpost.local") ? email.slice(0, -"@outpost.local".length) : email;
+      const connectionId = local.replace(/\.\d+$/, "");
+      const point = points.get(connectionId) ?? { connectionId, upload: 0, download: 0 };
       if (match[2] === "uplink") point.upload = value;
       else point.download = value;
-      points.set(deviceId, point);
+      points.set(connectionId, point);
     }
     return { traffic: Array.from(points.values()) };
   }
@@ -429,11 +383,11 @@ export class XrayCollector implements TrafficCollector {
 
 export function configuredCollectors(): TrafficCollector[] {
   const collectors: TrafficCollector[] = [];
-  if (process.env.MATRESHKA_HYSTERIA_STATS_URL) {
-    collectors.push(new HysteriaCollector(process.env.MATRESHKA_HYSTERIA_STATS_URL, process.env.MATRESHKA_HYSTERIA_STATS_SECRET));
+  if (process.env.OUTPOST_HYSTERIA_STATS_URL) {
+    collectors.push(new HysteriaCollector(process.env.OUTPOST_HYSTERIA_STATS_URL, process.env.OUTPOST_HYSTERIA_STATS_SECRET));
   }
-  if (process.env.MATRESHKA_XRAY_BINARY) {
-    collectors.push(new XrayCollector(process.env.MATRESHKA_XRAY_BINARY, process.env.MATRESHKA_XRAY_API));
+  if (process.env.OUTPOST_XRAY_BINARY) {
+    collectors.push(new XrayCollector(process.env.OUTPOST_XRAY_BINARY, process.env.OUTPOST_XRAY_API));
   }
   return collectors;
 }
@@ -442,9 +396,7 @@ export function parseXrayStats(output: string) {
   const values = new Map<string, number>();
   try {
     const payload = JSON.parse(output) as { stat?: Array<{ name?: string; value?: string | number }> };
-    for (const item of payload.stat ?? []) {
-      if (item.name) values.set(item.name, Number(item.value ?? 0));
-    }
+    for (const item of payload.stat ?? []) if (item.name) values.set(item.name, Number(item.value ?? 0));
     return values;
   } catch {
     // Older Xray builds may format the response as protobuf text.
@@ -467,7 +419,7 @@ function floorDate(date: Date, minutes: number) {
 }
 
 type PresenceRow = {
-  device_id: string;
+  connection_id: string;
   engine: EngineId;
   status: PresenceStatus;
   signal: "connections" | "traffic";
@@ -489,8 +441,7 @@ type MonitorRow = {
 };
 
 function safeCollectorError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.slice(0, 500);
+  return (error instanceof Error ? error.message : String(error)).slice(0, 500);
 }
 
 export function periodStart(period: TrafficPeriod, timeZone = "UTC", reference = new Date()) {

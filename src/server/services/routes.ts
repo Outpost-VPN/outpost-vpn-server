@@ -1,9 +1,14 @@
 import { z } from "zod";
-import type { MatreshkaDatabase } from "../db/database";
+import type { OutpostDatabase } from "../db/database";
 import { now } from "../db/database";
 import type { RouteRule } from "../models";
-import { ServiceError } from "./people";
+import { ServiceError } from "./connections";
 import { JournalService } from "./journal";
+
+type RuleSetCatalog = {
+  assert(rules: RouteRule[]): void;
+  version(rules: RouteRule[]): string | null;
+};
 
 const routeInput = z.object({
   action: z.enum(["DIRECT", "PROXY", "BLOCK"]),
@@ -17,7 +22,7 @@ const localNetworks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
 export class RouteService {
   private journal: JournalService;
 
-  constructor(private db: MatreshkaDatabase, journal?: JournalService) {
+  constructor(private db: OutpostDatabase, journal?: JournalService, private rulesets?: RuleSetCatalog) {
     this.journal = journal ?? new JournalService(db);
   }
 
@@ -43,8 +48,8 @@ export class RouteService {
   }
 
   revisions() {
-    return this.db.raw.query<{ id: string; version: number; note: string; created_at: string; actor: string }, []>(`
-      SELECT id, version, note, created_at, actor FROM route_revisions ORDER BY version DESC LIMIT 50
+    return this.db.raw.query<{ id: string; version: number; note: string; created_at: string; actor: string; ruleset_version: string | null }, []>(`
+      SELECT id, version, note, created_at, actor, ruleset_version FROM route_revisions ORDER BY version DESC LIMIT 50
     `).all();
   }
 
@@ -152,6 +157,8 @@ export class RouteService {
   ) {
     const rules = replacement ?? this.draft();
     if (rules.length === 0) throw new ServiceError(409, "Нельзя опубликовать пустой набор маршрутов");
+    this.rulesets?.assert(rules);
+    const rulesetVersion = this.rulesets?.version(rules) ?? null;
     const version = (this.db.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM route_revisions").get()?.version ?? 0) + 1;
     const id = crypto.randomUUID();
     this.journal.change(
@@ -159,8 +166,9 @@ export class RouteService {
       () => {
         if (replacement) this.writeDraft(replacement);
         this.db.raw.query(`
-          INSERT INTO route_revisions (id, version, rules_json, note, created_at, actor) VALUES (?, ?, ?, ?, ?, ?)
-        `).run(id, version, JSON.stringify(rules), note.trim(), now(), actor);
+          INSERT INTO route_revisions (id, version, rules_json, note, created_at, actor, ruleset_version)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(id, version, JSON.stringify(rules), note.trim(), now(), actor, rulesetVersion);
         this.db.setSetting("active_route_version", version);
         return { id, version };
       },
@@ -169,13 +177,13 @@ export class RouteService {
         action: eventType === "routes.rolled_back" ? "routes.rollback" : "routes.publish",
         resource: "route_revision",
         resourceId: id,
-        after: { version, rules, note: note.trim() },
+        after: { version, rules, note: note.trim(), rulesetVersion },
       }),
       () => ({
         actor,
         subjectType: "route_revision",
         subjectId: id,
-        data: { version, newVersion: version, rulesCount: rules.length, note: note.trim(), ...eventData },
+        data: { version, newVersion: version, rulesCount: rules.length, rulesetVersion, note: note.trim(), ...eventData },
       }),
     );
     return this.state();
@@ -214,7 +222,7 @@ export class RouteService {
   }
 
   private revision(version: number) {
-    const row = this.db.raw.query<{ id: string; version: number; rules_json: string; note: string; created_at: string; actor: string }, number>(
+    const row = this.db.raw.query<{ id: string; version: number; rules_json: string; note: string; created_at: string; actor: string; ruleset_version: string | null }, number>(
       "SELECT * FROM route_revisions WHERE version = ?",
     ).get(version);
     if (!row) throw new ServiceError(404, "Ревизия маршрутов не найдена");

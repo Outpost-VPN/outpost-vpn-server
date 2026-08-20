@@ -14,7 +14,7 @@ export function loadMasterKey(path = config.masterKeyPath): Buffer {
   }
   chmodSync(path, 0o600);
   const key = readFileSync(path);
-  if (key.length !== 32) throw new Error("Мастер-ключ Matreshka должен быть длиной 32 байта");
+  if (key.length !== 32) throw new Error("Мастер-ключ Outpost должен быть длиной 32 байта");
   return key;
 }
 

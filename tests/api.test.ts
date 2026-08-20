@@ -1,140 +1,165 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { HttpApplication } from "../src/server/http";
+import { createToken, hashToken } from "../src/server/security";
 import { database } from "./helpers";
 
 describe("HTTP API", () => {
   let fixture: ReturnType<typeof database>;
   let app: HttpApplication;
+
   beforeEach(() => {
     fixture = database();
     app = new HttpApplication(fixture.db, {
       async add() { return { ok: true }; },
+      async rotate() { return { ok: true }; },
       async revoke() { return { ok: true }; },
     });
   });
   afterEach(() => fixture.close());
 
-  test("public health endpoints are available", async () => {
-    const response = await app.fetch(new Request("http://localhost/healthz"));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ ok: true });
-    expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
-  });
-
-  test("protected endpoints require a session", async () => {
-    const response = await app.fetch(new Request("http://localhost/api/v1/people"));
-    expect(response.status).toBe(401);
-  });
-
-  test("status tokens can read only the minimal status endpoint, not the owner dashboard", async () => {
+  function ownerCookie() {
     const timestamp = new Date().toISOString();
-    fixture.db.raw.query("INSERT INTO owners (id, name, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-      .run("owner", "Федор", "Europe/Moscow", timestamp, timestamp);
+    fixture.db.raw.query("INSERT INTO owners (id, timezone, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run("owner", "Europe/Moscow", timestamp, timestamp);
+    const token = createToken();
+    fixture.db.raw.query(`
+      INSERT INTO sessions (id, owner_id, token_hash, expires_at, created_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run("session", "owner", hashToken(token), new Date(Date.now() + 86_400_000).toISOString(), timestamp, timestamp);
+    return `outpost_session=${token}`;
+  }
+
+  function request(path: string, cookie: string, method = "GET", body?: unknown) {
+    return app.fetch(new Request(`http://localhost${path}`, {
+      method,
+      headers: { "content-type": "application/json", cookie },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }));
+  }
+
+  test("public health endpoints are available and protected endpoints require a session", async () => {
+    const health = await app.fetch(new Request("http://localhost/healthz"));
+    const connections = await app.fetch(new Request("http://localhost/api/v1/connections"));
+    expect(health.status).toBe(200);
+    expect(await health.json()).toMatchObject({ ok: true });
+    expect(health.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(connections.status).toBe(401);
+  });
+
+  test("status tokens cannot read subscription secrets", async () => {
+    ownerCookie();
     const token = app.auth.createApiToken("monitor", ["status:read"]).token;
     const headers = { authorization: `Bearer ${token}` };
-
+    const connection = app.connections.create({ name: "Мама" });
+    await app.connectionSync.activate(connection.id);
     const status = await app.fetch(new Request("http://localhost/api/v1/status", { headers }));
-    const dashboard = await app.fetch(new Request("http://localhost/api/v1/dashboard", { headers }));
-
+    const subscription = await app.fetch(new Request(`http://localhost/api/v1/connections/${connection.id}/subscription`, { headers }));
     expect(status.status).toBe(200);
-    expect(await status.json()).toEqual(expect.objectContaining({ version: expect.any(String), services: expect.any(Array) }));
-    expect(dashboard.status).toBe(403);
+    expect(subscription.status).toBe(403);
   });
 
-  test("invitation GET does not consume a token", async () => {
-    const people = app.people;
-    const person = people.create({ name: "Мама" });
-    const created = people.createDevice(person.id, { name: "iPhone", platform: "ios", client: "incy" });
-    const token = created.invitation.url.split("/").at(-1)!;
-    const first = await app.fetch(new Request(`http://localhost/api/v1/invitations/${token}`));
-    const second = await app.fetch(new Request(`http://localhost/api/v1/invitations/${token}`));
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
+  test("requires a name and creates connections with one secret link", async () => {
+    const cookie = ownerCookie();
+    const response = await request("/api/v1/connections", cookie, "POST", { name: "Мама", avatar: "avatar-8" });
+    const created = await response.json();
+    expect(response.status).toBe(201);
+    expect(created).toMatchObject({ state: "ready", connection: { name: "Мама", avatar: "avatar-8", status: "active", generation: 1 } });
+    expect(created.subscription.url).toContain("/s/");
+    expect(created.subscription.qrDataUrl).toStartWith("data:image/png;base64,");
+    expect(Object.keys(created.subscription.formats).sort()).toEqual(["links", "mihomo", "sing-box", "xray", "xray-json"]);
+
+    const unnamed = await request("/api/v1/connections", cookie, "POST", {});
+    expect(unnamed.status).toBe(400);
+
+    const groupResponse = await request("/api/v1/connections", cookie, "POST", { name: "Семья", avatar: "avatar-group" });
+    expect(groupResponse.status).toBe(201);
+    expect(await groupResponse.json()).toMatchObject({ connection: { name: "Семья", avatar: "avatar-group" } });
+
+    const repeated = await (await request(`/api/v1/connections/${created.connection.id}/subscription`, cookie)).json();
+    expect(repeated.subscription.url).toBe(created.subscription.url);
+
+    const list = await (await request("/api/v1/connections", cookie)).json();
+    expect(list.connections).toHaveLength(2);
+    expect(JSON.stringify(list)).not.toContain(created.subscription.url);
+    expect(JSON.stringify(list)).not.toContain("credentials");
+    expect(JSON.stringify(list)).not.toContain("subscription_token_hash");
   });
 
-  test("device responses never expose subscription hashes", () => {
-    const person = app.people.create({ name: "Мама" });
-    app.people.createDevice(person.id, { name: "iPhone", platform: "ios", client: "incy" });
-    expect(JSON.stringify(app.people.list())).not.toContain("subscription_token_hash");
+  test("renames, rotates and archives a connection", async () => {
+    const cookie = ownerCookie();
+    const created = await (await request("/api/v1/connections", cookie, "POST", { name: "Гости" })).json();
+    const id = created.connection.id;
+    const oldUrl = created.subscription.url;
+    const updated = await (await request(`/api/v1/connections/${id}`, cookie, "PATCH", { name: "Семья", avatar: "avatar-group" })).json();
+    expect(updated).toMatchObject({ name: "Семья", avatar: "avatar-group" });
+
+    const rotated = await (await request(`/api/v1/connections/${id}/rotate`, cookie, "POST", {})).json();
+    expect(rotated.state).toBe("ready");
+    expect(rotated.subscription.url).not.toBe(oldUrl);
+    expect((await app.fetch(new Request(oldUrl.replace("localhost:8181", "localhost")))).status).toBe(404);
+
+    const archived = await request(`/api/v1/connections/${id}`, cookie, "DELETE");
+    expect(archived.status).toBe(202);
+    expect((await archived.json()).state).toBe("archived");
+    expect(app.connections.list()).toHaveLength(0);
   });
 
-  test("device kind is stored independently from its editable name", () => {
-    const person = app.people.create({ name: "Мама" });
-    const created = app.people.createDevice(person.id, { name: "Мои очки", kind: "vr", platform: "unknown", client: "incy" });
-    expect(created.device.kind).toBe("vr");
-    expect(app.people.get(person.id).devices[0]?.kind).toBe("vr");
+  test("rejects physical-device fields and all removed APIs", async () => {
+    const cookie = ownerCookie();
+    const invalid = await request("/api/v1/connections", cookie, "POST", { platform: "ios" });
+    const note = await request("/api/v1/connections", cookie, "POST", { note: "лишнее поле" });
+    const people = await request("/api/v1/people", cookie);
+    const accesses = await request("/api/v1/accesses/legacy", cookie);
+    const devices = await request("/api/v1/devices", cookie);
+    expect(invalid.status).toBe(400);
+    expect(note.status).toBe(400);
+    expect(people.status).toBe(404);
+    expect(accesses.status).toBe(404);
+    expect(devices.status).toBe(404);
   });
 
-  test("device can be renamed without recreating its connection", () => {
-    const person = app.people.create({ name: "Мама" });
-    const created = app.people.createDevice(person.id, { name: "iPhone", kind: "phone", platform: "ios", client: "incy" });
-    const updated = app.people.updateDevice(created.device.id, { name: "Рабочий ноутбук", kind: "computer", platform: "macos" });
-    expect(updated).toMatchObject({
-      id: created.device.id,
-      person_id: person.id,
-      name: "Рабочий ноутбук",
-      kind: "computer",
-      platform: "macos",
-      client: "incy",
-      status: "invited",
+  test("returns 202 while activation is queued for retry", async () => {
+    const cookie = ownerCookie();
+    const unavailable = new HttpApplication(fixture.db, {
+      async add() { throw new Error("agent unavailable"); },
+      async rotate() { return { ok: true }; },
+      async revoke() { return { ok: true }; },
     });
+    const response = await unavailable.fetch(new Request("http://localhost/api/v1/connections", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ name: "Мама" }),
+    }));
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ state: "retrying", connection: { status: "provisioning" }, error: "agent unavailable" });
   });
 
-  test("person avatars are stored in the shared avatar catalog", () => {
-    const person = app.people.create({ name: "Мама", avatar: "avatar-8" });
-    expect(app.people.get(person.id).avatar).toBe("avatar-8");
-    expect(app.people.update(person.id, { avatar: "avatar-9" }).avatar).toBe("avatar-9");
+  test("subscription negotiation records use without persisting a client format", async () => {
+    const connection = app.connections.create({ name: "Мама" });
+    const ready = await app.connectionSync.activate(connection.id);
+    const url = ready.subscription!.url.replace("localhost:8181", "localhost");
+
+    const browser = await app.fetch(new Request(url, { headers: { accept: "text/html", "user-agent": "Mozilla/5.0 (iPhone)" } }));
+    const mihomo = await app.fetch(new Request(url, { headers: { "user-agent": "Clash Verge" } }));
+    const singBox = await app.fetch(new Request(`${url}?format=sing-box`));
+    const links = await app.fetch(new Request(`${url}?format=links`, { headers: { "user-agent": "Mozilla/5.0 (iPhone)" } }));
+
+    expect(browser.headers.get("content-type")).toContain("text/html");
+    expect(mihomo.headers.get("content-type")).toContain("text/yaml");
+    expect(JSON.parse(await singBox.text()).outbounds[1].transport.type).toBe("grpc");
+    expect(links.headers.get("no-limit-enabled")).toBe("1");
+    const current = app.connections.get(connection.id);
+    expect(current.first_used_at).not.toBeNull();
+    expect(current.last_fetched_at).not.toBeNull();
+    expect(current).not.toHaveProperty("last_profile_format");
+    expect(app.journal.list({ q: "впервые использована" }).events).toHaveLength(1);
   });
 
-  test("owner can be renamed without recreating credentials", () => {
-    const timestamp = new Date().toISOString();
-    fixture.db.raw.query("INSERT INTO owners (id, name, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-      .run("owner", "Федор", "Europe/Moscow", timestamp, timestamp);
-    expect(app.auth.updateOwner({ name: "Фёдор" })).toMatchObject({ name: "Фёдор", timezone: "Europe/Moscow" });
-    expect(app.auth.state().owner?.name).toBe("Фёдор");
-  });
-
-  test("owner can change the personal timezone", () => {
-    const timestamp = new Date().toISOString();
-    fixture.db.raw.query("INSERT INTO owners (id, name, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-      .run("owner", "Федор", "Europe/Moscow", timestamp, timestamp);
-    expect(app.auth.updateOwner({ timezone: "Asia/Yerevan" })).toMatchObject({ name: "Федор", timezone: "Asia/Yerevan" });
-    expect(app.auth.state().owner?.timezone).toBe("Asia/Yerevan");
-  });
-
-  test("invitation page is served by the public SPA route", async () => {
-    const response = await app.fetch(new Request("http://localhost/invite/example-token"));
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("text/html");
-  });
-
-  test("redeemed invitation can be reopened for 24 hours", async () => {
-    const person = app.people.create({ name: "Мама" });
-    const created = app.people.createDevice(person.id, { name: "iPhone", platform: "ios", client: "incy" });
-    const token = created.invitation.url.split("/").at(-1)!;
-    const redeemed = await app.deviceSync.redeem(token);
-      if (redeemed.pending) throw new Error("Device activation did not complete");
-      const repeated = app.people.redemption(redeemed.redemptionToken);
-      expect(repeated.subscriptionUrl).toBe(redeemed.subscriptionUrl);
-      expect(repeated).not.toHaveProperty("subscriptionToken");
-  });
-
-  test("records only the first profile fetch and tracks the routes version", async () => {
-    const person = app.people.create({ name: "Мама" });
-    const created = app.people.createDevice(person.id, { name: "iPhone", platform: "ios", client: "incy" });
-    const redeemed = await app.deviceSync.redeem(created.invitation.url.split("/").at(-1)!);
-    if (redeemed.pending) throw new Error("Device activation did not complete");
-    const subscriptionToken = redeemed.subscriptionUrl.split("/").at(-1)!;
-    app.routes.publish("Первая ревизия", "owner");
-
-    const first = await app.fetch(new Request(`http://localhost/subscriptions/incy/${subscriptionToken}`));
-    const second = await app.fetch(new Request(`http://localhost/subscriptions/incy/${subscriptionToken}`));
-    const routes = await app.fetch(new Request(`http://localhost/routes/${subscriptionToken}.json`));
-
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
-    expect(routes.status).toBe(200);
-    expect(app.journal.list({ q: "Профиль впервые загружен" }).events).toHaveLength(1);
-    expect(app.people.device(redeemed.device.id).last_routes_version).toBe(1);
+  test("connection appearance and owner timezone remain editable", async () => {
+    const connection = app.connections.create({ name: "Мама", avatar: "avatar-8" });
+    expect(app.connections.update(connection.id, { avatar: "avatar-group" }).avatar).toBe("avatar-group");
+    const cookie = ownerCookie();
+    const response = await request("/api/v1/me", cookie, "PATCH", { timezone: "Asia/Yerevan" });
+    expect(await response.json()).toEqual({ owner: { id: "owner", timezone: "Asia/Yerevan" } });
   });
 });

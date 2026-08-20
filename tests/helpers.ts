@@ -1,11 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { MatreshkaDatabase } from "../src/server/db/database";
+import { OutpostDatabase } from "../src/server/db/database";
 
 export function database() {
-  const directory = mkdtempSync(join(tmpdir(), "matreshka-test-"));
-  const db = new MatreshkaDatabase(join(directory, "test.sqlite"));
+  const directory = mkdtempSync(join(tmpdir(), "outpost-test-"));
+  const db = new OutpostDatabase(join(directory, "test.sqlite"));
   return {
     db,
     directory,

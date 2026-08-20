@@ -1,117 +1,7 @@
 import {t} from './i18n.imba'
 import {fmt, trafficPeriods} from './context.imba'
 
-tag matreshka-home-panel
-	store = null
-	copied = false
-
-	get update do store.data.system.updates or {available: false, current: store.data.system.version}
-
-	def expiry value
-		return 'Срок проверяется' unless value
-		"до {new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'}).format(new Date(value)).replace(/\s*г\.$/, '')}"
-
-	def upgrade
-		return unless update.available
-		const bundle = "/var/lib/matreshka/incoming/matreshka-{update.latest}-linux-amd64.tar.gz"
-		const payload = {version: update.latest, bundle: bundle, signature: "{bundle}.minisig"}
-		store.selected = {payload: payload}
-		store.confirmation = await store.api('POST', '/api/v1/operations/preview', {action: 'update.apply', payload: payload})
-		store.open('confirm')
-
-	def copy
-		await window.navigator.clipboard.writeText(store.data.system.domain)
-		copied = true
-		imba.commit!
-		await new Promise do(resolve) window.setTimeout(resolve, 1600)
-		copied = false
-		imba.commit!
-
-	def backup
-		store.open('backup')
-
-	def restore
-		store.open('restore')
-
-	<self.matreshka-card>
-		<header>
-			<div.panel-icon>
-				<matreshka-brand-mark tone="success">
-				<i.health>
-			<div>
-				<h2> 'Matreshka'
-				<div.version>
-					<span> "Версия {store.data.system.version}"
-					if update.available
-						<button type="button" @click=upgrade title="Обновить до {update.latest}">
-							<matreshka-icon name="download-simple">
-							<span> update.latest
-			<span.uptime> fmt.uptime(store.data.system.uptime)
-		<div.facts>
-			<div.fact.tls .pending=(store.data.system.tls.status != 'valid')>
-				<matreshka-icon name=(store.data.system.tls.status == 'valid' ? 'shield-check' : 'shield-warning')>
-				<div>
-					<strong> 'TLS-сертификат'
-					<span> expiry(store.data.system.tls.expiresAt)
-			<div.fact.address>
-				<div>
-					<div.value>
-						<strong> store.data.system.domain
-						<button.copy type="button" @click=copy aria-label=(copied ? 'Адрес скопирован' : 'Скопировать адрес панели') title=(copied ? 'Адрес скопирован' : 'Скопировать адрес панели')>
-							<matreshka-icon name=(copied ? 'check' : 'copy')>
-					<span> "IPv4 {store.data.system.address or '—'} · HTTPS · TCP 443"
-			<div.fact.transfer>
-				<small> 'Перенос данных'
-				<div.actions>
-					<button type="button" @click=backup aria-label="Выгрузить данные" title="Выгрузить данные">
-						<matreshka-icon name="download-simple">
-						<span> 'Выгрузить'
-					<button type="button" @click=restore aria-label="Загрузить данные" title="Загрузить данные">
-						<matreshka-icon name="upload-simple">
-						<span> 'Загрузить'
-
-	css self
-		d:block px:22px pb:16px
-		header d:grid gtc:54px minmax(0,1fr) auto ai:center g:15px m:0 -22px p:12px 22px rdt:13px bgc:var(--matreshka-section) border-bottom:1px solid var(--matreshka-line)
-		.panel-icon pos:relative s:50px d:grid ja:center rd:11px bd:1px solid color-mix(in srgb, var(--matreshka-success) 30%, var(--matreshka-success-soft)) bgc:var(--matreshka-success-soft)
-		.panel-icon matreshka-brand-mark transform:scale(.78)
-		.panel-icon > .health pos:absolute r:-4px b:-4px s:16px d:block rd:full bd:3px solid var(--matreshka-white) bgc:var(--matreshka-success)
-		h2 c:color-mix(in srgb, var(--matreshka-text) 58%, var(--matreshka-muted)) fs:18px fw:750
-		.uptime d:inline-flex ai:center h:21px px:8px bd:1px solid color-mix(in srgb, var(--matreshka-success) 30%, var(--matreshka-success-soft)) rd:full bgc:var(--matreshka-success-soft) c:var(--matreshka-success) fs:11px fw:650 white-space:nowrap
-		.version d:flex ai:center g:12px mt:6px c:var(--matreshka-muted) fs:13px
-		.version button h:22px d:inline-flex ai:center g:5px p:0 8px bd:1px solid transparent rd:full bgc:var(--matreshka-auth-start) c:var(--matreshka-brand) fs:12px fw:750
-		.version button@hover bgc:var(--matreshka-auth-end)
-		.facts d:grid gtc:210px minmax(0,1fr) 246px ai:center pt:12px
-		.fact d:grid ai:center
-		.fact strong, .fact span, .fact small d:block
-		.fact strong c:var(--matreshka-navy) fs:15px fw:750
-		.fact span mt:4px c:var(--matreshka-muted) fs:11px white-space:nowrap
-		.address px:18px miw:0 border-left:1px solid var(--matreshka-line)
-		.address .value d:flex ai:center g:5px miw:0 maw:100%
-		.address strong miw:0 maw:100% c:var(--matreshka-brand) fs:14px of:hidden tof:ellipsis white-space:nowrap
-		.address div miw:0
-		.address > div > span of:hidden tof:ellipsis white-space:nowrap
-		.address button s:24px d:grid ja:center fl:0 0 24px p:0 bd:0 rd:7px bgc:transparent c:var(--matreshka-muted) fs:13px
-		.address button@hover bgc:var(--matreshka-soft) c:var(--matreshka-brand)
-		.tls gtc:24px minmax(0,1fr) g:10px pr:18px c:var(--matreshka-success)
-		.tls > matreshka-icon fs:23px
-		.tls.pending c:var(--matreshka-warning)
-		.tls strong c:currentColor fs:14px white-space:nowrap
-		.transfer pl:18px border-left:1px solid var(--matreshka-line)
-		.transfer > small mb:6px c:var(--matreshka-muted) fs:11px
-		.actions d:flex ai:center g:7px
-		.actions button h:34px d:grid gtc:20px auto jai:center g:6px px:9px bd:1px solid var(--matreshka-line) rd:8px bgc:var(--matreshka-white) c:var(--matreshka-text) fs:12px fw:650 lh:20px white-space:nowrap
-		.actions button@hover bgc:var(--matreshka-soft) c:var(--matreshka-brand)
-		.actions button > .ph s:20px d:grid ja:center fs:19px lh:20px
-		.actions button > span h:20px d:flex ai:center m:0 fs:12px lh:20px
-		@media(max-width: 680px)
-			header gtc:50px minmax(0,1fr) auto
-			.facts gtc:1fr
-			.address mt:20px pt:20px px:0 border-left:0 border-top:1px solid var(--matreshka-line)
-			.tls pr:0
-			.transfer mt:20px pt:20px pl:0 border-left:0 border-top:1px solid var(--matreshka-line)
-
-tag matreshka-home-server
+tag outpost-home-server
 	store = null
 
 	get metrics
@@ -132,10 +22,10 @@ tag matreshka-home-server
 		return [network.download + network.upload] unless points.length
 		points.map do(point) point.download + point.upload
 
-	<self.matreshka-card>
+	<self.outpost-card>
 		<header>
 			<div.server-icon>
-				<matreshka-icon name="hard-drives">
+				<outpost-icon name="hard-drives">
 				<i.health>
 			<div>
 				<h2> 'Сервер'
@@ -145,66 +35,56 @@ tag matreshka-home-server
 			for row in rows
 				<div.metric .disk=(row.title == 'Диск')>
 					<strong> row.title
-					<matreshka-gauge value=row.percent>
+					<outpost-gauge value=row.percent>
 					<small> row.detail if row.detail
 			<div.metric.network>
 				<strong> 'Сеть сейчас'
 				<div.network-body>
-					<matreshka-line-chart mini=true points=signal>
+					<outpost-line-chart mini=true points=signal>
 					<div.rates>
 						<span.download>
-							<matreshka-icon name="arrow-down">
+							<outpost-icon name="arrow-down">
 							<span> fmt.rate(network.download)
 						<span.upload>
-							<matreshka-icon name="arrow-up">
+							<outpost-icon name="arrow-up">
 							<span> fmt.rate(network.upload)
 
 	css self
 		d:block px:22px pb:20px
-		header d:grid gtc:54px minmax(0,1fr) auto ai:center g:15px m:0 -22px p:12px 22px rdt:13px bgc:var(--matreshka-section) border-bottom:1px solid var(--matreshka-line)
-		.server-icon pos:relative s:50px d:grid ja:center rd:11px bd:1px solid color-mix(in srgb, var(--matreshka-success) 30%, var(--matreshka-success-soft)) bgc:var(--matreshka-success-soft) c:var(--matreshka-success) fs:25px
-		.server-icon > .health pos:absolute r:-4px b:-4px s:16px d:block rd:full bd:3px solid var(--matreshka-white) bgc:var(--matreshka-success)
-		header h2 c:color-mix(in srgb, var(--matreshka-text) 58%, var(--matreshka-muted)) fs:18px fw:750
-		.uptime d:inline-flex ai:center h:21px px:8px bd:1px solid color-mix(in srgb, var(--matreshka-success) 30%, var(--matreshka-success-soft)) rd:full bgc:var(--matreshka-success-soft) c:var(--matreshka-success) fs:11px fw:650 white-space:nowrap
-		header p mt:6px c:var(--matreshka-muted) fs:13px
+		header d:grid gtc:54px minmax(0,1fr) auto ai:center g:15px m:0 -22px p:12px 22px rdt:13px bgc:var(--outpost-section) border-bottom:1px solid var(--outpost-line)
+		.server-icon pos:relative s:50px d:grid ja:center rd:11px bd:1px solid color-mix(in srgb, var(--outpost-success) 30%, var(--outpost-success-soft)) bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:25px
+		.server-icon > .health pos:absolute r:-4px b:-4px s:16px d:block rd:full bd:3px solid var(--outpost-white) bgc:var(--outpost-success)
+		header h2 c:color-mix(in srgb, var(--outpost-text) 58%, var(--outpost-muted)) fs:18px fw:750
+		.uptime d:inline-flex ai:center h:21px px:8px bd:1px solid color-mix(in srgb, var(--outpost-success) 30%, var(--outpost-success-soft)) rd:full bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:11px fw:650 white-space:nowrap
+		header p mt:6px c:var(--outpost-muted) fs:13px
 		.metrics d:grid gtc:repeat(4, minmax(0,1fr)) ai:stretch pt:16px
 		.metric d:grid ja:center ta:center px:18px
-		.metric + .metric border-left:1px solid var(--matreshka-line)
+		.metric + .metric border-left:1px solid var(--outpost-line)
 		.metric strong, .metric small d:block
-		.metric strong mb:5px c:var(--matreshka-muted) fs:12px fw:650
-		.metric small mt:-1px c:var(--matreshka-muted) fs:11px white-space:nowrap
+		.metric strong mb:5px c:var(--outpost-muted) fs:12px fw:650
+		.metric small mt:-1px c:var(--outpost-muted) fs:11px white-space:nowrap
 		.network-body w:100% d:grid gtc:minmax(72px,1fr) auto ai:center g:16px mt:4px
-		.network-body matreshka-line-chart w:100% h:38px
+		.network-body outpost-line-chart w:100% h:38px
 		.rates d:grid g:7px ta:left white-space:nowrap
-		.rates span d:flex ai:center g:7px c:var(--matreshka-navy) fs:12px fw:650
-		.rates matreshka-icon fs:14px
-		.rates .download matreshka-icon c:var(--matreshka-brand)
-		.rates .upload matreshka-icon c:var(--matreshka-success)
+		.rates span d:flex ai:center g:7px c:var(--outpost-navy) fs:12px fw:650
+		.rates outpost-icon fs:14px
+		.rates .download outpost-icon c:var(--outpost-brand)
+		.rates .upload outpost-icon c:var(--outpost-success)
 		@media(max-width: 900px)
 			.metrics gtc:repeat(2, minmax(0,1fr)) rg:18px
 			.metric.disk border-left:0
 		@media(max-width: 560px)
 			.metrics gtc:1fr
-			.metric + .metric pt:18px border-left:0 border-top:1px solid var(--matreshka-line)
+			.metric + .metric pt:18px border-left:0 border-top:1px solid var(--outpost-line)
 
-tag matreshka-home-system
-	store = null
-
-	<self>
-		<matreshka-home-server store=store>
-		<matreshka-home-panel store=store>
-
-	css self
-		d:grid g:14px mt:26px
-
-tag matreshka-home-traffic
+tag outpost-home-traffic
 	store = null
 
 	get chart
 		fmt.sample(store.data.traffic.series).map(do(point) point.upload + point.download)
 
 	get ceiling
-		const peak = Math.max(...chart, 1)
+		const peak = Math.max(...chart, 4)
 		const unit = Math.pow(1024, Math.min(Math.floor(Math.log(peak) / Math.log(1024)), 4))
 		const amount = peak / unit
 		const magnitude = Math.pow(10, Math.floor(Math.log10(amount)))
@@ -231,9 +111,9 @@ tag matreshka-home-traffic
 	def period value
 		await store.period(value)
 		self.querySelector('details.period').removeAttribute('open')
-		window.requestAnimationFrame do self.querySelector('matreshka-line-chart').draw!
+		window.requestAnimationFrame do self.querySelector('outpost-line-chart').draw!
 
-	<self.matreshka-card>
+	<self.outpost-card>
 		<header>
 			<div.summary>
 				<h2>
@@ -249,13 +129,13 @@ tag matreshka-home-traffic
 			<details.period>
 				<summary>
 					<span> fmt.period(store.trafficPeriod).label
-					<matreshka-icon name="caret-down">
+					<outpost-icon name="caret-down">
 				<menu>
 					for option in trafficPeriods
 						<button type="button" .active=(option.id == store.trafficPeriod) @click=period(option.id)>
 							<span> option.label
 							if option.id == store.trafficPeriod
-								<matreshka-icon name="check">
+								<outpost-icon name="check">
 		<div.chart>
 			<div.chart-scale>
 				for value in scale
@@ -263,39 +143,39 @@ tag matreshka-home-traffic
 			<div.chart-bands aria-hidden="true">
 				for index in [0 ... intervals]
 					<i .alternate=(index % 2)>
-			<matreshka-line-chart points=chart ceiling=ceiling>
+			<outpost-line-chart points=chart ceiling=ceiling>
 			<div.chart-dates>
 				for date in dates
 					<span> date
 
 	css self
 		d:flex fld:column h:340px px:24px pb:24px
-		header d:flex ai:center jc:space-between g:20px m:0 -24px p:14px 24px rdt:13px bgc:var(--matreshka-section) border-bottom:1px solid var(--matreshka-line)
+		header d:flex ai:center jc:space-between g:20px m:0 -24px p:14px 24px rdt:13px bgc:var(--outpost-section) border-bottom:1px solid var(--outpost-line)
 		.summary d:flex ai:baseline g:20px min-width:0
-		header h2 d:flex ai:baseline g:7px c:color-mix(in srgb, var(--matreshka-text) 58%, var(--matreshka-muted)) fs:18px fw:750 white-space:nowrap
-		header strong c:var(--matreshka-brand) fs:20px fw:750
+		header h2 d:flex ai:baseline g:7px c:color-mix(in srgb, var(--outpost-text) 58%, var(--outpost-muted)) fs:18px fw:750 white-space:nowrap
+		header strong c:var(--outpost-brand) fs:20px fw:750
 		.totals d:flex ai:baseline g:18px white-space:nowrap
 		.totals > span d:flex ai:baseline g:6px
-		.totals small c:var(--matreshka-muted) fs:12px
-		.totals strong c:var(--matreshka-navy) fs:13px fw:750
+		.totals small c:var(--outpost-muted) fs:12px
+		.totals strong c:var(--outpost-navy) fs:13px fw:750
 		.period pos:relative
-		.period summary d:flex ai:center g:9px p:8px 11px bd:1px solid var(--matreshka-line) rd:8px c:var(--matreshka-text) fs:12px fw:600 cur:pointer list-style:none
+		.period summary d:flex ai:center g:9px p:8px 11px bd:1px solid var(--outpost-line) rd:8px c:var(--outpost-text) fs:12px fw:600 cur:pointer list-style:none
 		.period summary::-webkit-details-marker d:none
-		.period[open] summary matreshka-icon rotate:180deg
-		.period menu pos:absolute t:calc(100% + 8px) r:0 zi:5 miw:220px d:grid g:3px m:0 p:6px bd:1px solid var(--matreshka-line) rd:11px bgc:var(--matreshka-white) bxs:0 14px 36px black/10 list-style:none
-		.period menu button d:grid gtc:1fr 18px ai:center g:10px p:9px 10px bd:0 rd:7px bgc:transparent c:var(--matreshka-muted) fs:12px ta:left
-		.period menu button bgc@hover:var(--matreshka-soft) c@hover:var(--matreshka-brand)
-		.period menu button.active c:var(--matreshka-brand) fw:700
+		.period[open] summary outpost-icon rotate:180deg
+		.period menu pos:absolute t:calc(100% + 8px) r:0 zi:5 miw:220px d:grid g:3px m:0 p:6px bd:1px solid var(--outpost-line) rd:11px bgc:var(--outpost-white) bxs:0 14px 36px black/10 list-style:none
+		.period menu button d:grid gtc:1fr 18px ai:center g:10px p:9px 10px bd:0 rd:7px bgc:transparent c:var(--outpost-muted) fs:12px ta:left
+		.period menu button bgc@hover:var(--outpost-soft) c@hover:var(--outpost-brand)
+		.period menu button.active c:var(--outpost-brand) fw:700
 		.chart pos:relative fl:1 mih:0 mt:36px pb:24px
 		.chart-bands pos:absolute t:0 b:24px l:0 r:0 d:flex of:hidden pe:none
 		.chart-bands i fl:1
 		.chart-bands i bdl:1px dashed blue2/70
 		.chart-bands i@first-child bdl:0
 		.chart-bands i.alternate bgc:blue0/45
-		.chart matreshka-line-chart pos:relative zi:1 h:100% w:100% d:block
-		.chart-scale pos:absolute t:0 b:24px l:0 zi:2 w:45px d:flex fld:column jc:space-between c:var(--matreshka-muted) fs:10px lh:1 pe:none
-		.chart-scale span w:max-content pr:4px bgc:var(--matreshka-white)
-		.chart-dates pos:absolute b:0 l:0 r:0 h:24px d:flex ai:end jc:space-between c:var(--matreshka-muted) fs:11px
+		.chart outpost-line-chart pos:relative zi:1 h:100% w:100% d:block
+		.chart-scale pos:absolute t:0 b:24px l:0 zi:2 w:45px d:flex fld:column jc:space-between c:var(--outpost-muted) fs:10px lh:1 pe:none
+		.chart-scale span w:max-content pr:4px bgc:var(--outpost-white)
+		.chart-dates pos:absolute b:0 l:0 r:0 h:24px d:flex ai:end jc:space-between c:var(--outpost-muted) fs:11px
 		@media(max-width: 620px)
 			header ai:flex-start
 			.summary d:block
@@ -303,73 +183,70 @@ tag matreshka-home-traffic
 			.totals mt:7px g:12px
 			.chart-scale w:38px
 
-tag matreshka-home-users
+tag outpost-home-connections
 	store = null
 
-	get people do store.data.people
-	get online do people.filter(do(person) fmt.personOnline(person)).length
+	get connections do store.data.connections
+	get online do connections.filter(do(connection) fmt.connectionOnline(connection)).length
 
 	get maximum
-		Math.max(...people.map(do(person) fmt.personTraffic(person, store.data.traffic)), 1)
+		Math.max(...connections.map(do(connection) fmt.connectionTraffic(connection, store.data.traffic)), 1)
 
-	def avatar person
-		fmt.avatar(person.avatar)
+	def usage connection
+		fmt.connectionTraffic(connection, store.data.traffic)
 
-	def usage person
-		fmt.personTraffic(person, store.data.traffic)
+	def connectionspage
+		store.goto('/connections')
 
-	def peoplepage
-		store.goto('/people')
-
-	<self.matreshka-card>
+	<self.outpost-card>
 		<header>
-			<h2> 'Пользователи'
+			<h2> 'Подключения'
 			<span.online-count>
 				<i>
 				<span> "{online} онлайн"
 		<div.columns>
-			<span> 'Пользователь'
+			<span> 'Подключение'
 			<span> 'Использовано'
-			<span> 'Устройства'
+			<span> 'Последняя активность'
 			<span> 'Статус'
 		<div.rows>
-			for person in people
-				<button.user type="button" @click=peoplepage>
-					<div.person>
-						<img src=avatar(person) alt="">
-						<i .online=fmt.personOnline(person)>
-						<strong> person.name
+			for connection in connections
+				<button.user type="button" @click=connectionspage>
+					<div.connection>
+						<outpost-avatar value=connection.avatar size="34">
+						<i .online=fmt.connectionOnline(connection)>
+						<strong> connection.name
 					<div.usage>
-						<div.bar><span style="width:{fmt.percent(usage(person), maximum)}">
-						<b> fmt.bytes(usage(person))
-					<span.devices> person.devices.length
-					<span.presence .online=fmt.personOnline(person)>
+						<div.bar><span style="width:{fmt.percent(usage(connection), maximum)}">
+						<b> fmt.bytes(usage(connection))
+					<span.activity> fmt.seen(connection)
+					<span.presence .online=fmt.connectionOnline(connection) .pending=(connection.presence == 'unknown')>
 						<i>
-						<span> fmt.seen(person)
+						<span> fmt.connectionPresence(connection)
 
 	css self
 		d:block mt:18px px:24px pb:24px
-		header d:flex ai:center jc:space-between g:16px m:0 -24px p:14px 24px rdt:13px bgc:var(--matreshka-section) border-bottom:1px solid var(--matreshka-line)
-		h2 c:color-mix(in srgb, var(--matreshka-text) 58%, var(--matreshka-muted)) fs:18px fw:750
-		.online-count d:inline-flex ai:center g:7px h:28px px:10px bd:1px solid color-mix(in srgb, var(--matreshka-success) 30%, var(--matreshka-success-soft)) rd:full bgc:var(--matreshka-success-soft) c:var(--matreshka-success) fs:11px fw:700 white-space:nowrap
+		header d:flex ai:center jc:space-between g:16px m:0 -24px p:14px 24px rdt:13px bgc:var(--outpost-section) border-bottom:1px solid var(--outpost-line)
+		h2 c:color-mix(in srgb, var(--outpost-text) 58%, var(--outpost-muted)) fs:18px fw:750
+		.online-count d:inline-flex ai:center g:7px h:28px px:10px bd:1px solid color-mix(in srgb, var(--outpost-success) 30%, var(--outpost-success-soft)) rd:full bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:11px fw:700 white-space:nowrap
 		.online-count i s:7px d:block rd:full bgc:currentColor
 		.columns, .user gtc:minmax(220px,1.05fr) minmax(300px,1.25fr) minmax(100px,.55fr) minmax(180px,.8fr)
-		.columns d:grid ai:center pt:12px pb:9px c:var(--matreshka-muted) fs:10px
-		.user w:100% mih:56px d:grid ai:center p:0 bd:0 border-top:1px solid var(--matreshka-line) bgc:transparent c:var(--matreshka-text) ta:left
-		.user@hover bgc:var(--matreshka-soft)
-		.person pos:relative d:grid gtc:34px 1fr ai:center g:12px
-		.person img s:34px d:block object-fit:cover rd:full
-		.person > i pos:absolute l:27px b:1px s:8px d:block rd:full bd:2px solid var(--matreshka-white) bgc:#C7CFDA
-		.person > i.online bgc:var(--matreshka-success)
-		.person strong fs:13px
+		.columns d:grid ai:center pt:12px pb:9px c:var(--outpost-muted) fs:10px
+		.user w:100% mih:56px d:grid ai:center p:0 bd:0 border-top:1px solid var(--outpost-line) bgc:transparent c:var(--outpost-text) ta:left
+		.user@hover bgc:var(--outpost-soft)
+		.connection pos:relative d:grid gtc:34px 1fr ai:center g:12px
+		.connection > i pos:absolute l:27px b:1px s:8px d:block rd:full bd:2px solid var(--outpost-white) bgc:#C7CFDA
+		.connection > i.online bgc:var(--outpost-success)
+		.connection strong fs:13px
 		.usage d:grid gtc:minmax(90px,190px) 70px ai:center g:14px
-		.bar h:5px of:hidden rd:full bgc:var(--matreshka-line)
-		.bar span h:100% d:block rd:full bgc:var(--matreshka-brand)
-		.usage b c:var(--matreshka-navy) fs:12px fw:700 white-space:nowrap
-		.devices c:var(--matreshka-muted) fs:12px
-		.presence d:flex ai:center g:8px c:var(--matreshka-muted) fs:12px white-space:nowrap
+		.bar h:5px of:hidden rd:full bgc:var(--outpost-line)
+		.bar span h:100% d:block rd:full bgc:var(--outpost-brand)
+		.usage b c:var(--outpost-navy) fs:12px fw:700 white-space:nowrap
+		.activity c:var(--outpost-muted) fs:12px white-space:nowrap
+		.presence d:flex ai:center g:8px c:var(--outpost-muted) fs:12px white-space:nowrap
 		.presence i s:7px d:block rd:full bgc:currentColor
-		.presence.online c:var(--matreshka-success)
+		.presence.online c:var(--outpost-success)
+		.presence.pending c:var(--outpost-warning)
 		@media(max-width: 900px)
 			.columns, .user gtc:minmax(180px,1fr) minmax(220px,1fr) 90px 150px
 		@media(max-width: 720px)
@@ -377,29 +254,33 @@ tag matreshka-home-users
 			.columns span:nth-child(2) d:none
 			.columns span:nth-child(3) d:none
 			.user gtc:1fr 100px
-			.usage, .devices d:none
+			.usage, .activity d:none
 			.presence justify-self:end
 
-tag matreshka-home
+tag outpost-home
 	store = null
 
 	<self>
 		<header.overview-head>
 			<span.eyebrow> 'ОБЗОР'
-			<matreshka-header title=t('overview.title') subtitle=t('overview.subtitle')>
-		<matreshka-home-system store=store>
-		<matreshka-home-traffic store=store>
-		<matreshka-home-users store=store>
+			<outpost-header title=t('overview.title') subtitle=t('overview.subtitle')>
+		<outpost-home-server store=store>
+		<outpost-home-traffic store=store>
+		<outpost-home-connections store=store>
 
 	css self
-		d:block c:var(--matreshka-text)
+		d:block c:var(--outpost-text)
 		.overview-head d:block
-		.overview-head .eyebrow d:block mb:14px c:var(--matreshka-brand) fs:12px fw:750 ls:.1em
-		matreshka-home-traffic mt:18px
+		.overview-head .eyebrow d:block mb:14px c:var(--outpost-brand) fs:12px fw:750 ls:.1em
+		outpost-home-server mt:26px
+		outpost-home-traffic mt:18px
 
-tag matreshka-line-chart
+tag outpost-line-chart
 	points = []
+	secondary = []
 	mini = false
+	tone = 'default'
+	edge = true
 	ceiling = null
 	observer = null
 
@@ -413,7 +294,7 @@ tag matreshka-line-chart
 
 	def draw
 		const canvas = self.querySelector('canvas')
-		return unless canvas and points.length
+		return unless canvas and (points.length or secondary.length)
 		const width = canvas.clientWidth
 		const height = canvas.clientHeight
 		return unless width and height
@@ -424,46 +305,59 @@ tag matreshka-line-chart
 		context.scale(ratio, ratio)
 		context.clearRect(0, 0, width, height)
 		unless mini
-			context.strokeStyle = window.getComputedStyle(self).getPropertyValue('--matreshka-line')
+			context.strokeStyle = window.getComputedStyle(self).getPropertyValue('--outpost-line')
 			context.lineWidth = 1
 			for index in [0 ... 5]
+				continue if !edge and index == 0
 				const position = 1 + index * (height - 2) / 4
 				context.beginPath!
 				context.moveTo(0, position)
 				context.lineTo(width, position)
 				context.stroke!
 		const values = points.map(Number)
-		const low = mini ? Math.min(...values) : 0
-		const high = mini ? Math.max(...values) : Number(ceiling or Math.max(...values, 1))
+		const comparison = secondary.map(Number)
+		const combined = values.concat(comparison)
+		const low = mini ? Math.min(...combined) : 0
+		const high = mini ? Math.max(...combined) : Number(ceiling or Math.max(...combined, 1))
 		const pad = mini ? 2 : 1
-		const x = do(index) pad + index / Math.max(values.length - 1, 1) * (width - pad * 2)
+		const count = Math.max(values.length, comparison.length)
+		const x = do(index) pad + index / Math.max(count - 1, 1) * (width - pad * 2)
 		const y = do(value) height - pad - (value - low) / Math.max(high - low, 1) * (height - pad * 2)
-		const color = window.getComputedStyle(self).color
-		context.beginPath!
-		values.forEach do(value, index)
-			index ? context.lineTo(x(index), y(value)) : context.moveTo(x(index), y(value))
-		context.lineWidth = mini ? 1.7 : 2
-		context.lineJoin = 'round'
-		context.lineCap = 'round'
-		context.strokeStyle = color
-		context.stroke!
-		unless mini
-			context.lineTo(width - pad, height - pad)
-			context.lineTo(pad, height - pad)
-			context.closePath!
-			context.globalAlpha = .08
-			context.fillStyle = color
-			context.fill!
-			context.globalAlpha = 1
+		const styles = window.getComputedStyle(self)
+		const primary = styles.getPropertyValue('--chart-primary').trim! or styles.color
+		const alternate = styles.getPropertyValue('--chart-secondary').trim! or primary
+		const plot = do(series, color, fill)
+			return unless series.length
+			context.beginPath!
+			series.forEach do(value, index)
+				index ? context.lineTo(x(index), y(value)) : context.moveTo(x(index), y(value))
+			context.lineWidth = mini ? 1.7 : 2
+			context.lineJoin = 'round'
+			context.lineCap = 'round'
+			context.strokeStyle = color
+			context.stroke!
+			if fill
+				context.lineTo(width - pad, height - pad)
+				context.lineTo(pad, height - pad)
+				context.closePath!
+				context.globalAlpha = .08
+				context.fillStyle = color
+				context.fill!
+				context.globalAlpha = 1
+		plot(values, primary, !mini and !comparison.length)
+		plot(comparison, alternate, false)
 
-	<self .mini=mini aria-hidden="true">
+	<self .mini=mini .neutral=(tone == 'neutral') aria-hidden="true">
 		<canvas>
 
 	css self
-		d:block c:var(--matreshka-brand)
+		d:block c:var(--outpost-brand)
+		--chart-primary:var(--outpost-brand)
+		--chart-secondary:var(--outpost-warning)
+		&.neutral --chart-primary:color-mix(in srgb,var(--outpost-muted) 72%,var(--outpost-text))
 		canvas s:100% d:block
 
-tag matreshka-sparkline
+tag outpost-sparkline
 	points = ''
 	tone = 'blue'
 
@@ -484,4 +378,4 @@ tag matreshka-sparkline
 		align-items: flex-end
 		gap: 2px
 		span flex: 1; min-width: 2px; border-radius: 2px 2px 0 0; background: #0B56D9
-		&.green span background: var(--matreshka-success)
+		&.green span background: var(--outpost-success)

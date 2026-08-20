@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+set -a
+# shellcheck source=/dev/null
+. /etc/outpost/outpost.env
+set +a
+exec /opt/outpost/current/bin/outpostctl "$@"

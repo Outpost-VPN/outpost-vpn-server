@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 import { accessSync, constants } from "node:fs";
 import { resolve } from "node:path";
-import { MatreshkaDatabase } from "../server/db/database";
+import { OutpostDatabase } from "../server/db/database";
 import { AuthService } from "../server/auth/webauthn";
-import { MatreshkaApi, apiFromEnvironment } from "./api";
+import { OutpostApi, apiFromEnvironment } from "./api";
 import { runMcp } from "./mcp";
 
 const [command = "help", ...args] = Bun.argv.slice(2);
@@ -48,9 +48,9 @@ try {
 }
 
 async function doctor(args: string[]) {
-  const url = option(args, "--url") ?? process.env.MATRESHKA_URL;
-  if (!url) throw new Error("doctor требует --url или MATRESHKA_URL");
-  const api = new MatreshkaApi({ url, token: process.env.MATRESHKA_TOKEN });
+  const url = option(args, "--url") ?? process.env.OUTPOST_URL;
+  if (!url) throw new Error("doctor требует --url или OUTPOST_URL");
+  const api = new OutpostApi({ url, token: process.env.OUTPOST_TOKEN });
   const started = performance.now();
   const health = await api.get<{ ok: boolean; version: string }>("/healthz");
   const ready = await api.get<{ ok: boolean }>("/readyz");
@@ -59,7 +59,7 @@ async function doctor(args: string[]) {
 
 async function deploy(args: string[]) {
   const target = args.find((value) => !value.startsWith("-"));
-  if (!target) throw new Error("Использование: matreshkactl deploy root@server");
+  if (!target) throw new Error("Использование: outpostctl deploy root@server");
   if (!/^root@[^\s]+$/.test(target)) throw new Error("Первая установка выполняется от root: root@server");
   const root = repositoryRoot();
   const script = resolve(root, "infra/scripts/deploy-remote");
@@ -69,7 +69,7 @@ async function deploy(args: string[]) {
 
 function repositoryRoot() {
   const candidates = [
-    process.env.MATRESHKA_SOURCE_DIR,
+    process.env.OUTPOST_SOURCE_DIR,
     process.cwd(),
     resolve(import.meta.dir, "..", ".."),
   ].filter((value): value is string => Boolean(value));
@@ -79,43 +79,43 @@ function repositoryRoot() {
       return candidate;
     } catch {}
   }
-  throw new Error("Не найден исходный monorepo. Запустите deploy из корня matreshka-panel или задайте MATRESHKA_SOURCE_DIR.");
+  throw new Error("Не найден исходный monorepo. Запустите deploy из корня outpost-vpn-server или задайте OUTPOST_SOURCE_DIR.");
 }
 
 async function update(args: string[]) {
   const target = args.find((value) => !value.startsWith("-"));
   const bundle = option(args, "--bundle");
   const signature = option(args, "--signature") ?? (bundle ? `${bundle}.minisig` : undefined);
-  if (!target || !bundle || !signature) throw new Error("Использование: matreshkactl update root@server --bundle release.tar.gz [--signature release.tar.gz.minisig]");
-  await run(["scp", bundle, `${target}:/var/lib/matreshka/incoming/update.tar.gz`]);
-  await run(["scp", signature, `${target}:/var/lib/matreshka/incoming/update.tar.gz.minisig`]);
+  if (!target || !bundle || !signature) throw new Error("Использование: outpostctl update root@server --bundle release.tar.gz [--signature release.tar.gz.minisig]");
+  await run(["scp", bundle, `${target}:/var/lib/outpost/incoming/update.tar.gz`]);
+  await run(["scp", signature, `${target}:/var/lib/outpost/incoming/update.tar.gz.minisig`]);
   await run([
-    "ssh", target, "/opt/matreshka/current/infra/scripts/apply-update",
-    "/var/lib/matreshka/incoming/update.tar.gz", "/var/lib/matreshka/incoming/update.tar.gz.minisig",
+    "ssh", target, "/opt/outpost/current/infra/scripts/apply-update",
+    "/var/lib/outpost/incoming/update.tar.gz", "/var/lib/outpost/incoming/update.tar.gz.minisig",
   ]);
 }
 
 async function backup(args: string[]) {
   const [subcommand, output] = args;
-  if (subcommand !== "export" || !output) throw new Error("Использование: matreshkactl backup export /path/backup.age");
-  await run(["/opt/matreshka/current/infra/scripts/export-backup", resolve(output)]);
+  if (subcommand !== "export" || !output) throw new Error("Использование: outpostctl backup export /path/backup.age");
+  await run(["/opt/outpost/current/infra/scripts/export-backup", resolve(output)]);
 }
 
 async function restore(args: string[]) {
   const [archive] = args;
-  if (!archive) throw new Error("Использование: matreshkactl restore /path/backup.age");
-  await run(["/opt/matreshka/current/infra/scripts/restore-backup", resolve(archive)]);
+  if (!archive) throw new Error("Использование: outpostctl restore /path/backup.age");
+  await run(["/opt/outpost/current/infra/scripts/restore-backup", resolve(archive)]);
 }
 
 function resetBootstrap(args: string[]) {
-  const path = option(args, "--database") ?? process.env.MATRESHKA_DATABASE ?? "/var/lib/matreshka/matreshka.sqlite";
-  const db = new MatreshkaDatabase(path);
+  const path = option(args, "--database") ?? process.env.OUTPOST_DATABASE ?? "/var/lib/outpost/outpost.sqlite";
+  const db = new OutpostDatabase(path);
   try { console.log(new AuthService(db).resetBootstrap()); } finally { db.close(); }
 }
 
 function migrate(args: string[]) {
-  const path = option(args, "--database") ?? process.env.MATRESHKA_DATABASE ?? "/var/lib/matreshka/matreshka.sqlite";
-  const db = new MatreshkaDatabase(path);
+  const path = option(args, "--database") ?? process.env.OUTPOST_DATABASE ?? "/var/lib/outpost/outpost.sqlite";
+  const db = new OutpostDatabase(path);
   try { console.log(`Миграции применены: ${path}`); } finally { db.close(); }
 }
 
@@ -131,17 +131,17 @@ function option(args: string[], name: string) {
 }
 
 function help() {
-  console.log(`Matreshka CLI
+  console.log(`Outpost CLI
 
-matreshkactl doctor --url https://proxy.example.com
-matreshkactl deploy root@server
-matreshkactl update root@server --bundle release.tar.gz [--signature release.tar.gz.minisig]
-matreshkactl backup export backup.age
-matreshkactl restore backup.age
-matreshkactl bootstrap-reset [--database /var/lib/matreshka/matreshka.sqlite]
-matreshkactl migrate [--database /var/lib/matreshka/matreshka.sqlite]
-matreshkactl mcp
+outpostctl doctor --url https://proxy.example.com
+outpostctl deploy root@server
+outpostctl update root@server --bundle release.tar.gz [--signature release.tar.gz.minisig]
+outpostctl backup export backup.age
+outpostctl restore backup.age
+outpostctl bootstrap-reset [--database /var/lib/outpost/outpost.sqlite]
+outpostctl migrate [--database /var/lib/outpost/outpost.sqlite]
+outpostctl mcp
 
-MCP/API: MATRESHKA_URL and MATRESHKA_TOKEN.
+MCP/API: OUTPOST_URL and OUTPOST_TOKEN.
 `);
 }

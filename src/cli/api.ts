@@ -3,7 +3,7 @@ export type ApiOptions = {
   token?: string;
 };
 
-export class MatreshkaApi {
+export class OutpostApi {
   constructor(private options: ApiOptions) {}
 
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -21,7 +21,7 @@ export class MatreshkaApi {
       const message = payload && typeof payload === "object" && "error" in payload
         ? String((payload as { error?: { message?: string } }).error?.message ?? response.statusText)
         : text || response.statusText;
-      throw new Error(`Matreshka API ${response.status}: ${message}`);
+      throw new Error(`Outpost API ${response.status}: ${message}`);
     }
     return payload as T;
   }
@@ -33,9 +33,9 @@ export class MatreshkaApi {
 }
 
 export function apiFromEnvironment() {
-  const url = process.env.MATRESHKA_URL;
-  if (!url) throw new Error("Задайте MATRESHKA_URL, например https://proxy.example.com");
-  return new MatreshkaApi({ url, token: process.env.MATRESHKA_TOKEN });
+  const url = process.env.OUTPOST_URL;
+  if (!url) throw new Error("Задайте OUTPOST_URL, например https://proxy.example.com");
+  return new OutpostApi({ url, token: process.env.OUTPOST_TOKEN });
 }
 
 function ensureSlash(value: string) {

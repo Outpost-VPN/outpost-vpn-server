@@ -7,29 +7,57 @@ import {
   renderXray,
   validateTemplate,
 } from "../src/server/adapters/engines";
+import { renderXrayUserAdd } from "../src/server/services/engine-runtime";
 import { database } from "./helpers";
 import { config } from "../src/server/config";
 
 describe("protected engine templates", () => {
   test("requires every protected block exactly once", () => {
     expect(validateTemplate("hysteria", defaultHysteriaTemplate).valid).toBeTrue();
-    expect(validateTemplate("hysteria", defaultHysteriaTemplate.replace("{{MATRESHKA_TLS_KEY}}", "raw-key"))).toEqual({
+    expect(validateTemplate("hysteria", defaultHysteriaTemplate.replace("{{OUTPOST_TLS_KEY}}", "raw-key"))).toEqual({
       valid: false,
-      errors: ["Защищённый блок {{MATRESHKA_TLS_KEY}} должен встречаться ровно один раз"],
+      errors: ["Защищённый блок {{OUTPOST_TLS_KEY}} должен встречаться ровно один раз"],
     });
-    expect(validateTemplate("xray", `${defaultXrayTemplate}\n{{MATRESHKA_API}}`).valid).toBeFalse();
+    expect(validateTemplate("xray", `${defaultXrayTemplate}\n{{OUTPOST_API}}`).valid).toBeFalse();
   });
 
   test("renders syntactically valid configs without unresolved blocks", () => {
     const credential = {
-      deviceId: "device",
-      hysteria: { id: "device", password: "password" },
-      xray: { id: "f8e5bb4d-483a-4f57-b2fe-cda0d799cb83", email: "device@matreshka.local" },
+      connectionId: "connection",
+      generation: 1,
+      hysteria: { id: "connection", password: "password" },
+      xray: { id: "f8e5bb4d-483a-4f57-b2fe-cda0d799cb83", email: "connection.1@outpost.local" },
     };
     const hysteria = renderHysteria(defaultHysteriaTemplate);
     const xray = renderXray(defaultXrayTemplate, [credential]);
-    expect(hysteria).not.toContain("{{MATRESHKA");
-    expect(JSON.parse(xray).inbounds[0].settings.clients[0].email).toBe(credential.xray.email);
+    expect(hysteria).not.toContain("{{OUTPOST");
+    const inbounds = JSON.parse(xray).inbounds;
+    expect(inbounds.map((inbound: { tag: string }) => inbound.tag)).toEqual(["vless-xhttp", "vless-grpc"]);
+    expect(inbounds.every((inbound: { settings: { clients: Array<{ email: string }> } }) => inbound.settings.clients[0]?.email === credential.xray.email)).toBeTrue();
+  });
+
+  test("renders a complete inbound for the Xray hot-add API", () => {
+    const source = renderXrayUserAdd({
+      connectionId: "connection",
+      generation: 1,
+      hysteria: { id: "connection", password: "password" },
+      xray: { id: "f8e5bb4d-483a-4f57-b2fe-cda0d799cb83", email: "connection.1@outpost.local" },
+    });
+
+    expect(source.inbounds[0]).toMatchObject({
+      tag: "vless-xhttp",
+      listen: "127.0.0.1",
+      port: 10000,
+      protocol: "vless",
+      streamSettings: { network: "xhttp", xhttpSettings: { path: config.xhttpPath, mode: "auto" } },
+    });
+    expect(source.inbounds[1]).toMatchObject({
+      tag: "vless-grpc",
+      listen: "127.0.0.1",
+      port: 10001,
+      protocol: "vless",
+      streamSettings: { network: "grpc", grpcSettings: { serviceName: config.grpcService } },
+    });
   });
 
   test("uses the built-in template as the diff baseline before the first apply", () => {

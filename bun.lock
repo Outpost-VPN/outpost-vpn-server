@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "matreshka-panel",
+      "name": "outpost-vpn-server",
       "dependencies": {
         "@codemirror/commands": "^6.11.0",
         "@codemirror/lang-json": "^6.0.2",

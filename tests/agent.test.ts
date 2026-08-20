@@ -7,7 +7,7 @@ import { callAgent } from "../src/server/services/operations";
 
 describe("root-agent transport", () => {
   test("keeps the socket readable until a delayed response arrives", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "matreshka-agent-"));
+    const directory = await mkdtemp(join(tmpdir(), "outpost-agent-"));
     const socketPath = join(directory, "agent.sock");
     const server = createServer({ allowHalfOpen: true }, (socket) => {
       let request = "";

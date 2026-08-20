@@ -6,13 +6,13 @@ test -n "$target" || { echo "Usage: deploy-remote root@server" >&2; exit 1; }
 
 repo_root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$repo_root"
-if test -z "${MATRESHKA_AGENT_BINARY:-}" -a -x dist/matreshka-agent; then
-  export MATRESHKA_AGENT_BINARY=dist/matreshka-agent
+if test -z "${OUTPOST_AGENT_BINARY:-}" -a -x dist/outpost-agent; then
+  export OUTPOST_AGENT_BINARY=dist/outpost-agent
 fi
-export MATRESHKA_MINISIGN_SECRET_KEY=${MATRESHKA_MINISIGN_SECRET_KEY:-"$HOME/.config/matreshka/release.key"}
-export MATRESHKA_REQUIRE_SIGNATURE=1
-MATRESHKA_VERSION=${MATRESHKA_VERSION:-"$(date -u +%Y.%m.%d.%H%M)"} bun scripts/release.ts
-archive=$(find release -maxdepth 1 -name 'matreshka-*-linux-amd64.tar.gz' -type f -print | sort | tail -1)
+export OUTPOST_MINISIGN_SECRET_KEY=${OUTPOST_MINISIGN_SECRET_KEY:-"$HOME/.config/outpost/release.key"}
+export OUTPOST_REQUIRE_SIGNATURE=1
+OUTPOST_VERSION=${OUTPOST_VERSION:-"$(date -u +%Y.%m.%d.%H%M)"} bun scripts/release.ts
+archive=$(find release -maxdepth 1 -name 'outpost-*-linux-amd64.tar.gz' -type f -print | sort | tail -1)
 test -n "$archive"
 signature="${archive}.minisig"
 test -f "$signature"

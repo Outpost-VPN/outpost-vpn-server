@@ -2,26 +2,31 @@ import { readdirSync, statSync } from "node:fs";
 import { lookup } from "node:dns/promises";
 import { uptime } from "node:os";
 import { join } from "node:path";
-import type { MatreshkaDatabase } from "../db/database";
+import { z } from "zod";
+import type { OutpostDatabase } from "../db/database";
 import { now } from "../db/database";
 import { config } from "../config";
 import type { EngineId } from "../models";
-import { ServiceError } from "./people";
+import { ServiceError } from "./connections";
 import { JournalService, type JournalQuery } from "./journal";
 
 const engineIds: EngineId[] = ["hysteria", "xray"];
+const interfaceSettingsInput = z.object({
+  language: z.string().trim().min(2).max(12).optional(),
+  compact: z.boolean().optional(),
+}).strict();
 
 export class SystemService {
   readonly journal: JournalService;
 
-  constructor(private db: MatreshkaDatabase, journal?: JournalService) {
+  constructor(private db: OutpostDatabase, journal?: JournalService) {
     this.journal = journal ?? new JournalService(db);
   }
 
   async state() {
     const monitored = this.db.setting<{
       services?: Array<{ name: string; status: string }>;
-      tls?: { status: string; expiresAt: string | null };
+      tls?: { status: string; expiresAt: string | null; error?: string | null };
       metrics?: {
         cpu: { percent: number };
         memory: { used: number; total: number; percent: number };
@@ -32,15 +37,17 @@ export class SystemService {
           history: Array<{ download: number; upload: number; sampledAt: string }>;
         };
       };
+      transports?: { xhttp?: boolean; grpc?: boolean };
       checkedAt?: string;
     }>("monitor_snapshot", {});
-    const services = monitored.services ?? ["matreshka", "nginx", "hysteria-server", "xray"].map((name) => ({ name, status: "unknown" }));
+    const services = monitored.services ?? ["outpost", "nginx", "hysteria-server", "xray"].map((name) => ({ name, status: "unknown" }));
     const versions = this.db.raw.query<{ engine: string; installed_version: string | null; desired_version: string; checksum: string }, []>(
       "SELECT engine, installed_version, desired_version, checksum FROM engine_versions ORDER BY engine",
     ).all();
     const database = safeSize(config.databasePath);
     const backups = listBackups();
     const address = await resolve();
+    const rulesets = this.db.setting("rulesets", { status: "idle", activeVersion: null, checkedAt: null, lastError: null });
     return {
       demo: config.demo,
       version: config.version,
@@ -48,15 +55,21 @@ export class SystemService {
       address,
       origin: config.origin,
       services,
+      transports: [
+        { name: "VLESS XHTTP", status: transportStatus(monitored.transports?.xhttp), listen: "127.0.0.1:10000", secret: config.xhttpPath },
+        { name: "VLESS gRPC", status: transportStatus(monitored.transports?.grpc), listen: "127.0.0.1:10001", secret: config.grpcService },
+      ],
       versions,
       engineOrder: this.engineOrder(),
       tls: {
         status: monitored.tls?.status ?? "unknown",
         domain: config.domain,
         expiresAt: monitored.tls?.expiresAt ?? null,
+        error: monitored.tls?.error ?? null,
       },
       storage: { database },
       backups,
+      rulesets,
       uptime: Math.floor(uptime()),
       metrics: {
         cpu: monitored.metrics?.cpu ?? { percent: 0 },
@@ -79,18 +92,37 @@ export class SystemService {
   status() {
     const monitored = this.db.setting<{
       services?: Array<{ name: string; status: string }>;
-      tls?: { status: string; expiresAt: string | null };
+      tls?: { status: string; expiresAt: string | null; error?: string | null };
+      transports?: { xhttp?: boolean; grpc?: boolean };
       checkedAt?: string;
     }>("monitor_snapshot", {});
-    const services = monitored.services ?? ["matreshka", "nginx", "hysteria-server", "xray"]
+    const services = monitored.services ?? ["outpost", "nginx", "hysteria-server", "xray"]
       .map((name) => ({ name, status: "unknown" }));
+    const rulesets = this.db.setting<{ status: string; activeVersion: string | null; checkedAt: string | null; lastError: string | null }>(
+      "rulesets",
+      { status: "idle", activeVersion: null, checkedAt: null, lastError: null },
+    );
+    const transports = [
+      { name: "VLESS XHTTP", status: transportStatus(monitored.transports?.xhttp) },
+      { name: "VLESS gRPC", status: transportStatus(monitored.transports?.grpc) },
+    ];
     return {
       version: config.version,
-      healthy: services.every((service) => service.status === "active") && monitored.tls?.status === "valid",
+      healthy: services.every((service) => service.status === "active")
+        && transports.every((transport) => transport.status !== "inactive")
+        && monitored.tls?.status === "valid",
       services,
+      transports,
       tls: {
         status: monitored.tls?.status ?? "unknown",
         expiresAt: monitored.tls?.expiresAt ?? null,
+        error: monitored.tls?.error ?? null,
+      },
+      rulesets: {
+        status: rulesets.status,
+        activeVersion: rulesets.activeVersion,
+        checkedAt: rulesets.checkedAt,
+        lastError: rulesets.lastError,
       },
       checkedAt: monitored.checkedAt ?? null,
     };
@@ -124,17 +156,23 @@ export class SystemService {
   }
 
   settings() {
-    const interfaceSettings = this.db.setting<{ language?: string; compact?: boolean; ownerAvatar?: string }>("interface", {});
+    const interfaceSettings = this.db.setting<{ language?: string; compact?: boolean }>("interface", {});
     const systemSettings = this.db.setting<{ timezone?: string; updateChannel?: string }>("system", {});
     return {
-      interface: { language: "ru", compact: false, ownerAvatar: "avatar-current", ...interfaceSettings },
-      system: { timezone: "Europe/Moscow", updateChannel: "stable", ...systemSettings },
+      interface: {
+        language: interfaceSettings.language ?? "ru",
+        compact: interfaceSettings.compact ?? false,
+      },
+      system: { timezone: "UTC", updateChannel: "stable", ...systemSettings },
     };
   }
 
   updateSettings(value: { interface?: unknown; system?: unknown }, actor = "owner") {
     const before = this.settings();
-    if (value.interface !== undefined) this.db.setSetting("interface", value.interface);
+    if (value.interface !== undefined) {
+      const next = interfaceSettingsInput.parse(value.interface);
+      this.db.setSetting("interface", { ...before.interface, ...next });
+    }
     if (value.system !== undefined) this.db.setSetting("system", value.system);
     const after = this.settings();
     this.db.audit({ actor, action: "settings.update", resource: "settings", before, after });
@@ -144,6 +182,10 @@ export class SystemService {
   events(query: JournalQuery = {}) {
     return this.journal.list(query);
   }
+}
+
+function transportStatus(value?: boolean) {
+  return value === true ? "active" : value === false ? "inactive" : "unknown";
 }
 
 async function resolve() {
@@ -159,7 +201,7 @@ function listBackups() {
   const directory = join(config.dataDir, "backups");
   try {
     return readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /^matreshka-[0-9a-f-]+\.(age|tar)$/.test(entry.name))
+      .filter((entry) => entry.isFile() && /^outpost-[0-9a-f-]+\.(age|tar)$/.test(entry.name))
       .map((entry) => {
         const file = statSync(join(directory, entry.name));
         return { name: entry.name, size: file.size, created_at: file.mtime.toISOString() };

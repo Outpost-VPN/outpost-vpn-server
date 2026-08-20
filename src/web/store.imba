@@ -3,24 +3,21 @@ def pathnow
 	return value ? "/{value}" : '/'
 
 def canonical path
-	return '/journal' if path.startsWith('/system/log')
-	return '/proxies' if path.startsWith('/system/engines')
-	return '/system' if path.startsWith('/system/security') or path.startsWith('/system/maintenance')
-	path
+	const value = path.length > 1 ? path.replace(/\/+$/, '') : path
+	const routes = ['/', '/connections', '/protocols', '/routes', '/journal', '/access', '/settings', '/login', '/setup', '/onboarding']
+	routes.includes(value) ? value : '/'
 
 def pagetitle path
-	return 'Matreshka · Первоначальная настройка' if path.startsWith('/setup')
-	return 'Matreshka · Создание владельца' if path.startsWith('/onboarding')
-	return 'Matreshka · Вход' if path.startsWith('/login')
-	return 'Matreshka · Подключение устройства' if path.startsWith('/invite')
-	return 'Matreshka · Профиль владельца' if path.startsWith('/profile')
-	return 'Matreshka · Люди' if path.startsWith('/people')
-	return 'Matreshka · Маршруты' if path.startsWith('/routes')
-	return 'Matreshka · Подключения' if path.startsWith('/proxies')
-	return 'Matreshka · Трафик' if path.startsWith('/traffic')
-	return 'Matreshka · Журнал' if path.startsWith('/journal') or path.startsWith('/system/log')
-	return 'Matreshka · Система' if path.startsWith('/system')
-	'Matreshka · Обзор'
+	return 'Outpost · Первоначальная настройка' if path.startsWith('/setup')
+	return 'Outpost · Настройка доступа' if path.startsWith('/onboarding')
+	return 'Outpost · Вход' if path.startsWith('/login')
+	return 'Outpost · Доступ' if path == '/access'
+	return 'Outpost · Настройки панели' if path == '/settings'
+	return 'Outpost · Подключения' if path == '/connections'
+	return 'Outpost · Маршруты' if path == '/routes'
+	return 'Outpost · Протоколы' if path == '/protocols'
+	return 'Outpost · Журнал' if path == '/journal'
+	'Outpost · Обзор'
 
 export class Store
 	data = null
@@ -30,7 +27,6 @@ export class Store
 	dialog = null
 	dialogKey = 0
 	trigger = null
-	invitation = null
 	selected = null
 	confirmation = null
 	trafficPeriod = '30d'
@@ -41,7 +37,7 @@ export class Store
 		if path != rawPath
 			window.history.replaceState({}, '', "/admin{path}")
 		try
-			trafficPeriod = window.localStorage.getItem('matreshka:traffic-period') or '30d'
+			trafficPeriod = window.localStorage.getItem('outpost:traffic-period') or '30d'
 		catch
 			trafficPeriod = '30d'
 		window.document.title = pagetitle(path)
@@ -108,7 +104,7 @@ export class Store
 		return if value == trafficPeriod
 		trafficPeriod = value
 		try
-			window.localStorage.setItem('matreshka:traffic-period', value)
+			window.localStorage.setItem('outpost:traffic-period', value)
 		catch issue
 			console.warn '[STORAGE] Traffic period is not persisted:', issue
 		try
@@ -129,7 +125,6 @@ export class Store
 	def close
 		const target = trigger
 		dialog = null
-		invitation = null
 		selected = null
 		confirmation = null
 		trigger = null

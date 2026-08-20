@@ -1,4 +1,4 @@
-import type { MatreshkaDatabase, SqlValue } from "../db/database";
+import type { OutpostDatabase, SqlValue } from "../db/database";
 import type {
   JournalCategory,
   JournalEventInput,
@@ -50,29 +50,30 @@ export type JournalEvent = {
 
 export type JournalPage = { events: JournalEvent[]; total: number; next: number | null };
 type JournalRecord = Omit<JournalEventInput, "type" | "category" | "kind" | "source"> & { source?: string };
-type AuditRecord = Parameters<MatreshkaDatabase["audit"]>[0];
+type AuditRecord = Parameters<OutpostDatabase["audit"]>[0];
 
 const definitions: Record<string, EventDefinition> = {
-  "person.created": change("people", "Человек добавлен", (d) => named(d, "personName")),
-  "person.updated": change("people", "Данные человека изменены", (d) => named(d, "personName")),
-  "person.archived": change("people", "Человек перенесён в архив", (d) => named(d, "personName")),
-  "device.created": change("people", "Устройство добавлено", deviceDescription),
-  "device.updated": change("people", "Устройство изменено", deviceDescription),
-  "device.activated": change("people", "Устройство активировано", deviceDescription),
-  "device.revoked": change("people", "Доступ устройства отозван", deviceDescription, true),
-  "device.profile_fetched": activity("people", "Профиль впервые загружен", deviceDescription),
-  "device.first_seen": activity("people", "Устройство впервые в сети", deviceDescription),
-  "device.offline_long": incident("people", "Устройство давно не выходило в сеть", deviceDescription, "warning"),
-  "device.returned": recovered("people", "Устройство вернулось в сеть", deviceDescription),
+  "connection.created": change("connections", "Подключение создано", connectionDescription),
+  "connection.updated": change("connections", "Подключение изменено", connectionDescription),
+  "connection.activated": change("connections", "Подключение готово", connectionDescription),
+  "connection.rotated": change("connections", "Credentials перевыпущены", connectionDescription, true),
+  "connection.archived": change("connections", "Подключение перенесено в архив", connectionDescription, true),
+  "connection.first_used": activity("connections", "Ссылка впервые использована", connectionDescription),
+  "connection.first_seen": activity("connections", "Подключение впервые активно", connectionDescription),
+  "connection.offline_long": incident("connections", "Подключение давно не использовалось", connectionDescription, "warning"),
+  "connection.returned": recovered("connections", "Подключение снова активно", connectionDescription),
 
   "routes.published": change("routes", (d) => `Опубликована ревизия маршрутов №${number(d.version)}`, routesDescription),
   "routes.rolled_back": change("routes", (d) => `Маршруты возвращены к ревизии №${number(d.targetVersion ?? d.version)}`, routesRollbackDescription, true),
   "routes.neutralized": change("routes", "Региональные системные маршруты удалены", routesDescription),
 
+  "rulesets.updated": change("system", (d) => `GeoIP/Geosite обновлены до ${named(d, "version")}`),
+  "rulesets.update_failed": incident("system", "Не удалось обновить GeoIP/Geosite", (d) => named(d, "error"), "warning", true),
+
   "engine.order_changed": change("engines", "Порядок подключения движков изменён", engineOrderDescription),
   "engine.config_applied": change("engines", (d) => `Конфигурация ${engineLabel(d.engine)} применена`, versionDescription),
   "engine.config_rolled_back": change("engines", (d) => `Конфигурация ${engineLabel(d.engine)} восстановлена`, versionDescription, true),
-  "engine.telemetry_unavailable": incident("engines", (d) => `Телеметрия ${engineLabel(d.engine)} недоступна`, "Статусы устройств временно неизвестны", "warning"),
+  "engine.telemetry_unavailable": incident("engines", (d) => `Телеметрия ${engineLabel(d.engine)} недоступна`, "Статусы подключений временно неизвестны", "warning"),
   "engine.telemetry_restored": recovered("engines", (d) => `Телеметрия ${engineLabel(d.engine)} восстановлена`, "Получение статусов и трафика снова работает"),
 
   "backup.started": started("maintenance", "Создание резервной копии начато"),
@@ -93,9 +94,9 @@ const definitions: Record<string, EventDefinition> = {
   "engine.update_started": started("maintenance", (d) => `Обновление ${engineLabel(d.engine)} начато`, versionDescription),
   "engine.updated": succeeded("maintenance", (d) => `${engineLabel(d.engine)} обновлён`, versionDescription),
   "engine.update_failed": failed("maintenance", (d) => `Не удалось обновить ${engineLabel(d.engine)}`, versionDescription),
-  "app.update_started": started("maintenance", "Обновление Matreshka начато", versionDescription),
-  "app.updated": succeeded("maintenance", "Matreshka обновлена", versionDescription),
-  "app.update_failed": failed("maintenance", "Не удалось обновить Matreshka", versionDescription),
+  "app.update_started": started("maintenance", "Обновление Outpost начато", versionDescription),
+  "app.updated": succeeded("maintenance", "Outpost обновлена", versionDescription),
+  "app.update_failed": failed("maintenance", "Не удалось обновить Outpost", versionDescription),
 
   "auth.login_succeeded": activity("security", "Владелец вошёл в панель", userAgentDescription),
   "passkey.registered": change("security", "Ключ доступа зарегистрирован", userAgentDescription),
@@ -137,7 +138,7 @@ type EventRow = {
 };
 
 export class JournalService {
-  constructor(private db: MatreshkaDatabase) {}
+  constructor(private db: OutpostDatabase) {}
 
   record(type: string, entry: JournalRecord = {}) {
     const definition = definitions[type];
@@ -344,19 +345,18 @@ function searchable(event: JournalEvent) {
   ].filter(Boolean).join(" ");
 }
 
-function actorLabel(db: MatreshkaDatabase, actor: string) {
+function actorLabel(db: OutpostDatabase, actor: string) {
   const labels: Record<string, string> = {
     owner: "Владелец",
     system: "Система",
-    invitation: "Приглашение",
     "root-cli": "Командная строка сервера",
     monitor: "Мониторинг",
     telemetry: "Телеметрия",
     demo: "Демо-режим",
   };
   if (labels[actor]) return labels[actor];
-  const owner = db.raw.query<{ name: string }, string>("SELECT name FROM owners WHERE id = ?").get(actor);
-  if (owner) return owner.name;
+  const owner = db.raw.query<{ id: string }, string>("SELECT id FROM owners WHERE id = ?").get(actor);
+  if (owner) return "Владелец";
   const token = db.raw.query<{ name: string }, string>("SELECT name FROM api_tokens WHERE id = ?").get(actor);
   if (token) return `API-токен «${token.name}»`;
   return "Неизвестный источник";
@@ -367,7 +367,7 @@ function subjectLabel(data: EventData, type: string, id: string) {
   if (type === "service") return serviceLabel(data.service ?? id);
   if (type === "route_revision") return `Ревизия №${number(data.version ?? data.newVersion)}`;
   if (type === "owner") return "Владелец";
-  for (const key of ["deviceName", "personName", "name", "service", "engine"]) {
+  for (const key of ["connectionName", "name", "service", "engine"]) {
     if (typeof data[key] === "string" && data[key]) return String(data[key]);
   }
   return "Объект события";
@@ -381,8 +381,8 @@ function number(value: unknown) {
   return typeof value === "number" || typeof value === "string" ? value : "—";
 }
 
-function deviceDescription(data: EventData) {
-  return [named(data, "deviceName"), named(data, "personName")].filter(Boolean).join(" · ");
+function connectionDescription(data: EventData) {
+  return named(data, "connectionName");
 }
 
 function routesDescription(data: EventData) {
@@ -406,7 +406,10 @@ function engineLabel(engine: unknown) {
 }
 
 function serviceLabel(service: unknown) {
-  const labels: Record<string, string> = { "matreshka": "Matreshka", "hysteria-server": "Hysteria 2", xray: "Xray", nginx: "Nginx" };
+  const labels: Record<string, string> = {
+    "outpost": "Outpost", "hysteria-server": "Hysteria 2", xray: "Xray", nginx: "Nginx",
+    "vless-xhttp": "VLESS XHTTP", "vless-grpc": "VLESS gRPC",
+  };
   return typeof service === "string" ? labels[service] ?? service : "службы";
 }
 

@@ -14,6 +14,14 @@
       "protocol": "vless",
       "settings": { "clients": [], "decryption": "none" },
       "streamSettings": { "network": "xhttp", "xhttpSettings": { "path": "__XHTTP_PATH__", "mode": "auto" } }
+    },
+    {
+      "tag": "vless-grpc",
+      "listen": "127.0.0.1",
+      "port": 10001,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": { "network": "grpc", "grpcSettings": { "serviceName": "__GRPC_SERVICE__" } }
     }
   ],
   "outbounds": [{ "tag": "direct", "protocol": "freedom" }]

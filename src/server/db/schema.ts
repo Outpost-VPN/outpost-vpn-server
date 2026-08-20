@@ -7,8 +7,7 @@ export const migrations = [
 
       CREATE TABLE owners (
         id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        timezone TEXT NOT NULL DEFAULT 'Europe/Moscow',
+        timezone TEXT NOT NULL DEFAULT 'UTC',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -52,67 +51,68 @@ export const migrations = [
         updated_at TEXT NOT NULL
       );
 
-      CREATE TABLE people (
+      CREATE TABLE connections (
         id TEXT PRIMARY KEY,
+        serial INTEGER NOT NULL UNIQUE,
         name TEXT NOT NULL,
-        note TEXT NOT NULL DEFAULT '',
         color TEXT NOT NULL DEFAULT 'blue',
-        avatar TEXT NOT NULL DEFAULT 'avatar-current',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        archived_at TEXT
-      );
-
-      CREATE TABLE devices (
-        id TEXT PRIMARY KEY,
-        person_id TEXT NOT NULL REFERENCES people(id) ON DELETE RESTRICT,
-        name TEXT NOT NULL,
-        kind TEXT NOT NULL DEFAULT 'other',
-        platform TEXT NOT NULL DEFAULT 'unknown',
-        client TEXT NOT NULL DEFAULT 'incy',
-        status TEXT NOT NULL DEFAULT 'invited',
+        avatar TEXT NOT NULL DEFAULT 'avatar-person',
+        status TEXT NOT NULL CHECK(status IN ('provisioning', 'active', 'rotating', 'archiving', 'archived')),
+        generation INTEGER NOT NULL DEFAULT 1,
         subscription_token_hash TEXT UNIQUE,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         activated_at TEXT,
+        first_used_at TEXT,
+        last_fetched_at TEXT,
         first_seen_at TEXT,
         last_seen_at TEXT,
-        profile_fetched_at TEXT,
-        last_routes_version INTEGER,
         absence_notified_at TEXT,
-        revoked_at TEXT
+        archived_at TEXT
       );
+
+      CREATE INDEX connections_status ON connections(status, created_at);
 
       CREATE TABLE credentials (
         id TEXT PRIMARY KEY,
-        device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-        engine TEXT NOT NULL,
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+        generation INTEGER NOT NULL,
+        engine TEXT NOT NULL CHECK(engine IN ('hysteria', 'xray')),
+        state TEXT NOT NULL CHECK(state IN ('pending', 'active', 'revoked')),
         ciphertext TEXT NOT NULL,
         iv TEXT NOT NULL,
         tag TEXT NOT NULL,
         created_at TEXT NOT NULL,
+        activated_at TEXT,
         revoked_at TEXT,
-        UNIQUE(device_id, engine)
+        UNIQUE(connection_id, generation, engine)
       );
 
-      CREATE TABLE invitations (
+      CREATE UNIQUE INDEX credentials_active
+        ON credentials(connection_id, engine)
+        WHERE state = 'active';
+
+      CREATE TABLE connection_sync_jobs (
         id TEXT PRIMARY KEY,
-        device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-        token_hash TEXT NOT NULL UNIQUE,
-        status TEXT NOT NULL DEFAULT 'pending',
-        expires_at TEXT NOT NULL,
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+        generation INTEGER NOT NULL,
+        previous_generation INTEGER,
+        kind TEXT NOT NULL CHECK(kind IN ('activate', 'rotate', 'revoke')),
+        status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'failed', 'completed', 'cancelled')),
+        actor TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        last_error TEXT,
         created_at TEXT NOT NULL,
-        redeemed_at TEXT
+        updated_at TEXT NOT NULL,
+        completed_at TEXT
       );
 
-      CREATE TABLE redemption_sessions (
-        id TEXT PRIMARY KEY,
-        invitation_id TEXT NOT NULL REFERENCES invitations(id) ON DELETE CASCADE,
-        device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-        token_hash TEXT NOT NULL UNIQUE,
-        expires_at TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
+      CREATE UNIQUE INDEX connection_sync_jobs_open
+        ON connection_sync_jobs(connection_id)
+        WHERE status IN ('pending', 'running', 'failed');
+      CREATE INDEX connection_sync_jobs_due
+        ON connection_sync_jobs(status, next_attempt_at, created_at);
 
       CREATE TABLE route_drafts (
         id TEXT PRIMARY KEY,
@@ -135,7 +135,8 @@ export const migrations = [
         rules_json TEXT NOT NULL,
         note TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL,
-        actor TEXT NOT NULL
+        actor TEXT NOT NULL,
+        ruleset_version TEXT
       );
 
       CREATE TABLE engine_configs (
@@ -159,31 +160,30 @@ export const migrations = [
       );
 
       CREATE TABLE traffic_cursors (
-        device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
         engine TEXT NOT NULL,
         upload INTEGER NOT NULL DEFAULT 0,
         download INTEGER NOT NULL DEFAULT 0,
         observed_at TEXT NOT NULL,
-        PRIMARY KEY(device_id, engine)
+        PRIMARY KEY(connection_id, engine)
       );
 
       CREATE TABLE traffic_samples (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         bucket TEXT NOT NULL,
         bucket_at TEXT NOT NULL,
-        person_id TEXT NOT NULL REFERENCES people(id) ON DELETE RESTRICT,
-        device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE RESTRICT,
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE RESTRICT,
         engine TEXT NOT NULL,
         upload INTEGER NOT NULL,
         download INTEGER NOT NULL,
-        UNIQUE(bucket, bucket_at, device_id, engine)
+        UNIQUE(bucket, bucket_at, connection_id, engine)
       );
 
       CREATE INDEX traffic_samples_period ON traffic_samples(bucket, bucket_at);
-      CREATE INDEX traffic_samples_person ON traffic_samples(person_id, bucket_at);
+      CREATE INDEX traffic_samples_connection ON traffic_samples(connection_id, bucket_at);
 
-      CREATE TABLE device_presence (
-        device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+      CREATE TABLE connection_presence (
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
         engine TEXT NOT NULL CHECK(engine IN ('hysteria', 'xray')),
         status TEXT NOT NULL CHECK(status IN ('online', 'offline', 'unknown')),
         signal TEXT NOT NULL CHECK(signal IN ('connections', 'traffic')),
@@ -192,10 +192,10 @@ export const migrations = [
         last_active_at TEXT,
         observed_at TEXT NOT NULL,
         changed_at TEXT NOT NULL,
-        PRIMARY KEY(device_id, engine)
+        PRIMARY KEY(connection_id, engine)
       );
 
-      CREATE INDEX device_presence_status ON device_presence(status, observed_at DESC);
+      CREATE INDEX connection_presence_status ON connection_presence(status, observed_at DESC);
 
       CREATE TABLE operations (
         id TEXT PRIMARY KEY,
@@ -219,10 +219,22 @@ export const migrations = [
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor TEXT NOT NULL,
+        action TEXT NOT NULL,
+        resource TEXT NOT NULL,
+        resource_id TEXT,
+        before_json TEXT,
+        after_json TEXT,
+        ip TEXT,
+        created_at TEXT NOT NULL
+      );
+
       CREATE TABLE events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT NOT NULL,
-        category TEXT NOT NULL CHECK(category IN ('people', 'routes', 'engines', 'maintenance', 'security', 'system')),
+        category TEXT NOT NULL CHECK(category IN ('connections', 'routes', 'engines', 'maintenance', 'security', 'system')),
         kind TEXT NOT NULL CHECK(kind IN ('change', 'activity', 'incident')),
         severity TEXT NOT NULL CHECK(severity IN ('info', 'warning', 'error', 'critical')),
         outcome TEXT CHECK(outcome IN ('started', 'succeeded', 'failed', 'recovered') OR outcome IS NULL),
@@ -243,18 +255,6 @@ export const migrations = [
       CREATE INDEX events_kind ON events(kind, occurred_at DESC, id DESC);
       CREATE INDEX events_subject ON events(subject_type, subject_id, occurred_at DESC, id DESC);
 
-      CREATE TABLE audit_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        actor TEXT NOT NULL,
-        action TEXT NOT NULL,
-        resource TEXT NOT NULL,
-        resource_id TEXT,
-        before_json TEXT,
-        after_json TEXT,
-        ip TEXT,
-        created_at TEXT NOT NULL
-      );
-
       CREATE TABLE monitor_states (
         key TEXT PRIMARY KEY,
         status TEXT NOT NULL,
@@ -273,32 +273,6 @@ export const migrations = [
         expires_at TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
-    `,
-  },
-  {
-    version: 2,
-    name: "device-sync-outbox",
-    sql: `
-      CREATE TABLE device_sync_jobs (
-        id TEXT PRIMARY KEY,
-        device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-        invitation_id TEXT REFERENCES invitations(id) ON DELETE SET NULL,
-        kind TEXT NOT NULL CHECK(kind IN ('activate', 'revoke')),
-        status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'failed', 'completed')),
-        actor TEXT NOT NULL,
-        attempts INTEGER NOT NULL DEFAULT 0,
-        next_attempt_at TEXT NOT NULL,
-        last_error TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        completed_at TEXT
-      );
-
-      CREATE UNIQUE INDEX device_sync_jobs_open
-        ON device_sync_jobs(device_id, kind)
-        WHERE status IN ('pending', 'running', 'failed');
-      CREATE INDEX device_sync_jobs_due
-        ON device_sync_jobs(status, next_attempt_at, created_at);
     `,
   },
 ] as const;

@@ -1,22 +1,14 @@
 import { createHash } from "node:crypto";
 import { createConnection } from "node:net";
-import type { MatreshkaDatabase } from "../db/database";
+import type { OutpostDatabase } from "../db/database";
 import { addHours, now } from "../db/database";
 import { config } from "../config";
-import { ServiceError } from "./people";
-import type { PeopleService } from "./people";
-import type { EngineRuntimeService } from "./engine-runtime";
-import type { DeviceSyncService } from "./device-sync";
+import { ServiceError } from "./connections";
 import { JournalService } from "./journal";
 
-export type PrivilegedAction = "device.revoke" | "service.restart" | "service.start" | "service.stop" | "engine.update" | "nginx.reload" | "update.apply" | "backup.export";
+export type PrivilegedAction = "service.restart" | "service.start" | "service.stop" | "engine.update" | "nginx.reload" | "update.apply" | "backup.export";
 
 const previews: Record<PrivilegedAction, (payload: Record<string, unknown>) => unknown> = {
-  "device.revoke": (payload) => ({
-    title: "Отозвать устройство",
-    changes: ["Credentials обоих движков и подписка устройства будут немедленно отозваны"],
-    payload,
-  }),
   "service.restart": (payload) => ({
     title: "Перезапустить службу",
     changes: [`Служба ${String(payload.service ?? "")} будет кратковременно недоступна`],
@@ -39,7 +31,7 @@ const previews: Record<PrivilegedAction, (payload: Record<string, unknown>) => u
   }),
   "nginx.reload": (payload) => ({ title: "Проверить и перечитать Nginx", changes: ["Сначала будет выполнен nginx -t"], payload }),
   "update.apply": (payload) => ({
-    title: "Обновить Matreshka",
+    title: "Обновить Outpost",
     changes: ["Подпись Minisign будет проверена до распаковки", "Будет создан снимок SQLite", "Туннельные движки продолжат работать"],
     payload,
   }),
@@ -55,12 +47,9 @@ export class OperationService {
   private journal: JournalService;
 
   constructor(
-    private db: MatreshkaDatabase,
-    private people?: PeopleService,
-    private engines?: EngineRuntimeService,
+    private db: OutpostDatabase,
     journal?: JournalService,
     private runner: typeof callAgent = callAgent,
-    private deviceSync?: DeviceSyncService,
   ) {
     this.journal = journal ?? new JournalService(db);
   }
@@ -131,10 +120,8 @@ export class OperationService {
 
   private async execute(id: string, action: PrivilegedAction, payload: Record<string, unknown>, actor: string) {
     try {
-      this.update(id, "running", 15, action === "device.revoke" ? "Отзываем credentials устройства" : "Передаём операцию root-agent");
-      const result = action === "device.revoke"
-        ? await this.revoke(String(payload.deviceId))
-        : config.demo
+      this.update(id, "running", 15, "Передаём операцию root-agent");
+      const result = config.demo
           ? await new Promise<Record<string, unknown>>((resolve) => setTimeout(() => resolve({ ok: true, demo: true }), 350))
           : await this.runner({ action, payload });
       if (action === "engine.update") {
@@ -184,14 +171,8 @@ export class OperationService {
   }
 
   private validate(action: PrivilegedAction, payload: Record<string, unknown>) {
-    if (action === "device.revoke") {
-      const id = String(payload.deviceId ?? "");
-      const device = this.db.raw.query<{ status: string }, string>("SELECT status FROM devices WHERE id = ?").get(id);
-      if (!device) throw new ServiceError(404, "Устройство не найдено");
-      if (device.status === "revoked") throw new ServiceError(409, "Устройство уже отозвано");
-    }
     if (action === "service.restart") {
-      const services = ["matreshka", "nginx", "hysteria-server", "xray"];
+      const services = ["outpost", "nginx", "hysteria-server", "xray"];
       if (!services.includes(String(payload.service))) throw new ServiceError(400, "Эту службу нельзя перезапустить");
     }
     if (action === "service.start" || action === "service.stop") {
@@ -217,8 +198,8 @@ export class OperationService {
       const version = String(payload.version ?? "");
       const bundle = String(payload.bundle ?? "");
       const signature = String(payload.signature ?? "");
-      if (!/^[0-9][0-9A-Za-z.-]{0,39}$/.test(version)) throw new ServiceError(400, "Некорректная версия Matreshka");
-      if (!/^\/var\/lib\/matreshka\/incoming\/[0-9A-Za-z._-]+\.tar\.gz$/.test(bundle)) {
+      if (!/^[0-9][0-9A-Za-z.-]{0,39}$/.test(version)) throw new ServiceError(400, "Некорректная версия Outpost");
+      if (!/^\/var\/lib\/outpost\/incoming\/[0-9A-Za-z._-]+\.tar\.gz$/.test(bundle)) {
         throw new ServiceError(400, "Некорректный путь release archive");
       }
       if (signature !== `${bundle}.minisig`) throw new ServiceError(400, "Подпись должна соответствовать release archive");
@@ -228,23 +209,17 @@ export class OperationService {
       if (passphrase !== undefined && (typeof passphrase !== "string" || passphrase.length < 12 || passphrase.length > 200)) {
         throw new ServiceError(400, "Пароль должен содержать от 12 до 200 символов");
       }
-      if (!/^\/var\/lib\/matreshka\/backups\/matreshka-[0-9a-f-]+\.(age|tar)$/.test(String(payload.output ?? ""))) {
+      if (!/^\/var\/lib\/outpost\/backups\/outpost-[0-9a-f-]+\.(age|tar)$/.test(String(payload.output ?? ""))) {
         throw new ServiceError(400, "Некорректный путь резервной копии");
       }
     }
-  }
-
-  private async revoke(id: string) {
-    if (!this.deviceSync) throw new Error("Device sync is not initialized");
-    await this.deviceSync.revoke(id, "operation");
-    return { ok: true, deviceId: id };
   }
 
   private demoService(service: string, active: boolean) {
     const overrides = this.db.setting<Record<string, boolean>>("demo_service_states", {});
     this.db.setSetting("demo_service_states", { ...overrides, [service]: active });
     const snapshot = this.db.setting<{ services?: Array<{ name: string; status: string }>; [key: string]: unknown }>("monitor_snapshot", {});
-    const services = snapshot.services ?? ["matreshka", "nginx", "hysteria-server", "xray"].map((name) => ({ name, status: "active" }));
+    const services = snapshot.services ?? ["outpost", "nginx", "hysteria-server", "xray"].map((name) => ({ name, status: "active" }));
     this.db.setSetting("monitor_snapshot", {
       ...snapshot,
       services: services.map((item) => item.name === service ? { ...item, status: active ? "active" : "inactive" } : item),
@@ -259,8 +234,7 @@ function redactPayload(action: PrivilegedAction, payload: Record<string, unknown
 }
 
 function operationEvent(action: PrivilegedAction, phase: "started" | "completed" | "failed") {
-  if (action === "device.revoke") return null;
-  const types: Record<Exclude<PrivilegedAction, "device.revoke">, Partial<Record<typeof phase, string>>> = {
+  const types: Record<PrivilegedAction, Partial<Record<typeof phase, string>>> = {
     "backup.export": { started: "backup.started", completed: "backup.created", failed: "backup.failed" },
     "service.restart": { started: "service.restart_started", completed: "service.restarted", failed: "service.restart_failed" },
     "service.start": { started: "service.start_started", completed: "service.started", failed: "service.start_failed" },
@@ -290,14 +264,12 @@ function operationResultData(action: PrivilegedAction, result: Record<string, un
 function operationSubject(action: PrivilegedAction) {
   if (action.startsWith("service.")) return "service";
   if (action === "engine.update") return "engine";
-  if (action === "device.revoke") return "device";
   return "operation";
 }
 
 function operationSubjectId(action: PrivilegedAction, payload: Record<string, unknown>) {
   if (action.startsWith("service.")) return String(payload.service ?? "") || null;
   if (action === "engine.update") return String(payload.engine ?? "") || null;
-  if (action === "device.revoke") return String(payload.deviceId ?? "") || null;
   return null;
 }
 

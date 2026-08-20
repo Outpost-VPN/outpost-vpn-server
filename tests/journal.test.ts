@@ -11,48 +11,49 @@ describe("typed journal", () => {
 
   test("uses a clean typed schema from the first migration", () => {
     const eventColumns = fixture.db.raw.query<{ name: string }, []>("PRAGMA table_info(events)").all().map((row) => row.name);
-    const deviceColumns = fixture.db.raw.query<{ name: string }, []>("PRAGMA table_info(devices)").all().map((row) => row.name);
+    const connectionColumns = fixture.db.raw.query<{ name: string }, []>("PRAGMA table_info(connections)").all().map((row) => row.name);
     for (const column of ["type", "category", "kind", "severity", "outcome", "data_json", "occurred_at"]) expect(eventColumns).toContain(column);
     expect(eventColumns).not.toContain("message");
     expect(eventColumns).not.toContain("level");
-    expect(deviceColumns).toContain("activated_at");
-    expect(deviceColumns).not.toContain("connected_at");
-    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count).toBe(2);
+    expect(connectionColumns).toContain("activated_at");
+    expect(connectionColumns).toContain("generation");
+    expect(connectionColumns).not.toContain("platform");
+    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count).toBe(1);
   });
 
   test("links a typed event to audit details and redacts secrets", () => {
     const journal = new JournalService(fixture.db);
     const auditId = fixture.db.audit({
       actor: "owner",
-      action: "people.update",
-      resource: "person",
-      resourceId: "person-1",
+      action: "connections.update",
+      resource: "connection",
+      resourceId: "connection-1",
       before: { name: "Мама", password: "before-secret", clientIp: "192.0.2.4" },
       after: { name: "Мария", accessToken: "after-secret", destinationDomain: "example.test" },
     });
-    journal.record("person.updated", {
+    journal.record("connection.updated", {
       actor: "owner",
       auditId,
-      subjectType: "person",
-      subjectId: "person-1",
-      data: { personName: "Мария", passphrase: "phrase", nested: { credentialId: "credential" } },
+      subjectType: "connection",
+      subjectId: "connection-1",
+      data: { connectionName: "Мария", passphrase: "phrase", nested: { credentialId: "credential" } },
     });
 
     const event = journal.latest(1)[0]!;
-    expect(event).toMatchObject({ type: "person.updated", category: "people", kind: "change", audit_id: auditId });
+    expect(event).toMatchObject({ type: "connection.updated", category: "connections", kind: "change", audit_id: auditId });
     expect(JSON.stringify(event)).not.toContain("before-secret");
     expect(JSON.stringify(event)).not.toContain("after-secret");
     expect(JSON.stringify(event)).not.toContain("192.0.2.4");
     expect(JSON.stringify(event)).not.toContain("example.test");
-    expect(fixture.db.raw.query<{ data_json: string }, []>("SELECT data_json FROM events LIMIT 1").get()?.data_json).toBe('{"personName":"Мария","nested":{}}');
+    expect(fixture.db.raw.query<{ data_json: string }, []>("SELECT data_json FROM events LIMIT 1").get()?.data_json).toBe('{"connectionName":"Мария","nested":{}}');
   });
 
   test("renders owner and subjects with human-readable labels", () => {
     const journal = new JournalService(fixture.db);
     const ownerId = crypto.randomUUID();
     const timestamp = new Date().toISOString();
-    fixture.db.raw.query("INSERT INTO owners (id, name, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-      .run(ownerId, "Федор", "Europe/Moscow", timestamp, timestamp);
+    fixture.db.raw.query("INSERT INTO owners (id, timezone, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run(ownerId, "Europe/Moscow", timestamp, timestamp);
     journal.record("engine.config_applied", {
       actor: ownerId,
       source: "xray",
@@ -62,7 +63,7 @@ describe("typed journal", () => {
     });
 
     const event = journal.latest(1)[0]!;
-    expect(event.actor?.label).toBe("Федор");
+    expect(event.actor?.label).toBe("Владелец");
     expect(event.subject?.label).toBe("Xray");
   });
 
@@ -70,7 +71,7 @@ describe("typed journal", () => {
     const app = new HttpApplication(fixture.db);
     const token = app.auth.createApiToken("tests", ["system:read"]).token;
     const future = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
-    app.journal.record("person.created", { occurredAt: future(1), data: { personName: "Мама" } });
+    app.journal.record("connection.created", { occurredAt: future(1), data: { connectionName: "Мама" } });
     app.journal.record("routes.published", { occurredAt: future(2), data: { version: 4, rulesCount: 8 } });
     app.journal.record("backup.failed", { occurredAt: future(3) });
     const headers = { authorization: `Bearer ${token}` };
@@ -103,11 +104,12 @@ describe("typed journal", () => {
   test("demo data is served as typed events and real presence rows", async () => {
     const app = new HttpApplication(fixture.db, {
       async add() { return { ok: true }; },
+      async rotate() { return { ok: true }; },
       async revoke() { return { ok: true }; },
     });
     await seedDemo(app);
     expect(app.journal.list({ q: "Резервная копия создана" }).events[0]?.type).toBe("backup.created");
-    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM device_presence").get()?.count).toBeGreaterThan(0);
-    expect(app.people.list().flatMap((person) => person.devices).every((device) => Boolean(device.presence))).toBeTrue();
+    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM connection_presence").get()?.count).toBeGreaterThan(0);
+    expect(app.connections.list().every((connection) => Boolean(connection.presence))).toBeTrue();
   }, 15_000);
 });

@@ -1,0 +1,25 @@
+[Unit]
+Description=Outpost control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=outpost
+Group=outpost
+EnvironmentFile=/etc/outpost/outpost.env
+ExecStart=/opt/outpost/current/bin/outpost
+Restart=always
+RestartSec=3
+WorkingDirectory=/opt/outpost/current
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/outpost
+ReadOnlyPaths=/etc/outpost /opt/outpost
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

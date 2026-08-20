@@ -1,22 +1,22 @@
 [Unit]
-Description=Matreshka privileged agent
+Description=Outpost privileged agent
 After=network.target
 
 [Service]
 Type=simple
 User=root
-Group=matreshka
-ExecStart=/opt/matreshka/current/bin/matreshka-agent
+Group=outpost
+ExecStart=/opt/outpost/current/bin/outpost-agent
 Restart=on-failure
 RestartSec=3
-RuntimeDirectory=matreshka
+RuntimeDirectory=outpost
 RuntimeDirectoryMode=0750
 UMask=0007
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths=/etc/matreshka /etc/systemd/system /var/lib/matreshka /opt/matreshka /run/matreshka
+ReadWritePaths=/etc/outpost /etc/systemd/system /var/lib/outpost /opt/outpost /run/outpost
 
 [Install]
 WantedBy=multi-user.target
