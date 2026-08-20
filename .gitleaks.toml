@@ -8,9 +8,12 @@ description = "Generated release output is ignored and scanned from its source f
 paths = ['''^release/''']
 
 [[allowlists]]
-description = "Pinned public SHA-256 of the official Xray release archive"
+description = "Pinned public SHA-256 values of official Xray release archives"
 regexTarget = "secret"
-regexes = ['''^8195d909f1109b8f3d99eefe401a3c451d7bf4af71f24d3815420f77e5dd2a40$''']
+regexes = [
+  '''^23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae$''',
+  '''^8195d909f1109b8f3d99eefe401a3c451d7bf4af71f24d3815420f77e5dd2a40$''',
+]
 
 [[allowlists]]
 description = "Golden SHA-256 fingerprints of deterministic subscription fixtures"

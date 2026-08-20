@@ -1,12 +1,27 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { JournalService } from "../src/server/services/journal";
-import { MonitoringService, type MonitoringSnapshot } from "../src/server/services/monitoring";
+import { certificateTlsOptions, MonitoringService, type MonitoringSnapshot } from "../src/server/services/monitoring";
 import { database } from "./helpers";
 
 describe("system monitoring", () => {
   let fixture: ReturnType<typeof database>;
   beforeEach(() => { fixture = database(); });
   afterEach(() => fixture.close());
+
+  test("uses SNI for domains but not for trusted IP certificates", () => {
+    expect(certificateTlsOptions("vpn.example.com")).toMatchObject({
+      host: "vpn.example.com",
+      servername: "vpn.example.com",
+      rejectUnauthorized: true,
+    });
+    expect(certificateTlsOptions("192.0.2.1")).toEqual({
+      host: "192.0.2.1",
+      port: 443,
+      rejectUnauthorized: true,
+      timeout: 5_000,
+    });
+    expect(certificateTlsOptions("2001:db8::1")).not.toHaveProperty("servername");
+  });
 
   test("emits one incident after two failures and one recovery", async () => {
     let snapshot: MonitoringSnapshot = {

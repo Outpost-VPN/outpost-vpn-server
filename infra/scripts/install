@@ -12,6 +12,21 @@ public_ip=
 rollback_armed=0
 ufw_was_active=0
 
+install_certbot_snap() {
+  local attempt
+  for attempt in 1 2 3; do
+    if snap install --classic certbot; then
+      return 0
+    fi
+    if test "$attempt" -lt 3; then
+      echo "Certbot snap installation was interrupted; retrying after snapd settles" >&2
+      snap wait system seed.loaded >/dev/null 2>&1 || true
+      sleep 5
+    fi
+  done
+  return 1
+}
+
 rollback_install() {
   echo "Installation failed; rolling back Outpost files and services" >&2
   systemctl disable --now outpost outpost-agent xray hysteria-server >/dev/null 2>&1 || true
@@ -82,7 +97,7 @@ systemctl enable --now snapd.socket
 snap wait system seed.loaded
 snap install core >/dev/null 2>&1 || snap refresh core >/dev/null
 if ! test -x "$certbot"; then
-  snap install --classic certbot
+  install_certbot_snap
 else
   snap refresh certbot >/dev/null || true
 fi

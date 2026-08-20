@@ -47,6 +47,13 @@ describe("release trust chain", () => {
     expect(installer).toContain("rollback_armed=0");
   });
 
+  test("retries Certbot when snapd restarts during a fresh installation", async () => {
+    const installer = await Bun.file(resolve(root, "infra/scripts/install")).text();
+    expect(installer).toContain("install_certbot_snap()");
+    expect(installer).toContain("for attempt in 1 2 3");
+    expect(installer).toContain("snap wait system seed.loaded");
+  });
+
   test("keeps WebAuthn unreachable on the temporary IP edge", async () => {
     const nginx = await Bun.file(resolve(root, "infra/nginx/outpost-setup.conf.template")).text();
     expect(nginx).toContain("location ^~ /api/v1/setup");
@@ -102,6 +109,7 @@ describe("release trust chain", () => {
   test("releases only a tag pointing at the current main commit", async () => {
     const workflow = await Bun.file(resolve(root, ".github/workflows/release.yml")).text();
     expect(workflow).toContain('test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"');
+    expect(workflow).toContain('sha256sum "$archive_name" >"${archive_name}.sha256"');
   });
 
   test("publishes signed rule sets separately with source and license metadata", async () => {
