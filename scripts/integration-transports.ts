@@ -1,5 +1,4 @@
-import { createServer as createHttpServer } from "node:http";
-import { createConnection, createServer as createTcpServer } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -18,9 +17,16 @@ const mihomo = binary("OUTPOST_MIHOMO_BINARY", "mihomo");
 const nginx = binary("OUTPOST_NGINX_BINARY", "nginx");
 const curl = binary("OUTPOST_CURL_BINARY", "curl");
 const openssl = binary("OUTPOST_OPENSSL_BINARY", "openssl");
-const origin = createHttpServer((_request, response) => {
-  response.writeHead(200, { "content-type": "text/plain", connection: "close" });
-  response.end("Outpost transport integration\n");
+const body = "Outpost transport integration\n";
+const origin = createServer((socket) => {
+  socket.once("data", () => socket.end([
+    "HTTP/1.1 200 OK",
+    "Content-Type: text/plain",
+    `Content-Length: ${Buffer.byteLength(body)}`,
+    "Connection: close",
+    "",
+    body,
+  ].join("\r\n")));
 });
 const originPort = await listen(origin);
 
@@ -59,7 +65,12 @@ try {
         streamSettings: { network: "grpc", grpcSettings: { serviceName: grpcService } },
       },
     ],
-    outbounds: [{ protocol: "freedom", tag: "direct" }],
+    // Xray blocks private VLESS destinations by default; allow only this isolated test origin.
+    outbounds: [{
+      protocol: "freedom",
+      tag: "direct",
+      settings: { finalRules: [{ action: "allow", network: "tcp", port: String(originPort), ip: ["127.0.0.1"] }] },
+    }],
   }, null, 2));
   launch([xray, "run", "-config", serverConfig]);
   await Promise.all([waitForPort(xhttpPort), waitForPort(grpcPort)]);
@@ -100,7 +111,6 @@ http {
 } finally {
   for (const child of children.reverse()) child.kill();
   await Promise.all(children.map((child) => child.exited));
-  origin.closeAllConnections();
   await new Promise<void>((resolve) => origin.close(() => resolve()));
   rmSync(directory, { recursive: true, force: true });
 }
@@ -170,7 +180,7 @@ async function verifyMihomoFallback(
   const profile = YAML.parse(mihomoRenderer.render(context).body);
   Object.assign(mutable, previous);
   profile["mixed-port"] = mixedPort;
-  profile["proxy-groups"][0].url = "https://www.gstatic.com/generate_204";
+  profile["proxy-groups"][0].url = `http://127.0.0.1:${originPort}/`;
   profile["proxy-groups"][0].interval = 3;
   profile.rules = ["MATCH,PROXY"];
   for (const proxy of profile.proxies) {
@@ -257,7 +267,7 @@ async function freePorts(count: number) {
 
 function freePort() {
   return new Promise<number>((resolve, reject) => {
-    const server = createTcpServer();
+    const server = createServer();
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
@@ -267,7 +277,7 @@ function freePort() {
   });
 }
 
-function listen(server: ReturnType<typeof createHttpServer>) {
+function listen(server: ReturnType<typeof createServer>) {
   return new Promise<number>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
