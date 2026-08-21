@@ -130,4 +130,12 @@ describe("release trust chain", () => {
     expect(workflow).toContain("GITHUB_TOKEN: ${{ github.token }}");
     expect(installer).toContain("headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`");
   });
+
+  test("builds the patched agent with its minimum supported Go toolchain", async () => {
+    for (const file of ["ci.yml", "release.yml"]) {
+      const workflow = await Bun.file(resolve(root, ".github/workflows", file)).text();
+      expect(workflow).toContain('go-version: "1.25.x"');
+    }
+    expect(await Bun.file(resolve(root, "agent/go.mod")).text()).toContain("golang.org/x/crypto v0.52.0");
+  });
 });
