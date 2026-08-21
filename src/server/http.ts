@@ -362,8 +362,13 @@ export class HttpApplication {
         headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "private, no-store" },
       });
     }
+    const requestedPlatform = ctx.url.searchParams.get("platform");
+    if (!requestedPlatform) {
+      const format = universalSubscriptionFormat(ctx.request);
+      if (format) return this.profile(ctx, format, head);
+    }
     const baseUrl = `${config.origin}/s/${token}`;
-    const platform = ctx.url.searchParams.get("platform") ?? detectPlatform(ctx.request.headers.get("user-agent") ?? "");
+    const platform = requestedPlatform ?? detectPlatform(ctx.request.headers.get("user-agent") ?? "");
     const html = renderCatalogPage(connection, baseUrl, platform, ctx.language);
     return contentResponse(ctx.request, html, "text/html; charset=utf-8", head);
   }
@@ -578,6 +583,16 @@ function json(value: unknown, status = 200, headers?: HeadersInit) {
 }
 
 function empty() { return new Response(null, { status: 204 }); }
+
+function universalSubscriptionFormat(request: Request): SubscriptionFormat | null {
+  const agent = (request.headers.get("user-agent") ?? "").toLowerCase();
+  if (/mihomo|clash|everywhere|flclash|stash/.test(agent)) return "mihomo";
+  if (/sing-box|singbox|sfa|sfi|sfm/.test(agent)) return "sing-box";
+  if (/incy/.test(agent)) return "links";
+  if (/xray|v2ray|happ|foxray|streisand/.test(agent)) return "xray";
+  if ((request.headers.get("accept") ?? "").includes("text/html")) return null;
+  return "xray";
+}
 
 async function contentResponse(
   request: Request,
