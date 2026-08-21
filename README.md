@@ -7,7 +7,7 @@ traffic by connection without storing browsing history. Every connection has
 one credential generation and one link that may be shared by any number of
 people and physical devices.
 
-> **Status:** `0.1.0-rc.6` pre-release. Local tests and production builds pass;
+> **Status:** `0.1.0-rc.7` pre-release. Local tests and production builds pass;
 > the first real-world installation is progressing through the VPS gate described
 > in [STATUS.md](STATUS.md).
 
@@ -80,7 +80,7 @@ with a passkey.
 To install a specific release candidate instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.6 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.7 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,

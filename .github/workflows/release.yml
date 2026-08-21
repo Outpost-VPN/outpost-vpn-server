@@ -84,7 +84,9 @@ jobs:
           test -n "$archive"
           minisign -S -W -s "$key" -m "$archive" -x "${archive}.minisig" -t "Outpost ${RELEASE_TAG#v} linux-amd64"
           minisign -Vm "$archive" -x "${archive}.minisig" -p infra/release/minisign.pub
-          sha256sum "$archive" >"${archive}.sha256"
+          archive_dir="$(dirname "$archive")"
+          archive_name="$(basename "$archive")"
+          (cd "$archive_dir" && sha256sum "$archive_name" >"${archive_name}.sha256")
           rm -f "$key"
       - name: Publish immutable GitHub Release
         run: |

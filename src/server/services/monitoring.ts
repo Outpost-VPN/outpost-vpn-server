@@ -1,6 +1,6 @@
 import { readFileSync, statfsSync } from "node:fs";
 import { cpus, freemem, loadavg, totalmem } from "node:os";
-import { connect as tcpConnect } from "node:net";
+import { connect as tcpConnect, isIP } from "node:net";
 import { connect as tlsConnect } from "node:tls";
 import { config } from "../config";
 import type { OutpostDatabase } from "../db/database";
@@ -323,36 +323,44 @@ function percent(value: number, total: number) {
 
 async function certificate() {
   return new Promise<{ days: number | null; expiresAt: string | null; error: string | null }>((resolve) => {
-    let settled = false;
-    const socket = tlsConnect({
-      host: config.domain,
-      port: 443,
-      servername: config.domain,
-      rejectUnauthorized: true,
-      timeout: 5_000,
-    });
-    const finish = (result: { days: number | null; expiresAt: string | null; error: string | null }) => {
-      if (settled) return;
-      settled = true;
-      socket.destroy();
-      resolve(result);
-    };
+    try {
+      let settled = false;
+      const socket = tlsConnect(certificateTlsOptions(config.domain));
+      const finish = (result: { days: number | null; expiresAt: string | null; error: string | null }) => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        resolve(result);
+      };
 
-    socket.once("secureConnect", () => {
-      const expiresAt = Date.parse(socket.getPeerCertificate().valid_to);
-      if (!Number.isFinite(expiresAt)) {
-        finish({ days: null, expiresAt: null, error: "Сервер не отдал срок TLS-сертификата" });
-        return;
-      }
-      finish({
-        days: Math.floor((expiresAt - Date.now()) / (24 * 60 * 60 * 1000)),
-        expiresAt: new Date(expiresAt).toISOString(),
-        error: null,
+      socket.once("secureConnect", () => {
+        const expiresAt = Date.parse(socket.getPeerCertificate().valid_to);
+        if (!Number.isFinite(expiresAt)) {
+          finish({ days: null, expiresAt: null, error: "Сервер не отдал срок TLS-сертификата" });
+          return;
+        }
+        finish({
+          days: Math.floor((expiresAt - Date.now()) / (24 * 60 * 60 * 1000)),
+          expiresAt: new Date(expiresAt).toISOString(),
+          error: null,
+        });
       });
-    });
-    socket.once("timeout", () => finish({ days: null, expiresAt: null, error: "HTTPS-проверка превысила время ожидания" }));
-    socket.once("error", (error: NodeJS.ErrnoException) => finish({ days: null, expiresAt: null, error: certificateError(error) }));
+      socket.once("timeout", () => finish({ days: null, expiresAt: null, error: "HTTPS-проверка превысила время ожидания" }));
+      socket.once("error", (error: NodeJS.ErrnoException) => finish({ days: null, expiresAt: null, error: certificateError(error) }));
+    } catch (error) {
+      resolve({ days: null, expiresAt: null, error: certificateError(error as NodeJS.ErrnoException) });
+    }
   });
+}
+
+export function certificateTlsOptions(host: string) {
+  return {
+    host,
+    port: 443,
+    ...(isIP(host) === 0 ? { servername: host } : {}),
+    rejectUnauthorized: true,
+    timeout: 5_000,
+  };
 }
 
 async function tcpPort(port: number) {
