@@ -172,6 +172,7 @@ systemctl reload nginx
 
 install -d -o root -g root -m 0755 "$acme_webroot/.well-known/acme-challenge"
 printf 'outpost-acme-ok\n' >"$acme_webroot/.well-known/acme-challenge/outpost-probe"
+chmod 0644 "$acme_webroot/.well-known/acme-challenge/outpost-probe"
 test "$(curl -fsS -H "Host: $public_ip" http://127.0.0.1/.well-known/acme-challenge/outpost-probe)" = "outpost-acme-ok"
 rm -f "$acme_webroot/.well-known/acme-challenge/outpost-probe"
 

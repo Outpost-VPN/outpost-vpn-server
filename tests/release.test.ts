@@ -31,6 +31,7 @@ describe("release trust chain", () => {
     ];
     expect(installer).toContain("acme_webroot=/var/www/outpost-acme");
     expect(installer).not.toContain("/var/lib/outpost/acme");
+    expect(installer).toContain('chmod 0644 "$acme_webroot/.well-known/acme-challenge/outpost-probe"');
     expect(installer.indexOf("outpost-acme-ok")).toBeLessThan(installer.indexOf('"$certbot" certonly'));
     for (const file of nginxFiles) {
       const nginx = await Bun.file(resolve(root, "infra/nginx", file)).text();
