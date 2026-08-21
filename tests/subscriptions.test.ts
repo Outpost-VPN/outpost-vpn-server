@@ -37,10 +37,10 @@ describe("technology subscription renderers", () => {
   test("five formats match their golden SHA-256 fingerprints", () => {
     const expected = {
       links: "ee90de33a4c5b6b1f8b62830c05dc51f33e19c045d417230974eee89648ed336",
-      mihomo: "05a9e4e26b848242200afab2b777fd79bb134114a7c9accf5600ad77ae5af24a",
-      "sing-box": "c1079ea6a06931ecafd62761a20601c21727bc135cff6c4ef4e6e3deb95ed45c",
+      mihomo: "2a816027bff3405cc9887aed0118393779f263b44158f129123d1cb3ef285178",
+      "sing-box": "d6705cc58ca9de593916afc1be720df9ae1e9101718f5484412d1db5bc31c273",
       xray: "4acd88ef98861fed276fc4716ab1f1cbd3cba56134e6a4acf4c4a59619a69b16",
-      "xray-json": "3d72c8f7bd3679c46451ee119f7de235c9b66f439cea0a1777c8a50e178efae6",
+      "xray-json": "79630fccb1118445095751b1a53b11ac738681dcdac53e4ec86ab3890efb06f8",
     };
     const rendered = [linksRenderer, mihomoRenderer, singBoxRenderer, xrayRenderer, xrayJsonRenderer];
     for (const renderer of rendered) {
@@ -100,16 +100,28 @@ describe("technology subscription renderers", () => {
     expect(profile["proxy-groups"][0]).toMatchObject({ type: "fallback", proxies: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"] });
     expect(profile.proxies[1]["xhttp-opts"].mode).toBe("packet-up");
     expect(profile.dns.enable).toBeTrue();
+    expect(profile.sniffer).toMatchObject({
+      enable: true,
+      "force-dns-mapping": true,
+      "parse-pure-ip": true,
+      "override-destination": true,
+    });
+    expect(profile.rules.at(-3)).toBe("IP-CIDR6,::/0,REJECT,no-resolve");
     expect(profile.rules.at(-2)).toBe("AND,((NETWORK,UDP),(DST-PORT,443)),REJECT");
     expect(profile.rules.at(-1)).toBe("MATCH,PROXY");
   });
 
-  test("full client configurations reject QUIC before their catch-all route", () => {
+  test("client configurations reject unreachable IPv6 and QUIC before their catch-all route", () => {
+    const linkRoutes = JSON.parse(renderLinkRoutes(context.routes).body);
+    expect(linkRoutes.BlockIp).toContain("::/0");
+
     const singBox = JSON.parse(singBoxRenderer.render(context).body);
+    expect(singBox.route.rules.at(-2)).toEqual({ ip_version: 6, action: "reject" });
     expect(singBox.route.rules.at(-1)).toEqual({ network: "udp", port: 443, action: "reject" });
     expect(singBox.route.final).toBe("proxy");
 
     const xray = JSON.parse(xrayJsonRenderer.render(context).body);
+    expect(xray.routing.rules.at(-3)).toEqual({ type: "field", ip: ["::/0"], outboundTag: "block" });
     expect(xray.routing.rules.at(-2)).toEqual({ type: "field", network: "udp", port: 443, outboundTag: "block" });
     expect(xray.routing.rules.at(-1)).toMatchObject({ type: "field", network: "tcp,udp", balancerTag: "proxy" });
   });

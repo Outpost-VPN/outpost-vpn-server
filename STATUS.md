@@ -79,11 +79,18 @@
 - `rc.11` опубликован из точного зелёного `main`, анонимно проверен по Minisign, внешнему SHA-256 `9e8b3880bba6721ef1dd8e965d2005025ff04c71b242cc83f1a4ff1b27975f24`, внутреннему `SHA256SUMS` и manifest; signed updater перевёл HostKey без повторного ACME order или rollback;
 - Nginx, Outpost, root-agent, Hysteria и Xray active/enabled с нулём рестартов и warning/error; все services, transports, telemetry, disk и TLS остаются healthy/available после нескольких monitoring intervals. Running root-agent SHA-256 совпадает с анонимно скачанным signed archive.
 - точный signed `rc.12` установлен на заново переустановленный HostKey одной публичной post-install командой; все release-файлы совпали с проверенным архивом, browser setup завершён на `outpost.semenova.icu`, а services, transports, telemetry, disk, TLS и SQLite прошли полевую проверку без рестартов и incidents;
-- первый прямой импорт универсального `/s/:token` в Everywhere 1.5 выявил регрессию `rc.12`: корневой URL всегда отдавал HTML-каталог, поэтому Mihomo завершался с `yaml: line 5: found character that cannot start any token`. Исправление `rc.13` вернуло User-Agent negotiation для `Everywhere/1.0 Clash/1.11.0`, сохранило HTML для браузера и explicit `/apps/:appId`; профильные тесты, полный `bun run check` и native subscription validation зелёные. HostKey намеренно остаётся на `rc.12` до одноразового bridge update.
+- первый прямой импорт универсального `/s/:token` в Everywhere 1.5 выявил регрессию `rc.12`: корневой URL всегда отдавал HTML-каталог, поэтому Mihomo завершался с `yaml: line 5: found character that cannot start any token`. Исправление `rc.13` вернуло User-Agent negotiation для `Everywhere/1.0 Clash/1.11.0`, сохранило HTML для браузера и explicit `/apps/:appId`; профильные тесты, полный `bun run check` и native subscription validation зелёные;
+- одноразовый signed bridge `rc.12 -> rc.14` завершён без rollback и потери данных. HostKey работает на `rc.14`, candidate-канал включён, службы и monitoring зелёные; следующий candidate можно впервые устанавливать через web updater;
+- полевой тест новой Everywhere-подписки выявил отдельную IPv6-регрессию: Brave Secure DNS передавал Mihomo готовые AAAA-адреса, а IPv4-only HostKey не имеет global IPv6/default route. Из-за этого Cloudflare/GitHub-сайты получали `ERR_CONNECTION_CLOSED`, хотя те же URL по IPv4 через Hysteria отвечали `200`. QUIC `UDP/443` при этом корректно попадал в системный `REJECT`. Локальный post-`rc.14` fix возвращает Mihomo TLS/HTTP/QUIC sniffing, добавляет fail-fast `::/0` для Mihomo/sing-box/Xray/INCY routes и проходит полный `bun run check`, native config validation и изолированный Hysteria-тест принудительного IPv6 literal с TLS SNI.
 
 ## Оставшийся полевой gate
 
-Чистая signed-установка `rc.12` и browser setup на HostKey завершены. Первый прямой импорт нашёл и закрыл в `rc.13` ошибку content negotiation универсальной ссылки. `rc.14` добавляет настоящий web updater, но backend `rc.12` не может загрузить код собственного исправления: нужен один ручной signed bridge до `rc.14`, после чего web flow проверяется отдельным переходом на следующий candidate. После этого остаются:
+Чистая signed-установка `rc.12`, browser setup и одноразовый bridge до `rc.14`
+на HostKey завершены. Первый прямой импорт закрыл в `rc.13` ошибку content
+negotiation, а следующий полевой тест нашёл post-`rc.14` IPv6/Secure DNS
+регрессию и подготовил локальное исправление. Следующий checkpoint — выпустить
+этот fix отдельным candidate и впервые применить его через web updater. После
+этого остаются:
 
 1. прямой импорт минимум в один Mihomo-, sing-box- и Xray-клиент без обязательного browser step;
 2. Hysteria UDP/443, XHTTP и gRPC через общий TCP/443 и автоматическое переключение при недоступном UDP;
@@ -139,3 +146,17 @@ success/failure в SQLite после readiness, а новый control plane во
 Поскольку `rc.12` всегда возвращает `updates.available: false`, он не может сам
 перейти на версию, где этот updater реализован. Это ограничение bootstrap старой
 версии, а не дефект `rc.14`; первый переход остаётся одноразовым ручным bridge.
+
+## Кандидат 0.1.0-rc.15
+
+HostKey предоставляет только IPv4. Браузеры с собственным Secure DNS могут
+передать TUN-клиенту уже разрешённый IPv6 literal, минуя `dns.ipv6: false` в
+Mihomo. В `rc.14` такой TCP-сеанс уходил через Hysteria к недоступному IPv6 и
+закрывался; домены с AAAA выглядели полностью или частично сломанными.
+
+Кандидат содержит fail-closed fix: Mihomo восстанавливает hostname из HTTP/TLS/QUIC,
+чтобы доменные правила и IPv4 server-side resolution снова работали, а
+нераспознанный IPv6 отклоняется до catch-all. Эквивалентная защита добавлена в
+sing-box, full Xray JSON и INCY routing profile. Активный Everywhere во время
+диагностики не перезапускался и не изменялся. Кандидат предназначен для первого
+полевого обновления `rc.14 → rc.15` через web updater панели.
