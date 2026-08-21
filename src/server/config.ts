@@ -5,6 +5,7 @@ const production = process.env.NODE_ENV === "production";
 const projectRoot = resolve(import.meta.dir, "..", "..");
 const dataDir = resolve(process.env.OUTPOST_DATA_DIR ?? (production ? "/var/lib/outpost" : join(projectRoot, ".data")));
 const configDir = resolve(process.env.OUTPOST_CONFIG_DIR ?? (production ? "/etc/outpost" : join(projectRoot, ".data", "config")));
+const webRoot = resolve(process.env.OUTPOST_WEB_ROOT ?? join(projectRoot, "public"));
 
 const listen = process.env.OUTPOST_LISTEN ?? "127.0.0.1:8181";
 const [hostname, rawPort] = listen.split(":");
@@ -20,7 +21,7 @@ export const config = {
   configDir,
   databasePath: join(dataDir, "outpost.sqlite"),
   masterKeyPath: join(dataDir, "master.key"),
-  webRoot: resolve(process.env.OUTPOST_WEB_ROOT ?? join(projectRoot, "public")),
+  webRoot,
   hostname: hostname || "127.0.0.1",
   port: Number(rawPort || "8181"),
   domain,
@@ -32,8 +33,7 @@ export const config = {
   grpcService: normalizeSegment(process.env.OUTPOST_GRPC_SERVICE ?? "grpc-change-me"),
   hysteriaStatsSecret: process.env.OUTPOST_HYSTERIA_STATS_SECRET ?? "development-stats-secret",
   agentSocket: process.env.OUTPOST_AGENT_SOCKET ?? "/run/outpost/agent.sock",
-  releasePublicKey: resolve(process.env.OUTPOST_RELEASE_PUBLIC_KEY
-    ?? (production ? "/opt/outpost/current/infra/release/minisign.pub" : join(projectRoot, "infra/release/minisign.pub"))),
+  releasePublicKey: resolve(process.env.OUTPOST_RELEASE_PUBLIC_KEY ?? join(webRoot, "..", "infra/release/minisign.pub")),
   rulesetDir: resolve(process.env.OUTPOST_RULESET_DIR ?? join(dataDir, "rulesets")),
   rulesetIndex: process.env.OUTPOST_RULESET_INDEX
     ?? "https://github.com/Outpost-VPN/outpost-vpn-server/releases/download/rulesets/rulesets.json",

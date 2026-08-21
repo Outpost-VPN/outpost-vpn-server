@@ -708,21 +708,40 @@ tag outpost-confirm-modal
 	store = null
 	saving = false
 	error = null
+	stage = null
 
 	get payload
 		return store.selected.payload if store.selected and store.selected.payload
 		{service: store.selected.name}
 
+	get updating?
+		store.confirmation and store.confirmation.action == 'update.apply'
+
 	def confirm
+		const updating = updating?
 		saving = true
 		error = null
+		if updating
+			stage = t('settings.update.installing', {version: payload.version})
+			store.hold = true
 		try
 			const action = store.confirmation.action
 			const operation = await store.api('POST', '/api/v1/operations/confirm', {confirmationId: store.confirmation.confirmationId, action: action, payload: payload})
-			if action == 'update.apply'
+			if updating
+				stage = t('settings.update.restarting', {version: payload.version})
+				imba.commit!
 				let completed = false
 				for attempt in [0 ... 180]
 					await new Promise(do(resolve) setTimeout(resolve, 750))
+					let failure = null
+					try
+						const state = await store.api('GET', '/api/v1/operations')
+						const current = state.operations.find do(item) item.id == operation.id
+						failure = current.error or t('Операция завершилась ошибкой') if current and current.status == 'failed'
+					catch issue
+						# The control plane is expected to disappear briefly during the switch.
+						failure = null
+					throw new Error(failure) if failure
 					try
 						const response = await window.fetch('/healthz', {cache: 'no-store', signal: window.AbortSignal.timeout(3000)})
 						if response.ok
@@ -748,10 +767,12 @@ tag outpost-confirm-modal
 			await store.load!
 			if action == 'engine.update' or action.startsWith('service.')
 				store.data.system = await store.api('GET', '/api/v1/system')
+			store.hold = false if updating
 			store.close!
 		catch issue
 			error = issue.message
 		finally
+			store.hold = false if updating
 			saving = false
 			imba.commit!
 
@@ -762,15 +783,30 @@ tag outpost-confirm-modal
 				<div>
 					<h2> store.confirmation.preview.title
 					<p> t('Подтвердите выполнение операции.')
-				<button.outpost-modal-close type="button" @click=store.close aria-label=t('action.close')><outpost-icon name="x">
+				<button.outpost-modal-close type="button" disabled=saving @click=store.close aria-label=t('action.close')><outpost-icon name="x">
 			<div.outpost-modal-body>
 				<p> store.confirmation.preview.changes[0]
+				if updating? and saving
+					<div.update-work role="status" aria-live="polite">
+						<div>
+							<outpost-icon name="spinner-gap">
+							<span> stage
+						<progress aria-label=stage>
 				if error
 					<div.outpost-error [mt:16px]> error
 			<footer.outpost-modal-footer>
 				<div.modal-actions>
-					<button.outpost-button.quiet type="button" @click=store.close> t('action.cancel')
-					<button.outpost-button type="button" disabled=saving @click=confirm> t('action.confirm')
+					<button.outpost-button.quiet type="button" disabled=saving @click=store.close> t('action.cancel')
+					<button.outpost-button type="button" disabled=saving @click=confirm>
+						<outpost-icon name=(saving ? 'spinner-gap' : 'check')>
+						<span> saving and updating? ? t('settings.update.working') : t('action.confirm')
+
+	css self
+		.update-work d:grid g:10px mt:18px p:14px rd:10px bgc:var(--outpost-soft) c:var(--outpost-text)
+		.update-work > div d:flex ai:center g:9px fs:12px fw:650 lh:1.4
+		.update-work outpost-icon.ph-spinner-gap c:var(--outpost-brand) fs:17px animation:spin 1s linear infinite
+		.update-work progress w:100% h:6px accent-color:var(--outpost-brand)
+		.outpost-modal-footer .outpost-button outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
 
 tag outpost-code-editor
 	syntax = 'yaml'

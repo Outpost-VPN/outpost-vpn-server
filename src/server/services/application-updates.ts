@@ -74,7 +74,7 @@ export class ApplicationUpdateService {
     const publicKey = dependencies.publicKey ?? config.releasePublicKey;
     this.verify = dependencies.verify ?? ((archive, signature) => command(
       ["minisign", "-Vm", archive, "-x", signature, "-p", publicKey],
-      "Подпись обновления недействительна",
+      "Не удалось проверить подпись обновления",
     ));
     this.initializeChannel();
   }

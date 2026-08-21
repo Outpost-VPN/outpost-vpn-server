@@ -71,4 +71,22 @@ describe("admin navigation", () => {
     expect(journal).toContain("@autorun def follow");
     expect(journal).toContain("return if current == seen");
   });
+
+  test("keeps application update progress visible across page and control-plane reloads", async () => {
+    const store = await Bun.file(new URL("../src/web/store.imba", import.meta.url)).text();
+    const settings = await Bun.file(new URL("../src/web/settings.imba", import.meta.url)).text();
+    const dialogs = await Bun.file(new URL("../src/web/dialogs.imba", import.meta.url)).text();
+
+    expect(store).toContain("item.kind == 'update.apply'");
+    expect(store).toContain("data.system.updates.status == 'preparing'");
+    expect(store).toContain("window.setTimeout(tick, 1000)");
+    expect(settings).toContain("get applying?");
+    expect(settings).toContain("operation.status == 'failed'");
+    expect(settings).toContain("settings.update.completed");
+    expect(settings).toContain("<progress.update-progress aria-label=summary>");
+    expect(settings).toContain("status: 'failed', ready: false, error: issue.message");
+    expect(dialogs).toContain("store.hold = true");
+    expect(dialogs).toContain("item.id == operation.id");
+    expect(dialogs).toContain("<progress aria-label=stage>");
+  });
 });

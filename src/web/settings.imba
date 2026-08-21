@@ -146,14 +146,30 @@ tag outpost-settings
 	get settings do store.data.settings or {interface: {}, system: {}}
 	get update do store.data.system.updates or {status: 'idle', available: false, current: store.data.system.version}
 	get tls do store.data.system.tls
+	get operation do (store.data.operations or []).find do(item) item.kind == 'update.apply'
+	get applying? do operation and ['queued', 'running'].includes(operation.status)
+	get outcome? do operation and ['completed', 'failed'].includes(operation.status) and (!update.checkedAt or operation.updated_at >= update.checkedAt)
+	get failed? do outcome? and operation.status == 'failed'
+	get completed? do outcome? and operation.status == 'completed'
+	get preparing? do busy == 'update' or update.status == 'preparing'
+	get working? do preparing? or applying?
 
 	get summary
-		return t('settings.update.preparing') if busy == 'update'
+		return t('settings.update.installing', {version: update.latest}) if applying?
+		return t('settings.update.preparing') if preparing?
 		return t('settings.update.checking') if busy == 'check'
 		return update.error if update.status == 'failed' and update.error
+		return operation.error or t('settings.update.failed') if failed?
+		return t('settings.update.completed') if completed?
 		return t('settings.update.available', {version: update.latest}) if update.available
 		return t('settings.update.current') if update.status == 'current'
 		t('settings.update.unchecked')
+
+	get action
+		return t('settings.update.loading') if preparing?
+		return t('settings.update.working') if applying?
+		return t('settings.update.retry') if update.status == 'failed' or failed?
+		t('settings.update.upgrade')
 
 	def expiry
 		return tls.error or t('Не удалось проверить сертификат') unless tls.expiresAt
@@ -162,6 +178,8 @@ tag outpost-settings
 	def upgrade
 		return unless update.available
 		busy = 'update'
+		store.error = null
+		store.data.system.updates = {...update, status: 'preparing', ready: false, error: null}
 		try
 			const prepared = await store.api('POST', '/api/v1/updates/prepare')
 			store.data.system.updates = prepared
@@ -169,7 +187,7 @@ tag outpost-settings
 			store.confirmation = await store.api('POST', '/api/v1/operations/preview', {action: 'update.apply', payload: prepared.payload})
 			store.open('confirm')
 		catch issue
-			store.error = issue.message
+			store.data.system.updates = {...update, status: 'failed', ready: false, error: issue.message}
 		finally
 			busy = null
 			imba.commit!
@@ -257,11 +275,17 @@ tag outpost-settings
 						<small> t('Версия панели')
 						<div.system-value>
 							<strong> store.data.system.version
-							if update.available
-								<button.system-action type="button" disabled=busy @click=upgrade aria-label=t('Обновить до {version}', {version: update.latest}) title=t('Обновить до {version}', {version: update.latest})> t('settings.update.upgrade')
+							if update.available or working?
+								<button.system-action type="button" disabled=(busy or working?) @click=upgrade aria-label=t('Обновить до {version}', {version: update.latest}) title=t('Обновить до {version}', {version: update.latest})>
+									<outpost-icon name=(working? ? 'spinner-gap' : update.status == 'failed' or failed? ? 'arrow-clockwise' : 'download-simple')>
+									<span> action
 							else
-								<button.system-action type="button" disabled=busy @click=check> t('settings.update.check')
+								<button.system-action type="button" disabled=busy @click=check>
+									<outpost-icon name=(busy == 'check' ? 'spinner-gap' : 'arrows-clockwise')>
+									<span> busy == 'check' ? t('settings.update.checking') : t('settings.update.check')
 						<span> summary
+						if working?
+							<progress.update-progress aria-label=summary>
 			<div.content-grid>
 				<section.outpost-card.settings-card>
 					<h2> t('Параметры интерфейса')
@@ -331,8 +355,11 @@ tag outpost-settings
 		.system-value miw:0 d:flex ai:center g:7px mt:3px
 		.system-value strong miw:0 of:hidden text-overflow:ellipsis white-space:nowrap c:var(--outpost-navy) fs:15px fw:700
 		.address .system-value strong c:var(--outpost-brand)
-		.system-action fl:0 0 auto p:1px 0 bd:0 bgc:transparent c:var(--outpost-brand) fs:11px fw:650 lh:1.2 white-space:nowrap
+		.system-action fl:0 0 auto d:inline-flex ai:center g:5px p:1px 0 bd:0 bgc:transparent c:var(--outpost-brand) fs:11px fw:650 lh:1.2 white-space:nowrap
 		.system-action c@hover:var(--outpost-brand-dark) td@hover:underline
+		.system-action outpost-icon fs:12px
+		.system-action outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
+		.update-progress d:block w:100% h:4px mt:7px accent-color:var(--outpost-brand)
 		.content-grid d:grid gtc:minmax(0,2.15fr) minmax(260px,.85fr) ai:stretch g:18px
 		.settings-card px:24px
 		.settings-card > h2 pt:22px pb:14px c:var(--outpost-navy) fs:17px fw:750

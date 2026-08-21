@@ -160,3 +160,13 @@ Mihomo. В `rc.14` такой TCP-сеанс уходил через Hysteria к
 sing-box, full Xray JSON и INCY routing profile. Активный Everywhere во время
 диагностики не перезапускался и не изменялся. Кандидат предназначен для первого
 полевого обновления `rc.14 → rc.15` через web updater панели.
+
+Первая попытка web update остановилась безопасно до создания `update.apply`:
+compiled `rc.14` вычислил trusted key как `/infra/release/minisign.pub`, хотя
+установленный ключ находится в `/opt/outpost/current/infra/release/minisign.pub`.
+Archive и signature были корректными, временные файлы удалены, текущий release
+остался `rc.14`. Post-`rc.15` fix выводит путь ключа из фактического
+`OUTPOST_WEB_ROOT`, а installer задаёт его явно. Панель сохраняет prepare-error
+в карточке версии, показывает progress во время download/apply/restart и
+восстанавливает активное обновление из persistent `application_update` и
+`operations` после reload страницы или control-plane restart.
