@@ -1,6 +1,6 @@
 # Состояние Outpost v1
 
-Обновлено: 18 августа 2026.
+Обновлено: 21 августа 2026.
 
 ## Реализовано
 
@@ -41,10 +41,10 @@
 - release manifest входит в `SHA256SUMS`, installer/updater проверяют detached signature до распаковки;
 - dependency override перевёл Imba toolchain на `esbuild 0.25.0`, `bun audit` чист.
 
-## Проверено локально и на прежнем VPS-релизе
+## Проверено локально и на VPS
 
 - TypeScript typecheck и Imba production build;
-- 101 unit/integration tests, включая единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract, WebAuthn, journal, presence и monitoring;
+- 104 unit/integration tests, включая единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract, WebAuthn, journal, presence и monitoring;
 - сгенерированные Mihomo, sing-box и Xray JSON профили приняты нативными `mihomo 1.19.30`, `sing-box 1.13.19` и `xray 26.7.28`;
 - Go policy tests и статический linux/amd64 agent build;
 - standalone Linux server/CLI и macOS CLI builds;
@@ -61,12 +61,16 @@
 - Let's Encrypt выдал trusted short-lived certificate с IP SAN `57.131.140.147`; внешние `/healthz`, `/readyz` и setup page доступны по HTTPS без отключения TLS verification;
 - Nginx, Outpost и root-agent active/enabled, UFW active; Xray и Hysteria остаются disabled до browser-перехода на конечный домен;
 - Gitleaks повторно проверил текущее дерево и всю Git-историю перед публикацией: секретов и legacy-названия нет; `bun audit` не нашёл уязвимостей.
+- signed workflow опубликовал pre-release [`v0.1.0-rc.8`](https://github.com/Outpost-VPN/outpost-vpn-server/releases/tag/v0.1.0-rc.8) из точного зелёного `main`; анонимная загрузка повторно прошла detached Minisign, внешний portable SHA-256, внутренний `SHA256SUMS` и manifest `linux-amd64`;
+- чистая установка `v0.1.0-rc.8` прошла на HostKey Ubuntu 24.04 amd64 даже при вызывающем `umask 077`: Certbot выдал trusted short-lived IP certificate, Nginx, Outpost и root-agent active, UFW active, `/readyz` и одноразовая setup page доступны;
+- полевая установка выявила и закрыла три дефекта до `rc.8`: transient restart snapd при установке Certbot, недопустимый IP в TLS SNI monitoring probe и неявный mode временного ACME-файла; rollback после каждой неуспешной попытки оставлял Outpost paths, services и порты чистыми;
+- после установки Outpost пережил следующий цикл мониторинга без warning/error и рестартов; IP certificate проверен с `verify_ip`, а `/etc/outpost/outpost.env` имеет mode `0640` и владельца `root:outpost`.
 
 ## Оставшийся полевой gate
 
-Универсальные подключения реализованы и проверены локально. Существующий VPS в рамках этой работы не обновлялся. После отдельного подтверждения нужен чистый reinstall и следующий field gate:
+Универсальные подключения реализованы и проверены локально, а чистая signed-установка на новом HostKey завершена. Дальше нужен browser setup и оставшийся end-to-end gate:
 
-1. чистая установка и повторное создание владельца без legacy data;
+1. выбор конечного hostname/домена, DNS/certificate switch и создание владельца/passkey без legacy data;
 2. прямой импорт минимум в один Mihomo-, sing-box- и Xray-клиент без обязательного browser step;
 3. Hysteria UDP/443, XHTTP и gRPC через общий TCP/443 и автоматическое переключение при недоступном UDP;
 4. добавление и отзыв одного UUID одновременно в обоих Xray inbounds, включая частичный сбой hot update;
