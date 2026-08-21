@@ -31,6 +31,7 @@ describe("release trust chain", () => {
     ];
     expect(installer).toContain("acme_webroot=/var/www/outpost-acme");
     expect(installer).not.toContain("/var/lib/outpost/acme");
+    expect(installer).toContain('chmod 0644 "$acme_webroot/.well-known/acme-challenge/outpost-probe"');
     expect(installer.indexOf("outpost-acme-ok")).toBeLessThan(installer.indexOf('"$certbot" certonly'));
     for (const file of nginxFiles) {
       const nginx = await Bun.file(resolve(root, "infra/nginx", file)).text();
@@ -121,5 +122,12 @@ describe("release trust chain", () => {
     expect(builder).toContain("SagerNet/sing-geoip");
     expect(builder).toContain("sources.json");
     expect(builder).toContain("licenses");
+  });
+
+  test("authenticates native release metadata requests in CI", async () => {
+    const workflow = await Bun.file(resolve(root, ".github/workflows/ci.yml")).text();
+    const installer = await Bun.file(resolve(root, "scripts/install-native-tools.ts")).text();
+    expect(workflow).toContain("GITHUB_TOKEN: ${{ github.token }}");
+    expect(installer).toContain("headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`");
   });
 });
