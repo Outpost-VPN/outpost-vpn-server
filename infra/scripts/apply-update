@@ -45,7 +45,7 @@ rollback() {
   install -o outpost -g outpost -m 0600 "$snapshot" /var/lib/outpost/outpost.sqlite
   install -o root -g outpost -m 0640 "$env_previous" "$env_file"
   systemctl daemon-reload
-  systemctl restart outpost
+  systemctl restart outpost-agent outpost
   echo "Update failed and was rolled back to $previous" >&2
 }
 trap 'rollback' ERR
@@ -55,6 +55,8 @@ ln -sfn "$next" /opt/outpost/current
 install -o root -g outpost -m 0640 "$update_tmp/outpost.env.next" "$env_file"
 install -m 0644 "$next"/infra/systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
+systemctl restart outpost-agent
+systemctl is-active --quiet outpost-agent
 systemctl start outpost
 
 for _ in {1..30}; do
