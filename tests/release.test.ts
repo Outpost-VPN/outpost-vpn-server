@@ -99,6 +99,12 @@ describe("release trust chain", () => {
     expect(updater).toContain('install -o root -g outpost -m 0640 "$env_previous" "$env_file"');
   });
 
+  test("activates the new root-agent binary and restores it on update rollback", async () => {
+    const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
+    expect(updater).toContain("systemctl restart outpost-agent\nsystemctl is-active --quiet outpost-agent");
+    expect(updater).toContain("systemctl restart outpost-agent outpost");
+  });
+
   test("includes the release manifest in the signed checksum set", async () => {
     const script = await Bun.file(resolve(root, "scripts/release.ts")).text();
     const manifest = script.indexOf('writeFileSync(join(stage, "manifest.json")');
