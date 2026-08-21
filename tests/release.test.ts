@@ -123,4 +123,11 @@ describe("release trust chain", () => {
     expect(builder).toContain("sources.json");
     expect(builder).toContain("licenses");
   });
+
+  test("authenticates native release metadata requests in CI", async () => {
+    const workflow = await Bun.file(resolve(root, ".github/workflows/ci.yml")).text();
+    const installer = await Bun.file(resolve(root, "scripts/install-native-tools.ts")).text();
+    expect(workflow).toContain("GITHUB_TOKEN: ${{ github.token }}");
+    expect(installer).toContain("headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`");
+  });
 });

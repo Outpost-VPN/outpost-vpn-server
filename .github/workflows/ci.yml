@@ -19,6 +19,8 @@ jobs:
       - run: shellcheck infra/scripts/bootstrap infra/scripts/install infra/scripts/finalize-domain infra/scripts/outpostctl infra/scripts/deploy-remote infra/renewal-hooks/deploy/outpost
       - run: bun run check
       - name: Validate generated subscriptions with native engines
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           bun scripts/install-native-tools.ts
           bun run check:subscriptions-native

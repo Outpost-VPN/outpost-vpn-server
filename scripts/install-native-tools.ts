@@ -51,11 +51,16 @@ try {
 }
 
 async function release(repository: string, tag: string): Promise<Release> {
+  const headers: Record<string, string> = {
+    "user-agent": "outpost-native-validator",
+    accept: "application/vnd.github+json",
+  };
+  if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
   const response = await fetch(`https://api.github.com/repos/${repository}/releases/tags/${tag}`, {
-    headers: { "user-agent": "outpost-native-validator", accept: "application/vnd.github+json" },
+    headers,
     signal: AbortSignal.timeout(30_000),
   });
-  if (!response.ok) throw new Error(`Release ${repository}@${tag} is unavailable`);
+  if (!response.ok) throw new Error(`Release ${repository}@${tag} is unavailable (${response.status})`);
   return response.json() as Promise<Release>;
 }
 
