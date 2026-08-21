@@ -14,7 +14,7 @@ import { EngineRuntimeService } from "./services/engine-runtime";
 import { EngineConfigService } from "./adapters/engines";
 import { JournalService, type JournalScope } from "./services/journal";
 import type { JournalCategory, SubscriptionFormat } from "./models";
-import { MonitoringService } from "./services/monitoring";
+import { MonitoringService, prepareSetupMonitoring } from "./services/monitoring";
 import { ConnectionSyncService } from "./services/connection-sync";
 import { SetupService } from "./services/setup";
 import { RuleSetService } from "./services/rulesets";
@@ -52,19 +52,20 @@ export class HttpApplication {
     readonly db: OutpostDatabase,
     connectionEngine?: Pick<EngineRuntimeService, "add" | "rotate" | "revoke">,
   ) {
+    if (config.setup) prepareSetupMonitoring(db);
     this.journal = new JournalService(db);
     this.auth = new AuthService(db, this.journal);
     this.setup = new SetupService(this.auth);
     this.connections = new ConnectionService(db, this.journal);
     this.rulesets = new RuleSetService(db, this.journal);
     this.routes = new RouteService(db, this.journal, this.rulesets);
-    this.traffic = new TrafficService(db, configuredCollectors(), this.journal);
+    this.traffic = new TrafficService(db, configuredCollectors(), this.journal, !config.setup);
     this.engines = new EngineRuntimeService(db);
     this.connectionSync = new ConnectionSyncService(db, this.connections, connectionEngine ?? this.engines);
     this.engineConfigs = new EngineConfigService(db, this.journal);
     this.operations = new OperationService(db, this.journal);
     this.system = new SystemService(db, this.journal);
-    this.monitoring = new MonitoringService(db, this.journal);
+    this.monitoring = new MonitoringService(db, this.journal, undefined, undefined, { setup: config.setup });
     this.registerRoutes();
   }
 
