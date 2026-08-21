@@ -8,8 +8,8 @@ one credential generation and one link that may be shared by any number of
 people and physical devices.
 
 > **Status:** `0.1.0-rc.8` pre-release. Local tests and production builds pass;
-> the first real-world installation is progressing through the VPS gate described
-> in [STATUS.md](STATUS.md).
+> the signed release passes a clean Ubuntu VPS installation, with the remaining
+> end-to-end field gate tracked in [STATUS.md](STATUS.md).
 
 ## Supported protocols
 
