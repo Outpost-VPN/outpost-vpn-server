@@ -65,6 +65,8 @@
 - чистая установка `v0.1.0-rc.8` прошла на HostKey Ubuntu 24.04 amd64 даже при вызывающем `umask 077`: Certbot выдал trusted short-lived IP certificate, Nginx, Outpost и root-agent active, UFW active, `/readyz` и одноразовая setup page доступны;
 - полевая установка выявила и закрыла три дефекта до `rc.8`: transient restart snapd при установке Certbot, недопустимый IP в TLS SNI monitoring probe и неявный mode временного ACME-файла; rollback после каждой неуспешной попытки оставлял Outpost paths, services и порты чистыми;
 - после установки Outpost пережил следующий цикл мониторинга без warning/error и рестартов; IP certificate проверен с `verify_ip`, а `/etc/outpost/outpost.env` имеет mode `0640` и владельца `root:outpost`.
+- security pre-release [`v0.1.0-rc.9`](https://github.com/Outpost-VPN/outpost-vpn-server/releases/tag/v0.1.0-rc.9) обновил runtime `golang.org/x/crypto` до `0.52.0` и Go toolchain до 1.25; `govulncheck` не нашёл достигаемых уязвимостей, а число открытых Dependabot alerts стало нулевым;
+- HostKey обновлён с `rc.8` на `rc.9` встроенным signed updater без потери setup state; running root-agent исполняется из release `rc.9`, его SHA-256 совпадает с signed archive, после monitoring interval у Outpost и agent ноль рестартов и warning/error.
 
 ## Оставшийся полевой gate
 
