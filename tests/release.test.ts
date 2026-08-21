@@ -33,6 +33,15 @@ describe("release trust chain", () => {
     expect(installer).not.toContain("/var/lib/outpost/acme");
     expect(installer).toContain('chmod 0644 "$acme_webroot/.well-known/acme-challenge/outpost-probe"');
     expect(installer.indexOf("outpost-acme-ok")).toBeLessThan(installer.indexOf('"$certbot" certonly'));
+    const packages = installer.indexOf("apt-get install");
+    const stop = installer.indexOf("systemctl stop nginx", packages);
+    const site = installer.indexOf("outpost-setup-http.conf.template", stop);
+    const probe = installer.indexOf("outpost-acme-ok", site);
+    const start = installer.indexOf("systemctl start nginx", probe);
+    expect(packages).toBeLessThan(stop);
+    expect(stop).toBeLessThan(site);
+    expect(site).toBeLessThan(probe);
+    expect(probe).toBeLessThan(start);
     for (const file of nginxFiles) {
       const nginx = await Bun.file(resolve(root, "infra/nginx", file)).text();
       expect(nginx).toContain("root /var/www/outpost-acme;");

@@ -163,16 +163,16 @@ ENV
 chmod 0640 /etc/outpost/outpost.env /etc/outpost/engines/*
 chown root:outpost /etc/outpost/outpost.env /etc/outpost/engines/*
 
+systemctl stop nginx
 install -m 0644 /opt/outpost/current/infra/nginx/outpost-setup-http.conf.template /etc/nginx/sites-available/outpost
 ln -sfn /etc/nginx/sites-available/outpost /etc/nginx/sites-enabled/outpost
 rm -f /etc/nginx/sites-enabled/default
-nginx -t
-systemctl enable --now nginx
-systemctl reload nginx
-
 install -d -o root -g root -m 0755 "$acme_webroot/.well-known/acme-challenge"
 printf 'outpost-acme-ok\n' >"$acme_webroot/.well-known/acme-challenge/outpost-probe"
 chmod 0644 "$acme_webroot/.well-known/acme-challenge/outpost-probe"
+nginx -t
+systemctl enable nginx
+systemctl start nginx
 test "$(curl -fsS -H "Host: $public_ip" http://127.0.0.1/.well-known/acme-challenge/outpost-probe)" = "outpost-acme-ok"
 rm -f "$acme_webroot/.well-known/acme-challenge/outpost-probe"
 
