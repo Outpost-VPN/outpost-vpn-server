@@ -4,9 +4,9 @@ export async function seedDemo(app: HttpApplication) {
   const existing = app.connections.list();
   if (!existing.length) {
     const fixtures = [
-      { name: "Мама", color: "peach" as const, avatar: "avatar-8" },
-      { name: "Семья", color: "blue" as const, avatar: "avatar-group" },
-      { name: "Знакомый из поезда", color: "green" as const, avatar: "avatar-person" },
+      { name: "My devices", color: "blue" as const, avatar: "avatar-current" },
+      { name: "Family", color: "peach" as const, avatar: "avatar-group" },
+      { name: "Alex", color: "green" as const, avatar: "avatar-person" },
     ];
     for (const fixture of fixtures) {
       const connection = app.connections.create(fixture, "demo");

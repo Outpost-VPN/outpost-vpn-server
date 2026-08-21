@@ -17,6 +17,11 @@ const clock = {
 		"{clock.offset(name)} · {name.replace(/_/g, ' ')}"
 }
 
+const channels = [
+	{id: 'stable', label: 'settings.update.channel.stable'}
+	{id: 'candidate', label: 'settings.update.channel.candidate'}
+]
+
 tag outpost-settings-select
 	value = ''
 	items = []
@@ -121,13 +126,14 @@ tag outpost-settings
 	store = null
 	busy = null
 	zones = []
-	draft = {period: '30d', language: 'en', timezone: 'UTC'}
+	draft = {period: '30d', language: 'en', timezone: 'UTC', channel: 'stable'}
 
 	def mount
 		draft = {
 			period: store.trafficPeriod
 			language: owner.language or 'en'
 			timezone: owner.timezone or 'UTC'
+			channel: settings.system.updateChannel or 'stable'
 		}
 		const supported = Intl['supportedValuesOf'] ? Intl['supportedValuesOf']('timeZone') : ['UTC']
 		const values = [draft.timezone]
@@ -138,8 +144,16 @@ tag outpost-settings
 
 	get owner do store.data.auth.owner
 	get settings do store.data.settings or {interface: {}, system: {}}
-	get update do store.data.system.updates or {available: false, current: store.data.system.version}
+	get update do store.data.system.updates or {status: 'idle', available: false, current: store.data.system.version}
 	get tls do store.data.system.tls
+
+	get summary
+		return t('settings.update.preparing') if busy == 'update'
+		return t('settings.update.checking') if busy == 'check'
+		return update.error if update.status == 'failed' and update.error
+		return t('settings.update.available', {version: update.latest}) if update.available
+		return t('settings.update.current') if update.status == 'current'
+		t('settings.update.unchecked')
 
 	def expiry
 		return tls.error or t('Не удалось проверить сертификат') unless tls.expiresAt
@@ -147,11 +161,26 @@ tag outpost-settings
 
 	def upgrade
 		return unless update.available
-		const bundle = "/var/lib/outpost/incoming/outpost-{update.latest}-linux-amd64.tar.gz"
-		const payload = {version: update.latest, bundle: bundle, signature: "{bundle}.minisig"}
-		store.selected = {payload: payload}
-		store.confirmation = await store.api('POST', '/api/v1/operations/preview', {action: 'update.apply', payload: payload})
-		store.open('confirm')
+		busy = 'update'
+		try
+			const prepared = await store.api('POST', '/api/v1/updates/prepare')
+			store.data.system.updates = prepared
+			store.selected = {payload: prepared.payload}
+			store.confirmation = await store.api('POST', '/api/v1/operations/preview', {action: 'update.apply', payload: prepared.payload})
+			store.open('confirm')
+		catch issue
+			store.error = issue.message
+		finally
+			busy = null
+			imba.commit!
+
+	def check
+		busy = 'check'
+		try
+			store.data.system.updates = await store.api('POST', '/api/v1/updates/check')
+		finally
+			busy = null
+			imba.commit!
 
 	def backup
 		store.open('backup')
@@ -193,6 +222,15 @@ tag outpost-settings
 			busy = null
 			imba.commit!
 
+	def channel value
+		draft.channel = value
+		busy = 'channel'
+		try
+			await store.mutate('PATCH', '/api/v1/settings', {system: {updateChannel: value}})
+		finally
+			busy = null
+			imba.commit!
+
 	<self>
 		<header.settings-header>
 			<small> t('Параметры')
@@ -220,8 +258,10 @@ tag outpost-settings
 						<div.system-value>
 							<strong> store.data.system.version
 							if update.available
-								<button.system-action type="button" @click=upgrade aria-label=t('Обновить до {version}', {version: update.latest}) title=t('Обновить до {version}', {version: update.latest})> t('Обновить')
-						<span> update.available ? t('Доступна версия {version}', {version: update.latest}) : t('Установлена актуальная версия')
+								<button.system-action type="button" disabled=busy @click=upgrade aria-label=t('Обновить до {version}', {version: update.latest}) title=t('Обновить до {version}', {version: update.latest})> t('settings.update.upgrade')
+							else
+								<button.system-action type="button" disabled=busy @click=check> t('settings.update.check')
+						<span> summary
 			<div.content-grid>
 				<section.outpost-card.settings-card>
 					<h2> t('Параметры интерфейса')
@@ -243,6 +283,12 @@ tag outpost-settings
 							<strong> t('Часовой пояс')
 							<small> t('Время в журнале и календарных периодах')
 						<outpost-settings-select value=draft.timezone items=zones searchable=true disabled=busy placeholder=t('Найти город или UTC') change=(do(value) timezone(value))>
+					<div.setting-row>
+						<span.setting-mark><outpost-icon name="arrows-clockwise">
+						<div.setting-copy>
+							<strong> t('settings.update.channel')
+							<small> t('settings.update.channel_hint')
+						<outpost-settings-select value=draft.channel items=channels disabled=busy change=(do(value) channel(value))>
 					<p.autosave>
 						<outpost-icon name="check-circle">
 						<span> t('Изменения сохраняются автоматически')

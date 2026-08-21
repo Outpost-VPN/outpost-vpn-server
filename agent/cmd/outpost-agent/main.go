@@ -117,6 +117,8 @@ func execute(request policy.Request) (string, error) {
 			"/opt/outpost/current/infra/scripts/apply-update",
 			request.Payload["bundle"].(string),
 			request.Payload["signature"].(string),
+			request.Payload["version"].(string),
+			request.Payload["operationId"].(string),
 		)
 	case "backup.export":
 		if passphrase, ok := request.Payload["passphrase"].(string); ok {

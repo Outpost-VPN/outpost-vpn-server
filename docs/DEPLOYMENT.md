@@ -32,7 +32,7 @@ curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/o
 Для field test конкретного pre-release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.13 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.14 bash /tmp/outpost-install
 ```
 
 Bootstrap устанавливает `curl`, CA certificates и Minisign, определяет release, скачивает archive и signature с GitHub и проверяет встроенным public key до запуска release installer. Release installer повторно проверяет подпись, затем ставит Nginx, UFW, SQLite/age, pinned tunnel engines и актуальный Certbot из официального snap. Ubuntu 24.04 содержит Certbot 2.9, а IP certificates требуют Certbot 5.4+; поэтому apt-версия Certbot не используется.
@@ -77,6 +77,28 @@ Developer deploy также требует локальный Minisign key вн�
 
 ## Обновление
 
+Владелец обновляет установленный Outpost в разделе «Настройки панели». Кнопка
+«Проверить» читает публичные GitHub Releases из фиксированного репозитория.
+Канал «Стабильные версии» пропускает pre-release; канал «Кандидаты на релиз»
+также предлагает версии `-rc.*`. Установки текущего release candidate один раз
+автоматически переводятся в канал кандидатов, после чего выбор сохраняется.
+
+После выбора версии сервер сам загружает archive и `.minisig` во временные файлы
+в `/var/lib/outpost/incoming`, проверяет точные имена, URL и размеры assets и
+Minisign-подпись ключом из уже установленного release. Только после успешной
+проверки файлы атомарно получают окончательные имена, а панель открывает
+двухэтапное подтверждение. Заявленная версия привязана к имени archive и к
+подписанному `manifest.json`; downgrade через панель отклоняется.
+
+Во время применения control plane перезапускается, поэтому браузер ждёт
+возвращения `/healthz` именно с целевой версией. Статус операции фиксируется в
+SQLite самим привилегированным updater и после старта появляется в журнале.
+Hysteria и Xray продолжают работать, если обновлению не требуется безопасное
+согласование их versioned presets.
+
+CLI ниже остаётся recovery/developer-путём для локально собранного подписанного
+archive:
+
 ```bash
 OUTPOST_VERSION=0.1.1 \
 OUTPOST_AGENT_BINARY=dist/outpost-agent \
@@ -87,9 +109,9 @@ OUTPOST_REQUIRE_SIGNATURE=1 bun run release:linux
   --signature release/outpost-0.1.1-linux-amd64.tar.gz.minisig
 ```
 
-Updater сначала проверяет detached Minisign signature ключом из уже доверенной установленной версии и только затем распаковывает archive и сверяет внутренний `SHA256SUMS`, включая `manifest.json`. Он оставляет минимум две предыдущие версии. После неуспешного readiness автоматически восстанавливаются code symlink и предмиграционный SQLite snapshot.
+Updater сначала проверяет detached Minisign signature ключом из уже доверенной установленной версии и только затем распаковывает archive и сверяет внутренний `SHA256SUMS`, включая `manifest.json`. Он оставляет минимум две предыдущие версии. После неуспешного readiness автоматически восстанавливаются code symlink и предмиграционный SQLite snapshot. Успешно применённые входящие archive и signature удаляются.
 
-GitHub workflow `Signed release` запускается только вручную из ветки `main` для уже существующего `v*` tag и делает checkout по точному `refs/tags/<tag>`. Tag обязан точно совпадать с версией в `package.json`. Build/test выполняются без ключа; отдельный job в environment `release`, ограниченном веткой `main`, получает private key, подписывает archive, повторно проверяет подпись и публикует immutable GitHub Release. Версии с дефисом, например `v0.1.0-rc.13`, помечаются как pre-release и не выбираются bootstrap-командой без явного `OUTPOST_VERSION`.
+GitHub workflow `Signed release` запускается только вручную из ветки `main` для уже существующего `v*` tag и делает checkout по точному `refs/tags/<tag>`. Tag обязан точно совпадать с версией в `package.json`. Build/test выполняются без ключа; отдельный job в environment `release`, ограниченном веткой `main`, получает private key, подписывает archive, повторно проверяет подпись и публикует immutable GitHub Release. Версии с дефисом, например `v0.1.0-rc.14`, помечаются как pre-release и не выбираются bootstrap-командой без явного `OUTPOST_VERSION`; web updater видит их только в канале кандидатов.
 
 Workflow `Signed rule-set bundle` работает отдельно от application releases. Он ежедневно получает официальные SagerNet SRS, закрепляет upstream commits, включает source/license metadata, подписывает `rulesets.json` и обновляет стабильный release `rulesets`. Установленный сервер проверяет manifest раз в сутки, хранит активную и две предыдущие версии; ручное обновление доступно через owner API `POST /api/v1/rulesets/refresh`.
 

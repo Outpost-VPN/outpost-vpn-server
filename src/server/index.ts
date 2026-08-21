@@ -12,7 +12,9 @@ if (config.demo) await seedDemo(app);
 const server = Bun.serve({
   hostname: config.hostname,
   port: config.port,
-  idleTimeout: 30,
+  // Signed release staging may spend up to three minutes downloading from
+  // GitHub before the handler returns a response. Bun caps this value at 255s.
+  idleTimeout: 255,
   fetch: (request) => app.fetch(request),
 });
 

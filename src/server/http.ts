@@ -197,6 +197,7 @@ export class HttpApplication {
     this.get("/api/v1/status", false, () => json(this.system.status()));
     this.get("/api/v1/dashboard", false, async (ctx) => {
       ownerOnly(ctx);
+      const operations = localizePresentation(this.operations.list().slice(0, 5), ctx.language);
       const system = localizePresentation(await this.system.state(), ctx.language);
       return json({
         revision: this.dashboardEvents.revision,
@@ -208,7 +209,7 @@ export class HttpApplication {
         settings: this.system.settings(),
         engineConfigs: this.engineConfigs.state(),
         tokens: this.auth.apiTokens(),
-        operations: localizePresentation(this.operations.list().slice(0, 5), ctx.language),
+        operations,
         security: this.auth.security(cookie(ctx.request, "outpost_session")),
       });
     });
@@ -289,6 +290,14 @@ export class HttpApplication {
     });
     this.get("/api/v1/settings", false, () => json(this.system.settings()));
     this.patch("/api/v1/settings", false, async (ctx) => json(this.system.updateSettings(await ctx.json(), actor(ctx))));
+    this.post("/api/v1/updates/check", false, async (ctx) => {
+      ownerOnly(ctx);
+      return json(await this.system.updates.check(actor(ctx)));
+    });
+    this.post("/api/v1/updates/prepare", false, async (ctx) => {
+      ownerOnly(ctx);
+      return json(await this.system.updates.prepare(actor(ctx)));
+    });
 
     this.get("/api/v1/engines/configurations", false, () => json(this.engineConfigs.state()));
     this.post("/api/v1/engines/configurations/preview", false, async (ctx) => {

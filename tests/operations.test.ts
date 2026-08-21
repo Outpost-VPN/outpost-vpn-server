@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { OperationService } from "../src/server/services/operations";
 import { database } from "./helpers";
 import { JournalService } from "../src/server/services/journal";
+import { config } from "../src/server/config";
+import { now } from "../src/server/db/database";
 
 describe("confirmed operations", () => {
   let fixture: ReturnType<typeof database>;
@@ -57,6 +59,41 @@ describe("confirmed operations", () => {
       .toThrow("Подпись должна соответствовать");
     expect(() => operations.preview("update.apply", { ...payload, signature: "/tmp/release.minisig" }))
       .toThrow("Подпись должна соответствовать");
+    expect(() => operations.preview("update.apply", { ...payload, bundle: "/var/lib/outpost/incoming/update.tar.gz", signature: "/var/lib/outpost/incoming/update.tar.gz.minisig" }))
+      .toThrow("Некорректный путь");
+    expect(() => operations.preview("update.apply", {
+      version: "0.1.0-rc.12",
+      bundle: "/var/lib/outpost/incoming/outpost-0.1.0-rc.12-linux-amd64.tar.gz",
+      signature: "/var/lib/outpost/incoming/outpost-0.1.0-rc.12-linux-amd64.tar.gz.minisig",
+    })).toThrow("только более новую");
+  });
+
+  test("recovers the successful update event after the control plane restarts", () => {
+    const id = crypto.randomUUID();
+    fixture.db.raw.query(`
+      INSERT INTO operations (id, kind, status, progress, message, created_at, updated_at)
+      VALUES (?, 'update.apply', 'completed', 100, 'operation.completed', ?, ?)
+    `).run(id, now(), now());
+    fixture.db.audit({ actor: "owner", action: "update.apply.confirm", resource: "operation", resourceId: id, after: { version: config.version } });
+
+    const operations = new OperationService(fixture.db);
+    expect(operations.list().find((operation) => operation.id === id)).toMatchObject({ status: "completed", progress: 100 });
+    expect(new JournalService(fixture.db).list({ category: "maintenance" }).events.map((event) => event.type)).toContain("app.updated");
+  });
+
+  test("delegates the internal operation ID with an application update", async () => {
+    let delegated: { action: string; payload: Record<string, unknown> } | null = null;
+    const operations = new OperationService(fixture.db, undefined, async (request) => {
+      delegated = request;
+      return { ok: true };
+    });
+    const bundle = "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz";
+    const payload = { version: "0.1.1", bundle, signature: `${bundle}.minisig` };
+    const preview = operations.preview("update.apply", payload);
+    const operation = operations.confirm(preview.confirmationId, "update.apply", payload);
+    await Bun.sleep(5);
+
+    expect(delegated).toMatchObject({ action: "update.apply", payload: { ...payload, operationId: operation.id } });
   });
 
   test("writes semantic start and success events instead of a generic operation", async () => {

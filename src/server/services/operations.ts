@@ -3,6 +3,7 @@ import { createConnection } from "node:net";
 import type { OutpostDatabase } from "../db/database";
 import { addHours, now } from "../db/database";
 import { config } from "../config";
+import { compareVersions, parseVersion } from "../releases";
 import { ServiceError } from "./connections";
 import { JournalService } from "./journal";
 
@@ -64,9 +65,11 @@ export class OperationService {
     private rotateConnection?: ConnectionRotator,
   ) {
     this.journal = journal ?? new JournalService(db);
+    this.reconcileUpdates();
   }
 
   list() {
+    this.reconcileUpdates();
     return this.db.raw.query<{
       id: string; kind: string; status: string; progress: number; message: string; result_json: string | null;
       error: string | null; created_at: string; updated_at: string;
@@ -133,11 +136,12 @@ export class OperationService {
   private async execute(id: string, action: OperationAction, payload: Record<string, unknown>, actor: string) {
     try {
       this.update(id, "running", 15, action === "connection.rotate" ? "operation.credentials_rotating" : "operation.delegating");
+      const delegated = action === "update.apply" ? { ...payload, operationId: id } : payload;
       const result = action === "connection.rotate"
         ? await this.rotate(payload, actor)
         : config.demo
           ? await new Promise<Record<string, unknown>>((resolve) => setTimeout(() => resolve({ ok: true, demo: true }), 350))
-          : await this.runner({ action, payload });
+          : await this.runner({ action, payload: delegated });
       if (action === "engine.update") {
         this.db.raw.query("UPDATE engine_versions SET installed_version = ?, updated_at = ? WHERE engine = ?")
           .run(String(payload.version), now(), String(payload.engine));
@@ -225,8 +229,10 @@ export class OperationService {
       const version = String(payload.version ?? "");
       const bundle = String(payload.bundle ?? "");
       const signature = String(payload.signature ?? "");
-      if (!/^[0-9][0-9A-Za-z.-]{0,39}$/.test(version)) throw new ServiceError(400, "Некорректная версия Outpost");
-      if (!/^\/var\/lib\/outpost\/incoming\/[0-9A-Za-z._-]+\.tar\.gz$/.test(bundle)) {
+      if (!parseVersion(version)) throw new ServiceError(400, "Некорректная версия Outpost");
+      if (compareVersions(version, config.version) <= 0) throw new ServiceError(409, "Можно установить только более новую версию Outpost");
+      const expected = `/var/lib/outpost/incoming/outpost-${version}-linux-amd64.tar.gz`;
+      if (bundle !== expected) {
         throw new ServiceError(400, "Некорректный путь release archive");
       }
       if (signature !== `${bundle}.minisig`) throw new ServiceError(400, "Подпись должна соответствовать release archive");
@@ -241,6 +247,47 @@ export class OperationService {
       }
     }
     return context;
+  }
+
+  private reconcileUpdates() {
+    const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    this.db.raw.query(`
+      UPDATE operations
+      SET status = 'failed', error = 'Обновление было прервано', updated_at = ?
+      WHERE kind = 'update.apply' AND status IN ('queued', 'running') AND updated_at < ?
+    `).run(now(), cutoff);
+    const rows = this.db.raw.query<{
+      id: string;
+      status: string;
+      error: string | null;
+      actor: string | null;
+      after_json: string | null;
+    }, []>(`
+      SELECT operations.id, operations.status, operations.error, audit_log.actor, audit_log.after_json
+      FROM operations
+      LEFT JOIN audit_log ON audit_log.id = (
+        SELECT id FROM audit_log
+        WHERE resource_id = operations.id AND action = 'update.apply.confirm'
+        ORDER BY id DESC LIMIT 1
+      )
+      WHERE operations.kind = 'update.apply' AND operations.status IN ('completed', 'failed')
+    `).all();
+    for (const row of rows) {
+      const payload = safeJson(row.after_json);
+      const version = String(payload.version ?? "");
+      const type = row.status === "completed" ? "app.updated" : "app.update_failed";
+      const exists = this.db.raw.query<{ id: number }, [string, string]>(
+        "SELECT id FROM events WHERE operation_id = ? AND type = ? LIMIT 1",
+      ).get(row.id, type);
+      if (!exists) {
+        this.journal.record(type, {
+          actor: row.actor ?? "system",
+          operationId: row.id,
+          subjectType: "operation",
+          data: { version: version || undefined, error: row.error ?? undefined },
+        });
+      }
+    }
   }
 
   private async rotate(payload: Record<string, unknown>, actor: string) {
@@ -336,7 +383,9 @@ export async function callAgent(request: { action: string; payload: Record<strin
   return new Promise<Record<string, unknown>>((resolve, reject) => {
     const socket = createConnection(socketPath);
     let response = "";
-    const timeout = request.action === "setup.finalize" ? 180_000 : request.action === "engine.update" ? 120_000 : 30_000;
+    const timeout = request.action === "setup.finalize" || request.action === "update.apply"
+      ? 180_000
+      : request.action === "engine.update" ? 120_000 : 30_000;
     socket.setTimeout(timeout);
     // Bun closes the readable side after net.Socket.end(), so a delayed agent
     // reply is lost. The newline terminates the request without half-closing it.
@@ -358,4 +407,13 @@ export async function callAgent(request: { action: string; payload: Record<strin
     socket.on("timeout", () => socket.destroy(new Error(`root-agent не ответил за ${timeout / 1000} секунд`)));
     socket.on("error", reject);
   });
+}
+
+function safeJson(value: string | null): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
 }

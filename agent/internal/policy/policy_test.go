@@ -96,24 +96,48 @@ func TestEngineUpdatePinsStructuredValues(t *testing.T) {
 
 func TestApplicationUpdateRequiresBundleAndSignatureInsideIncoming(t *testing.T) {
 	good := Request{Action: "update.apply", Payload: map[string]any{
-		"bundle":    "/var/lib/outpost/incoming/update.tar.gz",
-		"signature": "/var/lib/outpost/incoming/update.tar.gz.minisig",
+		"version":     "0.1.1",
+		"operationId": "12345678-1234-4234-8234-123456789abc",
+		"bundle":      "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz",
+		"signature":   "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz.minisig",
 	}}
 	if err := Validate(good); err != nil {
 		t.Fatalf("signed application update rejected: %v", err)
 	}
 	missing := Request{Action: "update.apply", Payload: map[string]any{
-		"bundle": "/var/lib/outpost/incoming/update.tar.gz",
+		"version":     "0.1.1",
+		"operationId": "12345678-1234-4234-8234-123456789abc",
+		"bundle":      "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz",
 	}}
 	if err := Validate(missing); err == nil {
 		t.Fatal("unsigned application update accepted")
 	}
 	outside := Request{Action: "update.apply", Payload: map[string]any{
-		"bundle":    "/var/lib/outpost/incoming/update.tar.gz",
-		"signature": "/tmp/update.tar.gz.minisig",
+		"version":     "0.1.1",
+		"operationId": "12345678-1234-4234-8234-123456789abc",
+		"bundle":      "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz",
+		"signature":   "/tmp/update.tar.gz.minisig",
 	}}
 	if err := Validate(outside); err == nil {
 		t.Fatal("signature outside incoming directory accepted")
+	}
+	mismatch := Request{Action: "update.apply", Payload: map[string]any{
+		"version":     "0.1.2",
+		"operationId": "12345678-1234-4234-8234-123456789abc",
+		"bundle":      "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz",
+		"signature":   "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz.minisig",
+	}}
+	if err := Validate(mismatch); err == nil {
+		t.Fatal("application update version not bound to archive")
+	}
+	badID := Request{Action: "update.apply", Payload: map[string]any{
+		"version":     "0.1.1",
+		"operationId": "../../etc/passwd",
+		"bundle":      "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz",
+		"signature":   "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz.minisig",
+	}}
+	if err := Validate(badID); err == nil {
+		t.Fatal("unsafe application update operation id accepted")
 	}
 }
 

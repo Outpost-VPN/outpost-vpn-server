@@ -155,6 +155,7 @@ describe("release trust chain", () => {
     const entry = await Bun.file(resolve(root, "src/server/index.ts")).text();
     const html = await Bun.file(resolve(root, "public/index.html")).text();
     const location = nginx.slice(nginx.indexOf("location = /api/v1/dashboard/events"));
+    const updater = nginx.slice(nginx.indexOf("location = /api/v1/updates/prepare"));
 
     for (const source of [nginx, setup]) {
       expect(source).toContain("gzip on;");
@@ -163,9 +164,11 @@ describe("release trust chain", () => {
     expect(location.slice(0, location.indexOf("\n    }"))).toContain("proxy_buffering off;");
     expect(location.slice(0, location.indexOf("\n    }"))).toContain("proxy_cache off;");
     expect(location.slice(0, location.indexOf("\n    }"))).toContain("proxy_read_timeout 1h;");
+    expect(updater.slice(0, updater.indexOf("\n    }"))).toContain("proxy_read_timeout 5m;");
+    expect(updater.slice(0, updater.indexOf("\n    }"))).toContain("proxy_send_timeout 5m;");
     expect(server).toContain('"public, max-age=31536000, immutable"');
     expect(server).toContain('"cache-control": "no-cache"');
-    expect(entry).toContain("idleTimeout: 30");
+    expect(entry).toContain("idleTimeout: 255");
     expect(html).toContain("app.js?v=__OUTPOST_VERSION__");
     expect(html).toContain("style.css?v=__OUTPOST_VERSION__");
   });
@@ -191,6 +194,8 @@ describe("release trust chain", () => {
 
   test("updates and rolls back the installed application version metadata", async () => {
     const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
+    expect(updater).toContain('test "$version" = "$expected_version"');
+    expect(updater).toContain("mark_operation completed");
     expect(updater).toContain('sed "s/^OUTPOST_VERSION=.*/OUTPOST_VERSION=$version/"');
     expect(updater).toContain('install -o root -g outpost -m 0640 "$update_tmp/outpost.env.next" "$env_file"');
     expect(updater).toContain('install -o root -g outpost -m 0640 "$env_previous" "$env_file"');
