@@ -12,7 +12,6 @@ import { JournalService, type JournalQuery } from "./journal";
 
 const engineIds: EngineId[] = ["hysteria", "xray"];
 const interfaceSettingsInput = z.object({
-  language: z.string().trim().min(2).max(12).optional(),
   compact: z.boolean().optional(),
 }).strict();
 
@@ -156,11 +155,10 @@ export class SystemService {
   }
 
   settings() {
-    const interfaceSettings = this.db.setting<{ language?: string; compact?: boolean }>("interface", {});
+    const interfaceSettings = this.db.setting<{ compact?: boolean }>("interface", {});
     const systemSettings = this.db.setting<{ timezone?: string; updateChannel?: string }>("system", {});
     return {
       interface: {
-        language: interfaceSettings.language ?? "ru",
         compact: interfaceSettings.compact ?? false,
       },
       system: { timezone: "UTC", updateChannel: "stable", ...systemSettings },

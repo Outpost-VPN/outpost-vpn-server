@@ -1,6 +1,11 @@
 const platforms = ["macos", "ios", "android", "windows", "linux"];
 const tabs = [...document.querySelectorAll("[data-platform]")];
 const panels = [...document.querySelectorAll("[data-platform-panel]")];
+const messages = JSON.parse(document.body.dataset.messages || "null") || {
+  opening: "Opening the app…",
+  copied: "Link copied—paste it into the app",
+  copyFailed: "Could not copy the link",
+};
 
 const detected = detectPlatform() || document.body.dataset.initialPlatform || "macos";
 const requested = new URLSearchParams(location.search).get("platform");
@@ -27,15 +32,15 @@ for (const tab of tabs) {
 
 document.addEventListener("click", async (event) => {
   const importLink = event.target.closest("[data-import]");
-  if (importLink) feedback(importLink, "Открываем приложение…");
+  if (importLink) feedback(importLink, messages.opening);
 
   const button = event.target.closest("[data-copy]");
   if (!button) return;
   try {
     await copy(button.dataset.copy);
-    feedback(button, "Ссылка скопирована — вставьте её в приложение");
+    feedback(button, messages.copied);
   } catch {
-    feedback(button, "Не удалось скопировать ссылку");
+    feedback(button, messages.copyFailed);
   }
 });
 

@@ -6,9 +6,12 @@ import { config } from "../config";
 import { ServiceError } from "./connections";
 import { JournalService } from "./journal";
 
-export type PrivilegedAction = "service.restart" | "service.start" | "service.stop" | "engine.update" | "nginx.reload" | "update.apply" | "backup.export";
+export type OperationAction = "service.restart" | "service.start" | "service.stop" | "engine.update" | "nginx.reload" | "update.apply" | "backup.export" | "connection.rotate";
 
-const previews: Record<PrivilegedAction, (payload: Record<string, unknown>) => unknown> = {
+type PreviewContext = { connectionName?: string };
+type ConnectionRotator = (connectionId: string, actor: string) => Promise<Record<string, unknown>>;
+
+const previews: Record<OperationAction, (payload: Record<string, unknown>, context: PreviewContext) => unknown> = {
   "service.restart": (payload) => ({
     title: "Перезапустить службу",
     changes: [`Служба ${String(payload.service ?? "")} будет кратковременно недоступна`],
@@ -32,12 +35,20 @@ const previews: Record<PrivilegedAction, (payload: Record<string, unknown>) => u
   "nginx.reload": (payload) => ({ title: "Проверить и перечитать Nginx", changes: ["Сначала будет выполнен nginx -t"], payload }),
   "update.apply": (payload) => ({
     title: "Обновить Outpost",
-    changes: ["Подпись Minisign будет проверена до распаковки", "Будет создан снимок SQLite", "Туннельные движки продолжат работать"],
+    changes: ["Подпись Minisign будет проверена до распаковки", "Будет создан снимок SQLite", "Работающий движок перезапустится только при безопасном обновлении его системного пресета"],
     payload,
   }),
   "backup.export": (payload) => ({
     title: "Создать резервную копию",
     changes: [payload.passphrase ? "Архив будет защищён отдельным паролем" : "Архив будет создан без шифрования"],
+    payload,
+  }),
+  "connection.rotate": (payload, context) => ({
+    title: `Перевыпустить подключение «${context.connectionName ?? "Без названия"}»`,
+    changes: [
+      "Прежняя ссылка и credentials сразу перестанут работать",
+      "Все использующие это подключение устройства потребуется подключить заново",
+    ],
     payload,
   }),
 };
@@ -50,6 +61,7 @@ export class OperationService {
     private db: OutpostDatabase,
     journal?: JournalService,
     private runner: typeof callAgent = callAgent,
+    private rotateConnection?: ConnectionRotator,
   ) {
     this.journal = journal ?? new JournalService(db);
   }
@@ -65,12 +77,12 @@ export class OperationService {
     }));
   }
 
-  preview(action: PrivilegedAction, payload: Record<string, unknown>, actor = "owner") {
+  preview(action: OperationAction, payload: Record<string, unknown>, actor = "owner") {
     const render = previews[action];
     if (!render) throw new ServiceError(400, "Операция не разрешена");
-    this.validate(action, payload);
+    const context = this.validate(action, payload);
     const safePayload = redactPayload(action, payload);
-    const preview = render(safePayload);
+    const preview = render(safePayload, context);
     const id = crypto.randomUUID();
     const hash = payloadHash(action, payload);
     this.db.raw.query(`
@@ -81,7 +93,7 @@ export class OperationService {
     return { confirmationId: id, action, preview, expiresAt: addHours(0.17) };
   }
 
-  confirm(confirmationId: string, action: PrivilegedAction, payload: Record<string, unknown>, actor = "owner") {
+  confirm(confirmationId: string, action: OperationAction, payload: Record<string, unknown>, actor = "owner") {
     const row = this.db.raw.query<{ id: string; action: string; payload_hash: string; expires_at: string; used_at: string | null }, string>(
       "SELECT id, action, payload_hash, expires_at, used_at FROM confirmations WHERE id = ?",
     ).get(confirmationId);
@@ -89,7 +101,7 @@ export class OperationService {
       throw new ServiceError(409, "Подтверждение недействительно, истекло или не соответствует операции");
     }
     this.validate(action, payload);
-    const operation = { id: crypto.randomUUID(), kind: action, status: "queued", progress: 0, message: "Операция поставлена в очередь" };
+    const operation = { id: crypto.randomUUID(), kind: action, status: "queued", progress: 0, message: "operation.queued" };
     this.db.raw.transaction(() => {
       this.db.raw.query("UPDATE confirmations SET used_at = ? WHERE id = ?").run(now(), confirmationId);
       this.db.raw.query(`
@@ -118,10 +130,12 @@ export class OperationService {
     return () => this.listeners.delete(listener);
   }
 
-  private async execute(id: string, action: PrivilegedAction, payload: Record<string, unknown>, actor: string) {
+  private async execute(id: string, action: OperationAction, payload: Record<string, unknown>, actor: string) {
     try {
-      this.update(id, "running", 15, "Передаём операцию root-agent");
-      const result = config.demo
+      this.update(id, "running", 15, action === "connection.rotate" ? "operation.credentials_rotating" : "operation.delegating");
+      const result = action === "connection.rotate"
+        ? await this.rotate(payload, actor)
+        : config.demo
           ? await new Promise<Record<string, unknown>>((resolve) => setTimeout(() => resolve({ ok: true, demo: true }), 350))
           : await this.runner({ action, payload });
       if (action === "engine.update") {
@@ -131,7 +145,7 @@ export class OperationService {
       if (config.demo && (action === "service.start" || action === "service.stop")) {
         this.demoService(String(payload.service), action === "service.start");
       }
-      this.update(id, "completed", 100, "Готово", result);
+      this.update(id, "completed", 100, "operation.completed", result);
       const completedType = operationEvent(action, "completed");
       if (completedType) {
         this.journal.record(completedType, {
@@ -170,7 +184,20 @@ export class OperationService {
     for (const listener of this.listeners) listener(event);
   }
 
-  private validate(action: PrivilegedAction, payload: Record<string, unknown>) {
+  private validate(action: OperationAction, payload: Record<string, unknown>): PreviewContext {
+    const context: PreviewContext = {};
+    if (action === "connection.rotate") {
+      const connectionId = String(payload.connectionId ?? "");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(connectionId)) {
+        throw new ServiceError(400, "Некорректный ID подключения");
+      }
+      const connection = this.db.raw.query<{ name: string; status: string }, string>(
+        "SELECT name, status FROM connections WHERE id = ? AND archived_at IS NULL",
+      ).get(connectionId);
+      if (!connection) throw new ServiceError(404, "Подключение не найдено");
+      if (connection.status !== "active") throw new ServiceError(409, "Подключение пока нельзя перевыпустить");
+      context.connectionName = connection.name;
+    }
     if (action === "service.restart") {
       const services = ["outpost", "nginx", "hysteria-server", "xray"];
       if (!services.includes(String(payload.service))) throw new ServiceError(400, "Эту службу нельзя перезапустить");
@@ -213,6 +240,12 @@ export class OperationService {
         throw new ServiceError(400, "Некорректный путь резервной копии");
       }
     }
+    return context;
+  }
+
+  private async rotate(payload: Record<string, unknown>, actor: string) {
+    if (!this.rotateConnection) throw new Error("Перевыпуск подключения не настроен");
+    return this.rotateConnection(String(payload.connectionId), actor);
   }
 
   private demoService(service: string, active: boolean) {
@@ -227,14 +260,14 @@ export class OperationService {
   }
 }
 
-function redactPayload(action: PrivilegedAction, payload: Record<string, unknown>) {
+function redactPayload(action: OperationAction, payload: Record<string, unknown>) {
   if (action !== "backup.export") return payload;
   const { passphrase, ...safe } = payload;
   return passphrase === undefined ? safe : { ...safe, passphrase: "[REDACTED]" };
 }
 
-function operationEvent(action: PrivilegedAction, phase: "started" | "completed" | "failed") {
-  const types: Record<PrivilegedAction, Partial<Record<typeof phase, string>>> = {
+function operationEvent(action: OperationAction, phase: "started" | "completed" | "failed") {
+  const types: Record<OperationAction, Partial<Record<typeof phase, string>>> = {
     "backup.export": { started: "backup.started", completed: "backup.created", failed: "backup.failed" },
     "service.restart": { started: "service.restart_started", completed: "service.restarted", failed: "service.restart_failed" },
     "service.start": { started: "service.start_started", completed: "service.started", failed: "service.start_failed" },
@@ -242,18 +275,20 @@ function operationEvent(action: PrivilegedAction, phase: "started" | "completed"
     "nginx.reload": { started: "nginx.reload_started", completed: "nginx.reloaded", failed: "nginx.reload_failed" },
     "engine.update": { started: "engine.update_started", completed: "engine.updated", failed: "engine.update_failed" },
     "update.apply": { started: "app.update_started", completed: "app.updated", failed: "app.update_failed" },
+    "connection.rotate": { started: "connection.rotation_started", failed: "connection.rotation_failed" },
   };
   return types[action][phase] ?? null;
 }
 
-function operationData(action: PrivilegedAction, payload: Record<string, unknown>) {
+function operationData(action: OperationAction, payload: Record<string, unknown>) {
   if (action.startsWith("service.")) return { service: String(payload.service ?? "") };
+  if (action === "connection.rotate") return { connectionId: String(payload.connectionId ?? "") };
   if (action === "engine.update") return { engine: String(payload.engine ?? ""), version: String(payload.version ?? "") };
   if (action === "update.apply") return { version: String(payload.version ?? "") || undefined };
   return {};
 }
 
-function operationResultData(action: PrivilegedAction, result: Record<string, unknown>, payload: Record<string, unknown>) {
+function operationResultData(action: OperationAction, result: Record<string, unknown>, payload: Record<string, unknown>) {
   if (action !== "backup.export") return {};
   return {
     size: typeof result.size === "number" ? result.size : undefined,
@@ -261,14 +296,16 @@ function operationResultData(action: PrivilegedAction, result: Record<string, un
   };
 }
 
-function operationSubject(action: PrivilegedAction) {
+function operationSubject(action: OperationAction) {
   if (action.startsWith("service.")) return "service";
+  if (action === "connection.rotate") return "connection";
   if (action === "engine.update") return "engine";
   return "operation";
 }
 
-function operationSubjectId(action: PrivilegedAction, payload: Record<string, unknown>) {
+function operationSubjectId(action: OperationAction, payload: Record<string, unknown>) {
   if (action.startsWith("service.")) return String(payload.service ?? "") || null;
+  if (action === "connection.rotate") return String(payload.connectionId ?? "") || null;
   if (action === "engine.update") return String(payload.engine ?? "") || null;
   return null;
 }

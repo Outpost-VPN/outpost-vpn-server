@@ -9,6 +9,9 @@ auth:
 trafficStats:
   listen: 127.0.0.1:9999
   secret: __STATS_SECRET__
+acl:
+  inline:
+    - reject(all, udp/443)
 masquerade:
   type: proxy
   proxy:

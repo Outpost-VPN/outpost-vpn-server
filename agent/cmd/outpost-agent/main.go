@@ -124,11 +124,16 @@ func execute(request policy.Request) (string, error) {
 		}
 		return run("/opt/outpost/current/infra/scripts/export-backup-plain", request.Payload["output"].(string))
 	case "config.apply":
+		restart := "1"
+		if value, ok := request.Payload["restart"].(bool); ok && !value {
+			restart = "0"
+		}
 		return run(
 			"/opt/outpost/current/infra/scripts/apply-config",
 			request.Payload["source"].(string),
 			request.Payload["target"].(string),
 			request.Payload["engine"].(string),
+			restart,
 		)
 	case "xray.user.add":
 		installed, err := install(request.Payload["rendered"].(string), "/etc/outpost/engines/xray.json")

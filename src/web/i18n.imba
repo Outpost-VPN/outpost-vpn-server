@@ -1,5 +1,75 @@
+import {semantic} from './semantic.ts'
+import {raw} from './raw.ts'
+
+export const languages = [
+	{id: 'ru', label: 'Русский', intl: 'ru-RU', direction: 'ltr'}
+	{id: 'en', label: 'English', intl: 'en', direction: 'ltr'}
+	{id: 'zh-CN', label: '简体中文', intl: 'zh-CN', direction: 'ltr'}
+	{id: 'fa', label: 'فارسی', intl: 'fa-IR', direction: 'rtl'}
+]
+
+def normalize value
+	return null unless value
+	const raw = String(value).trim!.replace(/_/g, '-').toLowerCase!
+	return 'ru' if raw == 'ru' or raw.startsWith('ru-')
+	return 'en' if raw == 'en' or raw.startsWith('en-')
+	return 'fa' if raw == 'fa' or raw.startsWith('fa-')
+	return 'zh-CN' if ['zh', 'zh-cn', 'zh-sg', 'zh-hans'].includes(raw)
+	null
+
+def cached
+	const item = window.document.cookie.split(';').map(do(part) part.trim!).find(do(part) part.startsWith('outpost_language='))
+	item ? window.decodeURIComponent(item.split('=').slice(1).join('=')) : null
+
+def initial
+	const params = new URLSearchParams(window.location.search)
+	return normalize(params.get('lang')) or 'en' if params.has('lang')
+	const saved = normalize(cached!)
+	return saved if saved
+	for item in (window.navigator.languages or [window.navigator.language])
+		const found = normalize(item)
+		return found if found
+	'en'
+
+let current = initial!
+
+def apply
+	const selected = languages.find(do(item) item.id == current) or languages[1]
+	window.document.documentElement.lang = selected.id
+	window.document.documentElement.dir = selected.direction
+	const descriptions = {
+		ru: 'Outpost — ваша личная защищённая связь'
+		en: 'Outpost — your private, secure connection'
+		'zh-CN': 'Outpost — 您的私人安全连接'
+		fa: 'Outpost — ارتباط خصوصی و امن شما'
+	}
+	const description = window.document.querySelector('meta[name="description"]')
+	description.setAttribute('content', descriptions[current]) if description
+
+export def language do current
+
+export def intl
+	(languages.find(do(item) item.id == current) or languages[1]).intl
+
+export def setLanguage value, persist = true
+	current = normalize(value) or 'en'
+	apply!
+	if persist
+		window.document.cookie = "outpost_language={window.encodeURIComponent(current)}; Path=/; SameSite=Lax; Max-Age=31536000"
+	imba.commit!
+	current
+
 const ru = {
 	'app.name': 'Outpost'
+	'title.setup': 'Первоначальная настройка'
+	'title.onboarding': 'Настройка доступа'
+	'title.login': 'Вход'
+	'title.access': 'Доступ'
+	'title.settings': 'Настройки панели'
+	'title.settings_short': 'Настройки'
+	'title.overview': 'Обзор'
+	'error.request': 'Запрос не выполнен'
+	'settings.certificate.until': 'До {date}'
 	'nav.home': 'Главная'
 	'nav.connections': 'Подключения'
 	'nav.routes': 'Маршруты'
@@ -83,7 +153,7 @@ const ru = {
 	'auth.wait': 'Ожидаем подтверждение…'
 	'auth.secure': 'Passkey не передаётся на сервер и остаётся в связке ключей вашего устройства.'
 	'auth.recovery.title': 'Нет доступа к passkey?'
-	'auth.recovery.subtitle': 'Выполните на сервере команду восстановления. Она завершит активные сессии и выдаст новую одноразовую ссылку.'
+	'auth.recovery.subtitle': 'Выполните на сервере команду восстановления. Она завершит активные сессии и откроет защищённое восстановление доступа.'
 	'auth.story.badge': 'Личное пространство'
 	'auth.story.title': 'Свой сервер. Свои правила.'
 	'auth.story.subtitle': 'Управляйте подключениями близких, маршрутами и трафиком из одной спокойной панели.'
@@ -103,6 +173,11 @@ const ru = {
 	'setup.story.browser': 'Дальше всё настраивается в браузере'
 	'setup.host': 'Временный адрес'
 	'setup.badge': 'Подготовка панели'
+	'setup.configured.badge': 'Первоначальная настройка завершена'
+	'setup.configured.title': 'Этот сервер уже настроен'
+	'setup.configured.done': 'Если настройку выполняли вы, используйте выбранный постоянный адрес панели.'
+	'setup.configured.warning': 'Если вы владелец этого VPS, но не настраивали Outpost, возможно, это сделал кто-то другой.'
+	'setup.configured.action': 'Переустановите VPS через панель хостинга, снова установите Outpost и сразу откройте этот адрес. Переустановка удалит данные на сервере.'
 	'setup.domain.title': 'Подключение домена'
 	'setup.domain.subtitle': 'Выберите, как получить постоянный адрес для панели Outpost.'
 	'setup.domain.free': 'Бесплатный поддомен'
@@ -171,7 +246,6 @@ const ru = {
 	'onboarding.welcome.control': 'Всё остаётся под контролем'
 	'onboarding.welcome.control_hint': 'Подключения, маршруты и расход трафика видны в одном месте.'
 	'onboarding.access.create': 'Настроить вход'
-	'onboarding.bootstrap': 'Ссылка первоначальной настройки действует 1 час.'
 	'onboarding.progress.passkey': 'Шаг 2 из 2 · Защита входа'
 	'onboarding.back': 'Назад'
 	'onboarding.passkey.title': 'Защита входа'
@@ -186,5 +260,223 @@ const ru = {
 	'logout': 'Выйти'
 }
 
-export def t key
-	ru[key] or key
+const dictionaries = {ru: {...ru, ...raw.ru}, en: {...semantic.en, ...raw.en}, 'zh-CN': {...semantic['zh-CN'], ...raw['zh-CN']}, fa: {...semantic.fa, ...raw.fa}}
+Object.assign dictionaries.ru, {
+	'security.devices.one': '{count} устройство'
+	'security.devices.few': '{count} устройства'
+	'security.devices.many': '{count} устройств'
+	'security.devices.other': '{count} устройства'
+	'security.tokens.one': '{count} активный токен'
+	'security.tokens.few': '{count} активных токена'
+	'security.tokens.many': '{count} активных токенов'
+	'security.tokens.other': '{count} активного токена'
+}
+Object.assign dictionaries.en, {
+	'security.devices.one': '{count} device'
+	'security.devices.other': '{count} devices'
+	'security.tokens.one': '{count} active token'
+	'security.tokens.other': '{count} active tokens'
+}
+Object.assign dictionaries['zh-CN'], {
+	'security.devices.other': '{count} 台设备'
+	'security.tokens.other': '{count} 个活动令牌'
+}
+Object.assign dictionaries.fa, {
+	'security.devices.one': '{count} دستگاه'
+	'security.devices.other': '{count} دستگاه'
+	'security.tokens.one': '{count} توکن فعال'
+	'security.tokens.other': '{count} توکن فعال'
+}
+
+Object.assign dictionaries.ru, {
+	'connect.universal': 'Универсальная ссылка'
+	'connect.universal_hint': 'Страница выбора приложения'
+	'connect.method': 'Выберите способ подключения.'
+	'connect.for_app': 'Для приложения'
+	'connect.one_link': 'Одна ссылка на все случаи жизни'
+	'connect.open_browser_title': 'Можно открыть в браузере'
+	'connect.open_browser_hint': 'Откроется страница выбора подходящего приложения.'
+	'connect.add_subscription_title': 'Можно добавить как подписку'
+	'connect.add_subscription_hint': 'Вставьте ссылку в приложение — Outpost отдаст подходящий ему формат подписки.'
+	'connect.unknown_client': 'Приложение не приняло ссылку? Импортируйте ссылку для него из «Для приложения» или сырой профиль из «Для опытных».'
+	'connect.open_browser': 'Открыть в браузере'
+	'connect.preview_short': 'Посмотреть страницу'
+	'connect.reset': 'Сбросить подключение'
+	'connect.resetting': 'Сбрасываем подключение'
+	'connect.reset_confirm': 'Все текущие ссылки и профили сразу перестанут работать. Сбросить подключение и выпустить новые?'
+	'connect.more_count': 'Ещё {count}'
+	'connect.apps': 'Приложения'
+	'connect.more': 'Ещё приложения'
+	'connect.platform': 'Операционная система'
+	'connect.free': 'Бесплатно'
+	'connect.freemium': 'Бесплатно · есть платные функции'
+	'connect.paid_once': 'Платно · разовая покупка'
+	'connect.paid_subscription': 'Платно · подписка'
+	'connect.auto': 'Маршруты обновляются автоматически'
+	'connect.manual': 'Маршруты обновляются вручную'
+	'connect.exact': 'Точный порядок маршрутов'
+	'connect.limited': 'Маршруты сгруппированы по действиям'
+	'connect.transports': 'Транспорты'
+	'connect.available': 'Доступно для'
+	'connect.copy': 'Скопировать профиль'
+	'connect.this_device': 'На этом устройстве'
+	'connect.open': 'Открыть в приложении'
+	'connect.open_connect': 'Открыть и подключить'
+	'connect.open_hint': 'Сработает, если приложение уже установлено'
+	'connect.open_unavailable': 'Быстрое подключение недоступно'
+	'connect.open_unavailable_hint': 'Скопируйте ссылку под QR-кодом и добавьте её в приложение вручную.'
+	'connect.install': 'Установить'
+	'connect.install_hint': 'Перейти на страницу установки'
+	'connect.store': 'Проверить в магазине'
+	'connect.advanced': 'Для опытных'
+	'connect.advanced_hint': 'Сырые профили для ручного импорта. Отдельные URI не содержат маршрутов Outpost.'
+	'connect.choose': 'Выберите приложение для этого устройства.'
+}
+Object.assign dictionaries.en, {
+	'connect.universal': 'Universal link'
+	'connect.universal_hint': 'Application selection page'
+	'connect.method': 'Choose a connection method.'
+	'connect.for_app': 'For an application'
+	'connect.one_link': 'One link for every situation'
+	'connect.open_browser_title': 'Open it in a browser'
+	'connect.open_browser_hint': 'A page for choosing a compatible application will open.'
+	'connect.add_subscription_title': 'Add it as a subscription'
+	'connect.add_subscription_hint': 'Paste the link into the application and Outpost will return the appropriate subscription format.'
+	'connect.unknown_client': 'Did the application reject the link? Import its link from “For an application” or a raw profile from “For advanced users”.'
+	'connect.open_browser': 'Open in browser'
+	'connect.preview_short': 'Preview page'
+	'connect.reset': 'Reset connection'
+	'connect.resetting': 'Resetting connection'
+	'connect.reset_confirm': 'All current links and profiles will stop working immediately. Reset the connection and issue new ones?'
+	'connect.more_count': '{count} more'
+	'connect.apps': 'Applications'
+	'connect.more': 'More applications'
+	'connect.platform': 'Operating system'
+	'connect.free': 'Free'
+	'connect.freemium': 'Free · paid features available'
+	'connect.paid_once': 'Paid · one-time purchase'
+	'connect.paid_subscription': 'Paid · subscription'
+	'connect.auto': 'Routes update automatically'
+	'connect.manual': 'Routes update manually'
+	'connect.exact': 'Exact route order'
+	'connect.limited': 'Routes grouped by action'
+	'connect.transports': 'Transports'
+	'connect.available': 'Available for'
+	'connect.copy': 'Copy profile'
+	'connect.this_device': 'On this device'
+	'connect.open': 'Open in app'
+	'connect.open_connect': 'Open and connect'
+	'connect.open_hint': 'Works if the application is already installed'
+	'connect.open_unavailable': 'Quick connection is unavailable'
+	'connect.open_unavailable_hint': 'Copy the link below the QR code and add it to the application manually.'
+	'connect.install': 'Install'
+	'connect.install_hint': 'Go to the installation page'
+	'connect.store': 'Check in store'
+	'connect.advanced': 'For advanced users'
+	'connect.advanced_hint': 'Raw profiles for manual import. Individual URIs do not contain Outpost routes.'
+	'connect.choose': 'Choose an application for this device.'
+}
+Object.assign dictionaries['zh-CN'], {
+	'connect.universal': '通用链接'
+	'connect.universal_hint': '应用选择页面'
+	'connect.method': '选择连接方式。'
+	'connect.for_app': '指定应用'
+	'connect.one_link': '一个链接，应对各种情况'
+	'connect.open_browser_title': '在浏览器中打开'
+	'connect.open_browser_hint': '将打开用于选择兼容应用的页面。'
+	'connect.add_subscription_title': '添加为订阅'
+	'connect.add_subscription_hint': '将链接粘贴到应用中，Outpost 会返回适合它的订阅格式。'
+	'connect.unknown_client': '应用未接受此链接？请从“指定应用”导入对应链接，或从“高级选项”导入原始配置。'
+	'connect.open_browser': '在浏览器中打开'
+	'connect.preview_short': '查看页面'
+	'connect.reset': '重置连接'
+	'connect.resetting': '正在重置连接'
+	'connect.reset_confirm': '所有当前链接和配置将立即停止工作。要重置连接并生成新链接吗？'
+	'connect.more_count': '另外 {count} 个'
+	'connect.apps': '应用'
+	'connect.more': '更多应用'
+	'connect.platform': '操作系统'
+	'connect.free': '免费'
+	'connect.freemium': '免费 · 提供付费功能'
+	'connect.paid_once': '付费 · 一次性购买'
+	'connect.paid_subscription': '付费 · 订阅'
+	'connect.auto': '路由自动更新'
+	'connect.manual': '路由需手动更新'
+	'connect.exact': '精确的路由顺序'
+	'connect.limited': '路由按操作分组'
+	'connect.transports': '传输方式'
+	'connect.available': '可用于'
+	'connect.copy': '复制配置'
+	'connect.this_device': '在此设备上'
+	'connect.open': '在应用中打开'
+	'connect.open_connect': '打开并连接'
+	'connect.open_hint': '应用已安装时可用'
+	'connect.open_unavailable': '快速连接不可用'
+	'connect.open_unavailable_hint': '复制二维码下方的链接，并手动添加到应用中。'
+	'connect.install': '安装'
+	'connect.install_hint': '前往安装页面'
+	'connect.store': '在商店中查看'
+	'connect.advanced': '高级选项'
+	'connect.advanced_hint': '用于手动导入的原始配置。单独 URI 不包含 Outpost 路由。'
+	'connect.choose': '为此设备选择一个应用。'
+}
+Object.assign dictionaries.fa, {
+	'connect.universal': 'پیوند همگانی'
+	'connect.universal_hint': 'صفحهٔ انتخاب برنامه'
+	'connect.method': 'روش اتصال را انتخاب کنید.'
+	'connect.for_app': 'برای یک برنامه'
+	'connect.one_link': 'یک پیوند برای هر موقعیت'
+	'connect.open_browser_title': 'باز کردن در مرورگر'
+	'connect.open_browser_hint': 'صفحهٔ انتخاب برنامهٔ سازگار باز می‌شود.'
+	'connect.add_subscription_title': 'افزودن به‌عنوان اشتراک'
+	'connect.add_subscription_hint': 'پیوند را در برنامه وارد کنید تا Outpost قالب اشتراک مناسب آن را ارائه کند.'
+	'connect.unknown_client': 'برنامه پیوند را نپذیرفت؟ پیوند مخصوص آن را از «برای یک برنامه» یا پروفایل خام را از «برای کاربران حرفه‌ای» وارد کنید.'
+	'connect.open_browser': 'باز کردن در مرورگر'
+	'connect.preview_short': 'مشاهدهٔ صفحه'
+	'connect.reset': 'بازنشانی اتصال'
+	'connect.resetting': 'در حال بازنشانی اتصال'
+	'connect.reset_confirm': 'همهٔ پیوندها و پروفایل‌های فعلی فوراً از کار می‌افتند. اتصال بازنشانی و موارد جدید صادر شوند؟'
+	'connect.more_count': '{count} مورد دیگر'
+	'connect.apps': 'برنامه‌ها'
+	'connect.more': 'برنامه‌های بیشتر'
+	'connect.platform': 'سیستم‌عامل'
+	'connect.free': 'رایگان'
+	'connect.freemium': 'رایگان · امکانات پولی دارد'
+	'connect.paid_once': 'پولی · خرید یک‌باره'
+	'connect.paid_subscription': 'پولی · اشتراک'
+	'connect.auto': 'مسیرها خودکار به‌روزرسانی می‌شوند'
+	'connect.manual': 'مسیرها دستی به‌روزرسانی می‌شوند'
+	'connect.exact': 'ترتیب دقیق مسیرها'
+	'connect.limited': 'مسیرها بر اساس عمل گروه‌بندی می‌شوند'
+	'connect.transports': 'روش‌های انتقال'
+	'connect.available': 'در دسترس برای'
+	'connect.copy': 'کپی پروفایل'
+	'connect.this_device': 'در این دستگاه'
+	'connect.open': 'باز کردن در برنامه'
+	'connect.open_connect': 'باز کردن و اتصال'
+	'connect.open_hint': 'اگر برنامه از قبل نصب شده باشد کار می‌کند'
+	'connect.open_unavailable': 'اتصال سریع در دسترس نیست'
+	'connect.open_unavailable_hint': 'پیوند زیر کد QR را کپی و دستی به برنامه اضافه کنید.'
+	'connect.install': 'نصب'
+	'connect.install_hint': 'رفتن به صفحهٔ نصب'
+	'connect.store': 'بررسی در فروشگاه'
+	'connect.advanced': 'برای کاربران حرفه‌ای'
+	'connect.advanced_hint': 'پروفایل‌های خام برای ورود دستی. URIهای جداگانه شامل مسیرهای Outpost نیستند.'
+	'connect.choose': 'یک برنامه برای این دستگاه انتخاب کنید.'
+}
+
+export def t key, params = null
+	let message = dictionaries[current][key] or dictionaries.en[key] or ru[key] or key
+	if params
+		message = message.replace /\{([^}]+)\}/g, do(match, name)
+			params[name] == undefined ? match : String(params[name])
+	message
+
+export def plural key, count, params = {}
+	const category = new Intl.PluralRules(intl!).select(Number(count))
+	const specific = "{key}.{category}"
+	const fallback = "{key}.other"
+	const selected = dictionaries[current][specific] or dictionaries.en[specific] or ru[specific] ? specific : fallback
+	t(selected, {...params, count: new Intl.NumberFormat(intl!).format(Number(count))})
+
+apply!

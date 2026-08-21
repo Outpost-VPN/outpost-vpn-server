@@ -9,7 +9,6 @@ import type {
   EngineId,
   EnginePresence,
   PresenceStatus,
-  SubscriptionFormat,
 } from "../models";
 import { createToken, decryptSecret, deriveToken, encryptSecret, hashToken, type SecretBox } from "../security";
 import { JournalService } from "./journal";
@@ -220,7 +219,7 @@ export class ConnectionService {
     return this.withPresence(connection);
   }
 
-  markFetched(connectionId: string, _format: SubscriptionFormat) {
+  markFetched(connectionId: string) {
     const connection = this.get(connectionId);
     const timestamp = now();
     const first = !connection.first_used_at;
@@ -275,12 +274,7 @@ export class ConnectionService {
     const token = this.token(connection.id, connection.generation);
     this.db.raw.query("UPDATE connections SET subscription_token_hash = ? WHERE id = ?")
       .run(hashToken(token), connectionId);
-    const url = `${config.origin}/s/${token}`;
-    const formats: SubscriptionFormat[] = ["mihomo", "sing-box", "xray", "xray-json", "links"];
-    return {
-      url,
-      formats: Object.fromEntries(formats.map((format) => [format, `${url}?format=${format}`])) as Record<SubscriptionFormat, string>,
-    };
+    return { url: `${config.origin}/s/${token}` };
   }
 
   private issue(connectionId: string, generation: number, state: "pending" | "active") {

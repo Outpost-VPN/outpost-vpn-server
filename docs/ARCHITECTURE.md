@@ -8,11 +8,13 @@ Root-agent доступен только через `/run/outpost/agent.sock`, �
 
 ## Первый запуск
 
-Основной installation surface — сам VPS, а не локальный компьютер. После одной команды в web-консоли хостера installer поднимает минимальный pre-launch control plane по публичному IP с короткоживущим доверенным TLS certificate. Доступ ограничен высокоэнтропийной одноразовой ссылкой с TTL 1 час.
+Основной installation surface — сам VPS, а не локальный компьютер. После одной команды в web-консоли хостера installer поднимает минимальный pre-launch control plane по публичному IP с короткоживущим доверенным TLS certificate. Пользователь открывает фиксированный корень `https://<IP>/`; install-time token, отдельного setup path и срока действия адреса нет. Модель первоначального доступа осознанно остаётся first-claim и предназначена только для новой установки на чистом VPS.
 
 Pre-launch имеет одну задачу: принять постоянный hostname — бесплатный или на собственном домене, показать A-запись, дождаться DNS, получить domain certificate и атомарно применить final configs. Интерфейс рекомендует DuckDNS, FreeMyIP и dynv6, но не хранит их accounts или tokens: пользователь возвращает только полученный hostname. До этого движки, подписки и WebAuthn не активируются. Владелец и passkey всегда создаются на final HTTPS origin, потому что RP ID не должен меняться при переходе с IP на постоянный адрес.
 
-После первого успешного WebAuthn registration bootstrap token отзывается, IP setup routes отключаются, а Nginx отвечает на посторонние Host нейтральной страницей. `outpostctl` остаётся server-local и automation interface для doctor, backup/restore, emergency recovery и stdio MCP, но не является обязательным GUI installer.
+После domain finalize сервер создаёт внутренний claim token с TTL 1 час, хранит только SHA-256 hash и возвращает его непосредственно тому же браузеру в переходе на `https://<domain>/admin/onboarding`. Claim повторно проверяется в начале и завершении WebAuthn registration и уничтожается после создания владельца. Это не install-time ссылка: до успешного finalize token не существует и в journal не записывается.
+
+После настройки IP certificate сохраняется и автоматически продлевается. Отдельный IP-vhost оставляет доступными только корень с предупреждением, setup-статику, read-only `GET /api/v1/setup` и ACME challenge; dashboard, WebAuthn, setup mutations, subscriptions и transports по IP не публикуются. Domain-vhost принудительно задаёт обычный surface независимо от клиентских заголовков. `outpostctl` остаётся server-local и automation interface для doctor, backup/restore, emergency recovery и stdio MCP, но не является обязательным GUI installer.
 
 ## Данные
 

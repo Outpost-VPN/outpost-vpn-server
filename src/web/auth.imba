@@ -1,8 +1,32 @@
-import {t} from './i18n.imba'
+import {language, languages, setLanguage, t} from './i18n.imba'
 import {fmt, webauthn} from './context.imba'
+
+tag outpost-language-switcher
+	store = null
+
+	def choose value
+		setLanguage(value)
+		const url = new URL(window.location.href)
+		url.searchParams.set('lang', value)
+		window.history.replaceState({}, '', url)
+		store.title! if store
+
+	<self aria-label="Language">
+		for item in languages
+			<button type="button" lang=item.id .active=(language! == item.id) aria-pressed=(language! == item.id) @click=(do choose(item.id))> item.label
+
+	css self
+		pos:fixed t:18px r:22px zi:100 d:flex g:4px p:4px rd:10px bgc:white/88 bdf:blur(8px) bxs:0 8px 24px black/8 direction:ltr
+		button p:7px 9px bd:0 rd:7px bgc:transparent c:var(--outpost-muted) fs:11px fw:650 white-space:nowrap
+		button@hover bgc:var(--outpost-soft) c:var(--outpost-brand)
+		button.active bgc:var(--outpost-auth-start) c:var(--outpost-brand)
+		@media(max-width: 560px)
+			t:12px r:12px l:12px jc:center
+			button p:6px 7px fs:10px
 
 tag outpost-auth-shell
 	mode = 'setup'
+	store = null
 	copied = false
 
 	get story
@@ -41,6 +65,7 @@ tag outpost-auth-shell
 		imba.commit!
 
 	<self .preflight=(mode == 'preflight')>
+		<outpost-language-switcher store=store>
 		<aside>
 			<outpost-logo>
 			<div.story>
@@ -56,7 +81,7 @@ tag outpost-auth-shell
 				<outpost-icon name="globe-hemisphere-west">
 				<div>
 					<small> copied ? t('auth.host.copied') : (mode == 'preflight' ? t('setup.host') : t('auth.host'))
-					<span> window.location.host
+					<span.technical> window.location.host
 				<button.copy type="button" @click=copy aria-label=(copied ? t('auth.host.copied') : t('auth.host.copy')) title=(copied ? t('auth.host.copied') : t('auth.host.copy'))>
 					<outpost-icon name=(copied ? 'check' : 'copy')>
 		<main>
@@ -97,6 +122,15 @@ tag outpost-login
 	busy = false
 	message = null
 
+	def mount
+		return if new URLSearchParams(window.location.search).has('lang')
+		try
+			const state = await store.api('GET', '/api/v1/auth/state')
+			setLanguage(state.owner.language) if state.owner and state.owner.language
+			store.title!
+		catch
+			null
+
 	def login
 		busy = true
 		message = null
@@ -113,7 +147,7 @@ tag outpost-login
 			imba.commit!
 
 	<self>
-		<outpost-auth-shell mode="login">
+		<outpost-auth-shell mode="login" store=store>
 			<section.auth-panel.login-panel>
 				<span.panel-badge> t('auth.badge')
 				<h1> t('auth.title')
@@ -164,11 +198,12 @@ tag outpost-setup
 	help = false
 	message = null
 	onboarding = null
+	status = 'available'
 
 	def setup
 		const params = new URLSearchParams(window.location.search)
 		const hostname = window.location.hostname
-		preview = params.get('bootstrap') == 'preview'
+		preview = params.get('preview') == 'setup'
 		if preview
 			server = params.get('ip') or '203.0.113.42'
 		else
@@ -180,9 +215,9 @@ tag outpost-setup
 
 	def load
 		try
-			const bootstrap = new URLSearchParams(window.location.search).get('bootstrap')
-			const state = await store.api('GET', "/api/v1/setup?bootstrap={window.encodeURIComponent(bootstrap or '')}")
-			server = state.publicIp
+			const state = await store.api('GET', '/api/v1/setup')
+			status = state.status
+			server = state.publicIp if state.publicIp
 		catch issue
 			message = issue.message
 		finally
@@ -249,13 +284,18 @@ tag outpost-setup
 		try
 			if preview
 				await new Promise do(resolve) window.setTimeout(resolve, 900)
+				move 2, 1
 			else
-				const bootstrap = new URLSearchParams(window.location.search).get('bootstrap')
-				const result = await store.api('POST', '/api/v1/setup/domain', {bootstrapToken: bootstrap, domain: domain})
+				const result = await store.api('POST', '/api/v1/setup/domain', {domain: domain, language: language!})
 				domain = result.domain
 				onboarding = result.onboardingUrl
-				await new Promise do(resolve) window.setTimeout(resolve, 2200)
-			move 2, 1
+				move 2, 1
+				imba.commit!
+				# The root-agent schedules the control-plane restart two seconds after
+				# returning, so wait for the final domain/RP configuration to be live.
+				await new Promise do(resolve) window.setTimeout(resolve, 2500)
+				window.location.assign(onboarding)
+				return
 		catch issue
 			message = issue.message
 		finally
@@ -266,22 +306,29 @@ tag outpost-setup
 		if onboarding
 			window.location.assign(onboarding)
 			return
-		const bootstrap = new URLSearchParams(window.location.search).get('bootstrap')
-		const query = bootstrap ? "?bootstrap={window.encodeURIComponent(bootstrap)}" : ''
-		store.goto("/onboarding{query}")
+		store.goto("/onboarding?preview=setup&lang={window.encodeURIComponent(language!)}")
 
 	<self>
-		<outpost-auth-shell mode="preflight">
+		<outpost-auth-shell mode="preflight" store=store>
 			<section.auth-panel.setup-panel .backwards=(direction < 0)>
 				if loading
 					<div.step.loading-step>
 						<outpost-icon name="spinner-gap">
+				elif status == 'configured'
+					<div.step.configured-step>
+						<span.panel-badge> t('setup.configured.badge')
+						<div.configured-icon><outpost-icon name="warning-circle">
+						<h1> t('setup.configured.title')
+						<p> t('setup.configured.done')
+						<div.configured-warning>
+							<strong> t('setup.configured.warning')
+							<span> t('setup.configured.action')
 				elif message and step == 0
 					<div.step.error-step>
 						<div.outpost-error> message
 						<button.outpost-button @click=load>
 							<outpost-icon name="arrows-clockwise">
-							<span> 'Повторить'
+							<span> t('Повторить')
 				elif step == 0
 					<form.step.choice-step [o@off:0 ease:340ms] ease @submit.prevent=advance>
 						<span.panel-badge> t('setup.badge')
@@ -335,27 +382,27 @@ tag outpost-setup
 											<outpost-icon name="arrow-square-out">
 								<div.server-ip>
 									<span> preview ? t('setup.domain.server_preview') : t('setup.domain.server')
-									<strong> server
+									<strong.technical> server
 									<button type="button" @click=copy aria-label=(copied ? t('setup.dns.copied') : t('setup.dns.copy'))>
 										<outpost-icon name=(copied ? 'check' : 'copy')>
 							<label.outpost-field.domain-field>
 								<span> field.label
-								<input bind=free @blur=clean autofocus autocomplete="url" placeholder=field.placeholder>
+								<input.technical bind=free @blur=clean autofocus autocomplete="url" placeholder=field.placeholder>
 						else
 							<h1> t('setup.own.title')
 							<p> t('setup.own.subtitle')
 							<label.outpost-field.domain-field>
 								<span> field.label
-								<input bind=own @blur=clean autofocus autocomplete="url" placeholder=field.placeholder>
+								<input.technical bind=own @blur=clean autofocus autocomplete="url" placeholder=field.placeholder>
 							<div.record-guide>
 								<strong> t('setup.own.record')
 								<div.dns-card>
 									<div.record>
 										<small> t('setup.dns.type')
-										<strong> 'A'
+										<strong.technical> 'A'
 									<div.record>
 										<small> t('setup.dns.name')
-										<strong> record
+										<strong.technical> record
 									<div.record>
 										<small> t('setup.dns.value')
 										<strong.mono> server
@@ -399,7 +446,7 @@ tag outpost-setup
 								<span> t('setup.ready.tls')
 							<div.address>
 								<outpost-icon name="lock-key">
-								<strong> "https://{domain}"
+								<strong.technical> "https://{domain}"
 						<button.outpost-button @click=open_owner>
 							<span> t('setup.ready.continue')
 							<outpost-icon name="arrow-right">
@@ -413,6 +460,9 @@ tag outpost-setup
 		.loading-step ja:center c:var(--outpost-brand) fs:28px
 		.loading-step outpost-icon animation:spin 1s linear infinite
 		.error-step .outpost-button mt:20px
+		.configured-step .configured-icon s:52px d:grid ja:center mb:22px rd:14px bgc:var(--outpost-warning-soft) c:var(--outpost-warning) fs:28px
+		.configured-warning d:grid g:8px mt:26px p:17px rd:12px bgc:var(--outpost-warning-soft) c:var(--outpost-text) fs:13px lh:1.55
+		.configured-warning span c:var(--outpost-muted)
 		.step@enter o:0; transform:translateX(36px)
 		.step@leave pos:absolute t:0 l:0 o:0; transform:translateX(-36px)
 		.auth-panel.backwards .step@enter transform:translateX(-36px)
@@ -513,6 +563,10 @@ tag outpost-onboarding
 	timezone = Intl.DateTimeFormat!.resolvedOptions!.timeZone or 'UTC'
 	busy = false
 	message = null
+	preview = false
+
+	def setup
+		preview = new URLSearchParams(window.location.search).get('preview') == 'setup'
 
 	def move next, vector
 		direction = vector
@@ -529,8 +583,15 @@ tag outpost-onboarding
 		busy = true
 		message = null
 		try
-			const bootstrap = new URLSearchParams(window.location.search).get('bootstrap')
-			const start = await store.api('POST', '/api/v1/auth/register/options', {timezone: timezone, bootstrapToken: bootstrap})
+			if preview
+				await new Promise do(resolve) window.setTimeout(resolve, 650)
+				move 2, 1
+				return
+			const params = new URLSearchParams(window.location.search)
+			const body = {timezone: timezone, language: language!}
+			body.claimToken = params.get('claim') if params.get('claim')
+			body.recoveryToken = params.get('recovery') if params.get('recovery')
+			const start = await store.api('POST', '/api/v1/auth/register/options', body)
 			const credential = await window.navigator.credentials.create({publicKey: webauthn.decode(start.options)})
 			await store.api('POST', '/api/v1/auth/register/verify', {challengeId: start.challengeId, response: webauthn.json(credential)})
 			store.goto('/')
@@ -542,7 +603,7 @@ tag outpost-onboarding
 			imba.commit!
 
 	<self>
-		<outpost-auth-shell mode="setup">
+		<outpost-auth-shell mode="setup" store=store>
 			<section.auth-panel.setup-panel .backwards=(direction < 0)>
 				if step == 0
 					<div.step [o@off:0 ease:340ms] ease>
@@ -568,9 +629,6 @@ tag outpost-onboarding
 						<button.outpost-button @click=advance>
 							<span> t('onboarding.access.create')
 							<outpost-icon name="arrow-right">
-						<small.bootstrap>
-							<outpost-icon name="timer">
-							<span> t('onboarding.bootstrap')
 				elif step == 1
 					<div.step [o@off:0 ease:340ms] ease>
 						<div.progress>
@@ -596,6 +654,14 @@ tag outpost-onboarding
 						<small.bootstrap>
 							<outpost-icon name="shield-check">
 							<span> t('onboarding.secure')
+				else
+					<div.step [o@off:0 ease:340ms] ease>
+						<span.panel-badge> t('Предпросмотр')
+						<h1> t('Настройка доступа завершена')
+						<p> t('В preview-режиме passkey не создавался, а данные владельца не записывались.')
+						<button.outpost-button @click=(do move(0, -1))>
+							<outpost-icon name="arrow-counter-clockwise">
+							<span> t('Начать сначала')
 
 	css self
 		.auth-panel pos:relative w:min(520px, 100%) mih:560px

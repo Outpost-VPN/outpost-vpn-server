@@ -56,7 +56,7 @@ export class OutpostDatabase {
     }
     this.setDefault("active_route_version", 0);
     this.publishInitialRoutes();
-    this.setDefault("interface", { language: "ru", compact: false });
+    this.setDefault("interface", { compact: false });
     this.setDefault("system", { timezone: "UTC", updateChannel: "stable" });
     this.setDefault("engine_order", ["hysteria", "xray"]);
     this.raw.query(`

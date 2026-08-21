@@ -4,6 +4,7 @@ import { config } from "../config";
 import type { AuthService } from "../auth/webauthn";
 import { ServiceError } from "./connections";
 import { callAgent } from "./operations";
+import { locales } from "../../shared/i18n";
 
 const domainSchema = z.string().trim().toLowerCase().max(253).refine(validDomain, "Укажите корректный домен");
 
@@ -12,6 +13,8 @@ type Resolver = (domain: string) => Promise<string[]>;
 type Runner = typeof callAgent;
 
 export class SetupService {
+  private finalizing = false;
+
   constructor(
     private auth: AuthService,
     private settings: SetupConfig = config,
@@ -19,47 +22,48 @@ export class SetupService {
     private runner: Runner = callAgent,
   ) {}
 
-  state(token?: string) {
-    this.requireSetup();
-    const bootstrap = this.auth.verifyBootstrapToken(token);
-    return {
-      publicIp: this.settings.publicIp,
-      expiresAt: bootstrap.expiresAt,
-    };
+  state() {
+    if (!this.settings.setup || !validIPv4(this.settings.publicIp)) return { status: "configured" as const };
+    return { status: "available" as const, publicIp: this.settings.publicIp };
   }
 
   async finalize(input: unknown) {
     this.requireSetup();
+    if (this.finalizing) throw new ServiceError(409, "Первоначальная настройка уже выполняется");
     const body = z.object({
-      bootstrapToken: z.string().min(20).max(200),
       domain: domainSchema,
+      language: z.enum(locales).default("en"),
     }).parse(input);
-    this.auth.verifyBootstrapToken(body.bootstrapToken);
-
-    let addresses: string[];
+    this.finalizing = true;
     try {
-      addresses = await this.resolver(body.domain);
-    } catch {
-      throw new ServiceError(409, "DNS-запись пока не найдена — проверьте адрес и попробуйте ещё раз");
-    }
-    if (!addresses.includes(this.settings.publicIp)) {
-      throw new ServiceError(409, `Домен пока не указывает на этот сервер (${this.settings.publicIp})`);
-    }
+      let addresses: string[];
+      try {
+        addresses = await this.resolver(body.domain);
+      } catch {
+        throw new ServiceError(409, "DNS-запись пока не найдена — проверьте адрес и попробуйте ещё раз");
+      }
+      if (!addresses.includes(this.settings.publicIp)) {
+        throw new ServiceError(409, `Домен пока не указывает на этот сервер (${this.settings.publicIp})`);
+      }
 
-    try {
-      await this.runner({
-        action: "setup.finalize",
-        payload: { domain: body.domain, publicIp: this.settings.publicIp },
-      });
-    } catch (error) {
-      console.error(`[SETUP] Не удалось применить домен ${body.domain}:`, error);
-      throw new ServiceError(502, "DNS-запись подтверждена, но сервер не смог завершить настройку домена — попробуйте ещё раз");
+      const claim = this.auth.issueClaim();
+      try {
+        await this.runner({
+          action: "setup.finalize",
+          payload: { domain: body.domain, publicIp: this.settings.publicIp },
+        });
+      } catch (error) {
+        console.error(`[SETUP] Не удалось применить домен ${body.domain}:`, error);
+        throw new ServiceError(502, "DNS-запись подтверждена, но сервер не смог завершить настройку домена — попробуйте ещё раз");
+      }
+      return {
+        domain: body.domain,
+        origin: `https://${body.domain}`,
+        onboardingUrl: `https://${body.domain}${this.settings.adminPath}/onboarding?claim=${encodeURIComponent(claim.token)}&lang=${encodeURIComponent(body.language)}`,
+      };
+    } finally {
+      this.finalizing = false;
     }
-    return {
-      domain: body.domain,
-      origin: `https://${body.domain}`,
-      onboardingUrl: `https://${body.domain}${this.settings.adminPath}/onboarding?bootstrap=${encodeURIComponent(body.bootstrapToken)}`,
-    };
   }
 
   private requireSetup() {

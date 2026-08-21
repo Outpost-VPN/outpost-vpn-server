@@ -1,4 +1,4 @@
-import {t} from './i18n.imba'
+import {intl, t} from './i18n.imba'
 
 const scopes = [
 	{id: 'all', label: 'Все события', hint: 'Без фильтра', icon: 'list-bullets'}
@@ -49,9 +49,9 @@ const journal = {
 		option ? option.icon : 'info'
 	category: do(value)
 		const option = categories.find(do(item) item.id == value or item.values.includes(value))
-		option ? option.label : value
+		option ? t(option.label) : value
 	component: do(value)
-		const labels = {xray: 'Xray', hysteria: 'Hysteria 2', engine: 'Протоколы', engines: 'Протоколы', routes: 'Маршруты', connection: 'Подключения', connections: 'Подключения', auth: 'Авторизация', passkey: 'Ключи доступа', session: 'Сеансы', token: 'API-токены', backup: 'Резервные копии', service: 'Службы', nginx: 'Nginx', app: 'Outpost', security: 'Безопасность', maintenance: 'Обслуживание', system: 'Система', monitor: 'Мониторинг'}
+		const labels = {xray: 'Xray', hysteria: 'Hysteria 2', engine: t('Протоколы'), engines: t('Протоколы'), routes: t('Маршруты'), connection: t('Подключения'), connections: t('Подключения'), auth: t('Авторизация'), passkey: t('Ключи доступа'), session: t('Сеансы'), token: t('API-токены'), backup: t('Резервные копии'), service: t('Службы'), nginx: 'Nginx', app: 'Outpost', security: t('Безопасность'), maintenance: t('Обслуживание'), system: t('Система'), monitor: t('Мониторинг')}
 		labels[value] or value
 	key: do(value)
 		const date = new Date(value)
@@ -61,23 +61,23 @@ const journal = {
 		const today = new Date
 		const yesterday = new Date
 		yesterday.setDate(today.getDate! - 1)
-		const suffix = new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long'}).format(date)
-		return "Сегодня, {suffix}" if journal.key(date) == journal.key(today)
-		return "Вчера, {suffix}" if journal.key(date) == journal.key(yesterday)
-		new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long'}).format(date)
+		const suffix = new Intl.DateTimeFormat(intl!, {day: 'numeric', month: 'long'}).format(date)
+		return t('Сегодня, {date}', {date: suffix}) if journal.key(date) == journal.key(today)
+		return t('Вчера, {date}', {date: suffix}) if journal.key(date) == journal.key(yesterday)
+		new Intl.DateTimeFormat(intl!, {day: 'numeric', month: 'long'}).format(date)
 	time: do(value)
-		new Intl.DateTimeFormat('ru-RU', {hour: '2-digit', minute: '2-digit'}).format(new Date(value))
+		new Intl.DateTimeFormat(intl!, {hour: '2-digit', minute: '2-digit'}).format(new Date(value))
 	full: do(value)
-		new Intl.DateTimeFormat('ru-RU', {dateStyle: 'long', timeStyle: 'medium'}).format(new Date(value))
+		new Intl.DateTimeFormat(intl!, {dateStyle: 'long', timeStyle: 'medium'}).format(new Date(value))
 	json: do(value)
 		JSON.stringify(value, null, 2)
 	bytes: do(value)
-		return "{Math.round(value / 1024 / 1024 * 10) / 10} МБ" if value >= 1024 * 1024
-		"{Math.max(1, Math.round(value / 1024))} КБ"
+		return t('{size} МБ', {size: new Intl.NumberFormat(intl!, {maximumFractionDigits: 1}).format(value / 1024 / 1024)}) if value >= 1024 * 1024
+		t('{size} КБ', {size: new Intl.NumberFormat(intl!).format(Math.max(1, Math.round(value / 1024)))})
 	value: do(key, value)
 		return journal.bytes(value) if key == 'size' and typeof value == 'number'
-		return value ? 'Включено' : 'Выключено' if key == 'encrypted' and typeof value == 'boolean'
-		return value ? 'Да' : 'Нет' if typeof value == 'boolean'
+		return value ? t('Включено') : t('Выключено') if key == 'encrypted' and typeof value == 'boolean'
+		return value ? t('Да') : t('Нет') if typeof value == 'boolean'
 		return value.map(do(item) journal.component(item)).join(' → ') if key == 'order' and Array.isArray(value)
 		return value.join(', ') if Array.isArray(value)
 		return journal.component(value) if ['engine', 'service'].includes(key)
@@ -88,7 +88,7 @@ const journal = {
 		const items = []
 		for own key, value of payload
 			continue if value == null or typeof value == 'object' and !Array.isArray(value)
-			items.push({key: key, label: labels[key] or key, value: journal.value(key, value), raw: value})
+			items.push({key: key, label: t(labels[key] or key), value: journal.value(key, value), raw: value})
 		items
 }
 
@@ -114,20 +114,20 @@ tag outpost-journal-scope
 	<self .open=open>
 		if open
 			<global @click.outside=close @keydown.esc=close>
-		<button.trigger type="button" @click.stop=toggle aria-label="Тип событий" aria-haspopup="listbox" aria-expanded=open>
+		<button.trigger type="button" @click.stop=toggle aria-label=t('Тип событий') aria-haspopup="listbox" aria-expanded=open>
 			<span.tone .all=(current.id == 'all') .important=(current.id == 'important') .errors=(current.id == 'errors') .changes=(current.id == 'changes')>
 				<outpost-icon name=current.icon>
-			<span.label> current.label
+			<span.label> t(current.label)
 			<outpost-icon.chevron name="caret-down">
 		if open
-			<div.options role="listbox" aria-label="Тип событий">
+			<div.options role="listbox" aria-label=t('Тип событий')>
 				for option in scopes
 					<button type="button" role="option" aria-selected=(value == option.id) .active=(value == option.id) @click.stop=(do select(option))>
 						<span.tone .all=(option.id == 'all') .important=(option.id == 'important') .errors=(option.id == 'errors') .changes=(option.id == 'changes')>
 							<outpost-icon name=option.icon>
 						<span.copy>
-							<strong> option.label
-							<small> option.hint
+							<strong> t(option.label)
+							<small> t(option.hint)
 						if value == option.id
 							<outpost-icon.check name="check">
 
@@ -205,9 +205,9 @@ tag outpost-journal-row
 							<span> component
 						if subject
 							<i> '·'
-							<span> "Объект: {subject}"
+							<span> t('Объект: {subject}', {subject: subject})
 						<i> '·'
-						<span> "Автор: {event.actor..label or 'Система'}"
+						<span> t('Автор: {actor}', {actor: event.actor..label or t('Система')})
 					if items.length
 						<dl.facts>
 							for item in items
@@ -218,18 +218,18 @@ tag outpost-journal-row
 						<details.technical>
 							<summary>
 								<outpost-icon name="caret-down">
-								<span> 'Технические данные'
+								<span> t('Технические данные')
 							<div.payload>
 								if Object.keys(facts).length
 									<div>
-										<strong> 'Данные события'
+										<strong> t('Данные события')
 										<pre> journal.json(facts)
 								if changes
 									<div>
-										<strong> 'До'
+										<strong> t('До')
 										<pre> journal.json(changes.before)
 									<div>
-										<strong> 'После'
+										<strong> t('После')
 										<pre> journal.json(changes.after)
 
 	css self
@@ -290,6 +290,7 @@ tag outpost-journal-row
 
 tag outpost-journal
 	store = null
+	@observable revision = 0
 	scope = 'all'
 	category = 'all'
 	query = ''
@@ -299,12 +300,17 @@ tag outpost-journal
 	busy = false
 	message = ''
 	stamp = 0
+	seen = null
 
 	def setup
 		events = store.data.system.events or []
 		total = events.length
 
-	def mount
+	@autorun def follow
+		const current = revision
+		return unless self.isConnected
+		return if current == seen
+		seen = current
 		load!
 
 	get groups
@@ -367,13 +373,13 @@ tag outpost-journal
 				<p> t('journal.subtitle')
 			<button.outpost-button.secondary.small.header-action type="button" disabled=busy @click=refresh>
 				<outpost-icon name="arrows-clockwise">
-				<span> busy ? 'Обновляем' : 'Обновить'
+				<span> busy ? t('Обновляем') : t('Обновить')
 		<div.toolbar>
-			<div.categories role="tablist" aria-label="Категория событий">
+			<div.categories role="tablist" aria-label=t('Категория событий')>
 				for option in categories
-					<button type="button" role="tab" aria-label=option.label title=option.label aria-selected=(category == option.id) .active=(category == option.id) @click=(do choose(option.id))>
+					<button type="button" role="tab" aria-label=t(option.label) title=t(option.label) aria-selected=(category == option.id) .active=(category == option.id) @click=(do choose(option.id))>
 						<outpost-icon name=option.icon>
-						<span> option.label
+						<span> t(option.label)
 			<div.filters>
 				<outpost-journal-scope value=scope change=(do(value) narrow(value))>
 				<label.search>
@@ -391,14 +397,14 @@ tag outpost-journal
 		else
 			<div.empty>
 				<outpost-icon name="magnifying-glass">
-				<strong> busy ? 'Загружаем события' : 'События не найдены'
-				<p> 'Измените фильтры или поисковый запрос.' unless busy
+				<strong> busy ? t('Загружаем события') : t('События не найдены')
+				<p> t('Измените фильтры или поисковый запрос.') unless busy
 		if events.length
 			<footer>
-				<span> "Показано {events.length} из {total} событий"
+				<span> t('Показано {shown} из {total} событий', {shown: new Intl.NumberFormat(intl!).format(events.length), total: new Intl.NumberFormat(intl!).format(total)})
 				if next
 					<button type="button" disabled=busy @click=more>
-						<span> busy ? 'Загружаем' : 'Показать ещё'
+						<span> busy ? t('Загружаем') : t('Показать ещё')
 						<outpost-icon name="caret-down">
 
 	css self

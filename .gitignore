@@ -14,6 +14,7 @@ coverage/
 
 # Local visual QA captures (product assets live under assets/ and public/).
 /design-qa.md
+/design-qa-assets/
 /design-qa-*.png
 /implementation-*.png
 /implementation-*.jpg

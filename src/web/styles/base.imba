@@ -43,6 +43,32 @@ global css html
 		min-height: 100vh
 		background: #fff
 
+	&[dir="rtl"] body
+		direction: rtl
+
+	&[dir="rtl"] code, &[dir="rtl"] pre, &[dir="rtl"] samp, &[dir="rtl"] kbd, &[dir="rtl"] input[type="url"], &[dir="rtl"] .mono, &[dir="rtl"] .technical, &[dir="rtl"] .system-value, &[dir="rtl"] .profile-value, &[dir="rtl"] .dns-value, &[dir="rtl"] .cm-editor
+		direction: ltr
+		unicode-bidi: isolate
+		text-align: left
+
+	&[dir="rtl"] .ph-arrow-right, &[dir="rtl"] .ph-arrow-left, &[dir="rtl"] .ph-caret-right, &[dir="rtl"] .ph-caret-left, &[dir="rtl"] .ph-arrow-square-out
+		transform: scaleX(-1)
+
+	@media(min-width: 621px)
+		&[dir="rtl"] outpost-sidebar
+			inset: 0 0 0 auto
+		&[dir="rtl"] outpost-shell > main@force
+			margin-left: 0
+			margin-right: 300px
+
+	@media(max-width: 900px)
+		&[dir="rtl"] outpost-shell > main@force
+			margin-right: 82px
+
+	@media(max-width: 620px)
+		&[dir="rtl"] outpost-shell > main@force
+			margin-right: 0
+
 	button, input, select, textarea
 		font: inherit
 

@@ -275,6 +275,32 @@ export const migrations = [
       );
     `,
   },
+  {
+    version: 2,
+    name: "owner-language",
+    sql: `
+      ALTER TABLE owners
+        ADD COLUMN language TEXT NOT NULL DEFAULT 'en'
+        CHECK(language IN ('ru', 'en', 'zh-CN', 'fa'));
+
+      UPDATE owners
+      SET language = CASE (
+        SELECT json_extract(value_json, '$.language')
+        FROM settings
+        WHERE key = 'interface'
+      )
+        WHEN 'ru' THEN 'ru'
+        WHEN 'en' THEN 'en'
+        WHEN 'zh-CN' THEN 'zh-CN'
+        WHEN 'fa' THEN 'fa'
+        ELSE 'ru'
+      END;
+
+      UPDATE settings
+      SET value_json = json_remove(value_json, '$.language')
+      WHERE key = 'interface';
+    `,
+  },
 ] as const;
 
 export const defaultRoutes = [

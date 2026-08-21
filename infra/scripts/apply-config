@@ -4,6 +4,12 @@ set -euo pipefail
 source_path=${1:-}
 target_path=${2:-}
 engine=${3:-}
+restart=${4:-1}
+
+case "$restart" in
+  0|1) ;;
+  *) echo "Restart flag is not allowed" >&2; exit 1 ;;
+esac
 
 case "$source_path:$target_path" in
   /var/lib/outpost/runtime/*:/etc/outpost/engines/*) ;;
@@ -27,6 +33,11 @@ backup_path="${target_path}.previous"
 test ! -f "$target_path" || cp -a "$target_path" "$backup_path"
 install -o root -g outpost -m 0640 "$source_path" "${target_path}.tmp"
 mv "${target_path}.tmp" "$target_path"
+
+if test "$restart" = 0; then
+  echo "Configuration validated and installed; inactive engine was not started"
+  exit 0
+fi
 
 if ! systemctl restart "$service"; then
   test ! -f "$backup_path" || cp -a "$backup_path" "$target_path"

@@ -66,7 +66,7 @@ cp /etc/outpost/engines/hysteria.yaml "$stage/hysteria.previous"
 cp /etc/outpost/engines/xray.json "$stage/xray.previous"
 armed=1
 
-sed -e "s|__DOMAIN__|$domain|g" -e "s|__XHTTP_PATH__|$xhttp_path|g" -e "s|__GRPC_SERVICE__|$grpc_service|g" \
+sed -e "s|__DOMAIN__|$domain|g" -e "s|__PUBLIC_IP__|$public_ip|g" -e "s|__XHTTP_PATH__|$xhttp_path|g" -e "s|__GRPC_SERVICE__|$grpc_service|g" \
   /opt/outpost/current/infra/nginx/outpost.conf.template >"$stage/nginx"
 sed -e "s|__DOMAIN__|$domain|g" -e "s|__STATS_SECRET__|$stats_secret|g" \
   /opt/outpost/current/infra/config/hysteria.yaml.template >"$stage/hysteria.yaml"
@@ -102,8 +102,6 @@ install -o root -g outpost -m 0640 "$stage/xray.json" /etc/outpost/engines/xray.
 nginx -t
 systemctl reload nginx
 systemctl enable --now xray hysteria-server
-armed=0
-
-"$certbot" delete --non-interactive --cert-name "$public_ip" >/dev/null 2>&1 || true
 systemd-run --on-active=2s --collect --quiet /bin/systemctl restart outpost
+armed=0
 echo "https://$domain$admin_path/onboarding"

@@ -9,6 +9,7 @@ import { JournalService } from "./journal";
 import { ServiceError } from "./connections";
 
 type Family = "geosite" | "geoip";
+type RulesetRoute = Pick<RouteRule, "matcher" | "value" | "enabled">;
 type RulesetManifest = {
   version: string;
   bundle: { url: string; sha256: string };
@@ -63,7 +64,7 @@ export class RuleSetService {
     return this.required(rules).length ? this.state().activeVersion : null;
   }
 
-  assert(rules: RouteRule[]) {
+  assert(rules: RulesetRoute[]) {
     const required = this.required(rules);
     if (!required.length) return;
     const state = this.state();
@@ -178,7 +179,7 @@ export class RuleSetService {
     }
   }
 
-  private required(rules: RouteRule[]) {
+  private required(rules: RulesetRoute[]) {
     return [...new Map(rules
       .filter((rule) => Boolean(rule.enabled) && (rule.matcher === "GEOSITE" || rule.matcher === "GEOIP"))
       .map((rule) => {

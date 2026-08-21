@@ -41,6 +41,19 @@ func TestConfigEngineAllowlist(t *testing.T) {
 	if err := Validate(request); err == nil {
 		t.Fatal("unexpected engine accepted")
 	}
+	withoutRestart := Request{Action: "config.apply", Payload: map[string]any{
+		"source":  "/var/lib/outpost/runtime/xray.json",
+		"target":  "/etc/outpost/engines/xray.json",
+		"engine":  "xray",
+		"restart": false,
+	}}
+	if err := Validate(withoutRestart); err != nil {
+		t.Fatalf("boolean restart flag rejected: %v", err)
+	}
+	withoutRestart.Payload["restart"] = "false"
+	if err := Validate(withoutRestart); err == nil {
+		t.Fatal("non-boolean restart flag accepted")
+	}
 }
 
 func TestBackupPassphraseAndPath(t *testing.T) {

@@ -29,7 +29,7 @@ tag outpost-action-picker
 				for item in routeActions
 					<button.option type="button" role="menuitem" .active=(item.id == value) .direct=(item.id == 'DIRECT') .proxy=(item.id == 'PROXY') .block=(item.id == 'BLOCK') @click.stop=choose(item.id)>
 						<span.dot>
-						<span> item.label
+						<span> t(item.label)
 						if item.id == value
 							<outpost-icon name="check">
 
@@ -79,15 +79,15 @@ tag outpost-matcher-picker
 		if open
 			<global @click.outside=close @keydown.esc=close>
 		<button.trigger type="button" @click.stop=toggle aria-haspopup="listbox" aria-expanded=open>
-			<span> selected.label
+			<span> t(selected.label)
 			<outpost-icon name="caret-down">
 		if open
 			<div.menu role="listbox" ease>
 				for item in routeMatchers
 					<button.option type="button" role="option" aria-selected=(item.id == value) .active=(item.id == value) @click.stop=choose(item.id)>
 						<div>
-							<strong> item.label
-							<small> item.hint
+							<strong> t(item.label)
+							<small> t(item.hint)
 						if item.id == value
 							<outpost-icon name="check">
 
@@ -124,7 +124,15 @@ tag outpost-route-create
 	get valid?
 		value.trim!.length > 0
 
+	def reset
+		matcher = 'DOMAIN'
+		value = ''
+		action = 'DIRECT'
+		error = null
+
 	def close
+		return if saving
+		reset!
 		routes.cancel!
 
 	def submit
@@ -134,6 +142,7 @@ tag outpost-route-create
 		error = null
 		try
 			await store.mutate('POST', '/api/v1/routes', {action: action, matcher: matcher, value: value, enabled: true})
+			reset!
 			routes.created!
 		catch issue
 			error = issue.message
@@ -142,20 +151,22 @@ tag outpost-route-create
 
 	<self ease>
 		<form @submit.prevent=submit>
-			<button.save type="submit" disabled=(saving or !valid?) aria-label=(saving ? 'Сохраняем правило' : 'Сохранить правило')>
+			<button.save type="submit" disabled=(saving or !valid?) aria-label=(saving ? t('Сохраняем правило') : t('Сохранить правило'))>
 				<outpost-icon name=(saving ? 'spinner-gap' : 'floppy-disk')>
 			<span.number>
 				index
-				<span.mark title="Новое правило">
+				<span.mark title=t('Новое правило')>
 			<div.field>
 				<outpost-icon name=routeIcons[matcher]>
-				<input bind=value placeholder=selected.placeholder aria-label=selected.label autofocus>
+				<input bind=value placeholder=t(selected.placeholder) aria-label=t(selected.label) autofocus>
 			<outpost-matcher-picker value=matcher change=(do(next) matcher = next)>
 			<outpost-action-picker value=action change=(do(next) action = next)>
-			<button.remove type="button" @click=close aria-label="Удалить новое правило">
+			<button.remove type="button" disabled=saving @click=close aria-label=t('Удалить новое правило')>
 				<outpost-icon name="trash">
 			if error
-				<div.error><outpost-icon name="warning-circle">; <span> error
+				<div.error role="alert">
+					<outpost-icon name="warning-circle">
+					<span> error
 
 	css self
 		position:relative
@@ -191,8 +202,9 @@ tag outpost-route-create
 			@hover bgc:var(--outpost-auth-start)
 			@disabled o:.45 cur:not-allowed
 		.save outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
-		.error grid-column:3 / -1 d:flex ai:center g:7px mt:-1px c:red6 fs:11px
-		.error outpost-icon fs:15px
+		.error gc:3/-1 d:flex ai:flex-start g:7px p:8px 10px bd:1px solid red2 rd:8px bgc:red1 c:red7 fs:12px lh:1.4
+		.error outpost-icon fl:0 0 auto mt:1px fs:15px
+		.error span miw:0
 		@media(max-width: 760px)
 			grid-template-columns:22px 32px minmax(0, 1fr) 34px
 			g:7px
@@ -203,32 +215,32 @@ tag outpost-route-create
 			outpost-matcher-picker grid-column:3; grid-row:2; mt:7px
 			outpost-action-picker grid-column:3; grid-row:3; w:152px; mt:7px
 			.remove grid-column:4; grid-row:1 / 4
-			.error grid-column:3 / -1
+			.error gc:3/-1
 		@media(prefers-reduced-motion: reduce)
 			ease:1ms linear
 
 tag outpost-route-system
+	routes = null
 	rules = []
 	changed = false
-	update = null
 
 	get action
 		rules[0] and rules[0].action or 'DIRECT'
 
 	def change value
-		update(rules[0].id, {action: value}) if update and rules[0]
+		routes.update(rules[0].id, {action: value}) if routes and rules[0]
 
 	<self.system-route .changed=changed>
-		<span.pin title="Системное правило закреплено"><outpost-icon name="lock-key">
+		<span.pin title=t('Системное правило закреплено')><outpost-icon name="lock-key">
 		<span.number>
 			'1'
 			if changed
-				<span.mark title="Неопубликованное изменение">
+				<span.mark title=t('Неопубликованное изменение')>
 		<div.rule>
 			<outpost-icon name="network">
 			<div>
-				<strong> 'Локальная сеть'
-				<small> 'Системное правило · 3 частных диапазона'
+				<strong> t('Локальная сеть')
+				<small> t('Системное правило · 3 частных диапазона')
 		<span.kind> 'IP / CIDR × 3'
 		<outpost-action-picker value=action change=change>
 
@@ -274,21 +286,20 @@ tag outpost-route-row
 	exception = null
 	drag = null
 	over = null
-	remove = null
-	update = null
+	busy = false
 
 	def icon
 		return 'infinity' if rule.matcher == 'SUFFIX' and rule.value == '*'
 		routeIcons[rule.matcher] or 'globe-hemisphere-west'
 
 	def label
-		return 'Всё остальное' if rule.matcher == 'SUFFIX' and rule.value == '*'
+		return t('Всё остальное') if rule.matcher == 'SUFFIX' and rule.value == '*'
 		fmt.matcher(rule.matcher)
 
 	def note
-		return 'Последнее правило · действие можно изменить' if fixed?
-		return 'Системное правило · действие можно изменить' if rule.source == 'system'
-		'Пользовательское правило'
+		return t('Последнее правило · действие можно изменить') if fixed?
+		return t('Системное правило · действие можно изменить') if rule.source == 'system'
+		t('Пользовательское правило')
 
 	get fixed?
 		rule.matcher == 'SUFFIX' and rule.value == '*'
@@ -301,29 +312,32 @@ tag outpost-route-row
 			e.preventDefault!
 			routes.step(rule, 1)
 
-	<self.route-row .system=rule.locked .changed=changed .hinting=hinting .dragging=(drag == rule.id) .over=(over == rule.id and drag != rule.id) data-id=rule.id>
-		<button.handle type="button" disabled=rule.locked @touch.moved(5px,'y')=routes.touch(rule,e) @keydown=key aria-label=(rule.locked ? 'Системное правило закреплено' : 'Перетащить правило. Стрелки вверх и вниз меняют порядок')>
+	<self.route-row .system=rule.locked .changed=changed .hinting=hinting .busy=busy .dragging=(drag == rule.id) .over=(over == rule.id and drag != rule.id) data-id=rule.id aria-busy=busy>
+		<button.handle type="button" disabled=rule.locked @touch.moved(5px,'y')=routes.touch(rule,e) @keydown=key aria-label=(rule.locked ? t('Системное правило закреплено') : t('Перетащить правило. Стрелки вверх и вниз меняют порядок'))>
 			<outpost-icon name=(rule.locked ? 'lock-key' : 'dots-six-vertical')>
 		<span.number>
 			index + 1
 			if changed
-				<span.mark title="Неопубликованное изменение">
+				<span.mark title=t('Неопубликованное изменение')>
 		<div.rule>
 			<outpost-icon name=icon!>
 			<div>
-				<strong> fixed? ? 'Всё остальное' : rule.value
+				if fixed?
+					<strong> t('Всё остальное')
+				else
+					<strong.technical> rule.value
 				<small> note!
 			if exception
 				<span.marker tabindex="0" aria-describedby="hint-{rule.id}" @mouseenter=(hinting = true) @mouseleave=(hinting = false) @focus=(hinting = true) @blur=(hinting = false)>
 					<outpost-icon name="info">
 					<span.hint id="hint-{rule.id}" role="tooltip">
-						<strong> "Исключение для {exception.rule.value} · правило {exception.index + 1}"
-						<span> "Проверяется раньше, поэтому идёт {fmt.action(rule.action).toLowerCase!}."
+						<strong> t('Исключение для {value} · правило {index}', {value: exception.rule.value, index: exception.index + 1})
+						<span> t('Проверяется раньше, поэтому применяется действие «{action}».', {action: fmt.action(rule.action).toLowerCase!})
 		<span.kind> fixed? ? '' : label!
-		<outpost-action-picker value=rule.action change=(do(value) update(rule.id, {action: value}))>
+		<outpost-action-picker value=rule.action change=(do(value) routes.update(rule.id, {action: value}))>
 		if !rule.locked
-			<button.remove type="button" @click.stop=remove(rule.id) aria-label="Удалить правило">
-				<outpost-icon name="trash">
+			<button.remove type="button" disabled=busy @click.stop=routes.drop(rule.id) aria-label=t('Удалить правило')>
+				<outpost-icon name=(busy ? 'spinner-gap' : 'trash')>
 
 	css self
 		min-height: 74px
@@ -342,6 +356,7 @@ tag outpost-route-row
 		&.hinting z-index: 20
 		&.dragging z-index:5; background:#F8FBFF; box-shadow:inset 3px 0 0 #0B56D9; opacity:.78
 		&.over box-shadow: inset 0 2px 0 #0B56D9
+		&.busy opacity:.62
 		.handle, .remove
 			width: 32px
 			height: 32px
@@ -364,6 +379,8 @@ tag outpost-route-row
 				cursor: default
 				background: transparent
 				color: #B6BFCE
+		.remove@disabled cur:wait
+		.remove outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
 		.number
 			width: 32px
 			height: 32px
@@ -459,8 +476,8 @@ tag outpost-route-modes
 			<button.guide-head type="button" @click=toggle('basics') aria-expanded=basics>
 				<span.guide-icon><outpost-icon name="info">
 				<span.guide-label>
-					<strong> 'Как работают правила'
-					<small> 'Что выбирает правило, почему важен порядок и откуда берутся GeoSite и GeoIP'
+					<strong> t('Как работают правила')
+					<small> t('Что выбирает правило, почему важен порядок и откуда берутся GeoSite и GeoIP')
 				<outpost-icon.chevron name="caret-down">
 			<div.guide-body .open=basics>
 				<div.guide-content>
@@ -469,28 +486,28 @@ tag outpost-route-modes
 							<section.concept>
 								<span.step> '1'
 								<div>
-									<h3> 'Условие и действие'
-									<p> 'Правило находит трафик по домену, IP-адресу, сети или геонабору. Затем оно выбирает действие: отправить соединение напрямую, через прокси или полностью заблокировать.'
-									<small> 'Пример: example.com → Прокси'
+									<h3> t('Условие и действие')
+									<p> t('Правило находит трафик по домену, IP-адресу, сети или геонабору. Затем оно выбирает действие: отправить соединение напрямую, через прокси или полностью заблокировать.')
+									<small> t('Пример: example.com → Прокси')
 							<section.concept>
 								<span.step> '2'
 								<div>
-									<h3> 'Проверка сверху вниз'
-									<p> 'Применяется первое подходящее правило. Поэтому точное исключение ставят выше широкого: например, apple.com — напрямую, а всё остальное отправляют через прокси.'
-									<small> 'Приоритет правил: сверху вниз'
+									<h3> t('Проверка сверху вниз')
+									<p> t('Применяется первое подходящее правило. Поэтому точное исключение ставят выше широкого: например, apple.com — напрямую, а всё остальное отправляют через прокси.')
+									<small> t('Приоритет правил: сверху вниз')
 							<section.concept>
 								<span.step> '3'
 								<div>
-									<h3> 'GeoSite и GeoIP'
-									<p> 'GeoSite — готовый набор доменов сервиса или категории, GeoIP — набор диапазонов IP страны. В правиле хранится имя набора, а его состав берётся из geo-базы приложения.'
-									<small> 'Пример: GeoSite google · GeoIP ru'
-						<p.delivery> 'Outpost передаёт ссылку на геонабор, а не разворачивает его сам. Поэтому точный состав GeoSite и GeoIP зависит от базы и версии приложения.'
+									<h3> t('GeoSite и GeoIP')
+									<p> t('GeoSite — готовый набор доменов сервиса или категории, GeoIP — набор диапазонов IP страны. Указывайте только код набора, без префиксов domain: или geosite:.')
+									<small> t('Пример: GeoSite google · GeoIP ru · весь .ru: суффикс ru')
+						<p.delivery> t('Outpost передаёт ссылку на геонабор, а не разворачивает его сам. Поэтому точный состав GeoSite и GeoIP зависит от базы и версии приложения.')
 		<section.guide .expanded=clients>
 			<button.guide-head type="button" @click=toggle('clients') aria-expanded=clients>
 				<span.guide-icon><outpost-icon name="devices">
 				<span.guide-label>
-					<strong> 'Правила в клиентских приложениях'
-					<small> 'Почему один опубликованный список может выглядеть по-разному'
+					<strong> t('Правила в клиентских приложениях')
+					<small> t('Почему один опубликованный список может выглядеть по-разному')
 				<outpost-icon.chevron name="caret-down">
 			<div.guide-body .open=clients>
 				<div.guide-content>
@@ -498,19 +515,19 @@ tag outpost-route-modes
 						<div.modes>
 							<section.mode.exact>
 								<div.mode-head>
-									<strong> 'Последовательные правила'
-									<span> 'Основной формат'
-								<p.clients> 'Один список · условие и действие'
-								<p.summary> 'Приложение читает один общий список сверху вниз. Каждое правило сразу содержит действие, поэтому порядок, приоритет и точные исключения сохраняются полностью.'
-								<small.example> 'Например: Mihomo в Everywhere'
+									<strong> t('Последовательные правила')
+									<span> t('Основной формат')
+								<p.clients> t('Один список · условие и действие')
+								<p.summary> t('Приложение читает один общий список сверху вниз. Каждое правило сразу содержит действие, поэтому порядок, приоритет и точные исключения сохраняются полностью.')
+								<small.example> t('Например: Mihomo в Everywhere')
 							<section.mode.grouped>
 								<div.mode-head>
-									<strong> 'Правила по группам'
-									<span> 'Адаптация'
-								<p.clients> 'Три группы · по типу действия'
-								<p.summary> 'Приложение ожидает не общий список, а три отдельные группы: «Напрямую», «Прокси» и «Блокировать». Outpost раскладывает каждое правило в группу его действия.'
-								<small.example> 'Например: INCY'
-						<p.delivery> 'После публикации Outpost выбирает подходящий формат при выдаче подписки. Настраивать отдельные наборы правил для разных приложений не нужно.'
+									<strong> t('Правила по группам')
+									<span> t('Адаптация')
+								<p.clients> t('Три группы · по типу действия')
+								<p.summary> t('Приложение ожидает не общий список, а три отдельные группы: «Напрямую», «Прокси» и «Блокировать». Outpost раскладывает каждое правило в группу его действия.')
+								<small.example> t('Например: INCY')
+						<p.delivery> t('После публикации Outpost выбирает подходящий формат при выдаче подписки. Настраивать отдельные наборы правил для разных приложений не нужно.')
 
 	css self
 		d:grid g:12px
@@ -568,6 +585,8 @@ tag outpost-routes
 	saving = false
 	publishing = false
 	discarding = false
+	error = null
+	removing = new Set
 
 	get baseline
 		store.data.routes.published and store.data.routes.published.rules or []
@@ -588,7 +607,7 @@ tag outpost-routes
 		store.data.routes.dirty
 
 	get busy?
-		saving or publishing or discarding
+		saving or publishing or discarding or removing.size > 0
 
 	get publishable?
 		dirty? and !busy?
@@ -612,27 +631,48 @@ tag outpost-routes
 	def publish
 		return unless publishable?
 		publishing = true
+		error = null
 		try
 			await store.mutate('POST', '/api/v1/routes/publish', {note: ''})
+		catch issue
+			error = issue.message
 		finally
 			publishing = false
 
 	def discard
 		return unless undoable?
 		discarding = true
+		error = null
 		try
 			await store.mutate('POST', '/api/v1/routes/discard')
+		catch issue
+			error = issue.message
 		finally
 			discarding = false
 
-	def remove id
-		await store.mutate('DELETE', "/api/v1/routes/{id}")
+	def drop id
+		return if removing.has(id)
+		removing.add(id)
+		error = null
+		imba.commit!
+		try
+			await store.mutate('DELETE', "/api/v1/routes/{id}")
+		catch issue
+			error = issue.message
+		finally
+			removing.delete(id)
+			imba.commit!
 
 	def update id, patch
-		await store.mutate('PATCH', "/api/v1/routes/{id}", patch)
+		error = null
+		try
+			await store.mutate('PATCH', "/api/v1/routes/{id}", patch)
+		catch issue
+			error = issue.message
 
 	def add
 		creating = true
+		error = null
 		store.error = null
 		imba.commit!
 
@@ -643,6 +683,7 @@ tag outpost-routes
 
 	def created
 		creating = false
+		error = null
 		imba.commit!
 
 	def fixed rule
@@ -739,10 +780,12 @@ tag outpost-routes
 	def persist
 		return if saving
 		saving = true
+		error = null
 		try
 			const ids = store.data.routes.draft.map do(rule) rule.id
 			await store.mutate('POST', '/api/v1/routes/reorder', {ids: ids})
 		catch issue
+			error = issue.message
 			await store.load!
 		finally
 			saving = false
@@ -770,35 +813,42 @@ tag outpost-routes
 
 	<self>
 		<div.route-top>
-			<span.eyebrow> 'УПРАВЛЕНИЕ ТРАФИКОМ'
-			<outpost-header title=t('routes.title') subtitle="Один порядок правил — сервер подберёт формат при запросе подписки">
+			<span.eyebrow> t('УПРАВЛЕНИЕ ТРАФИКОМ')
+			<outpost-header title=t('routes.title') subtitle=t('Один порядок правил — сервер подберёт формат при запросе подписки')>
 		<section.rule-card.outpost-card>
 			<header.card-head>
 				<div>
-					<h2> 'Порядок правил'
-					<p> 'Правила применяются сверху вниз. Перетаскивайте их, чтобы изменить приоритет.'
+					<h2> t('Порядок правил')
+					<p> t('Правила применяются сверху вниз. Перетаскивайте их, чтобы изменить приоритет.')
 				<button.outpost-button.secondary.small type="button" disabled=creating @click=add>
 					<outpost-icon name="plus">
 					<span> t('routes.add')
 			if locals.length
-				<outpost-route-system rules=locals changed=grouped? update=update>
+				<outpost-route-system routes=self rules=locals changed=grouped?>
 			if creating
 				<outpost-route-create key="new-route" store=store routes=self index=2>
 			for rule in shown
-				<outpost-route-row key=rule.id routes=self rule=rule index=slot(rule) changed=changed(rule) exception=exception(rule,position(rule)) drag=drag over=over remove=remove update=update>
+				<outpost-route-row key=rule.id routes=self rule=rule index=slot(rule) changed=changed(rule) exception=exception(rule,position(rule)) drag=drag over=over busy=removing.has(rule.id)>
+			if error
+				<div.route-error role="alert">
+					<outpost-icon name="warning-circle">
+					<div>
+						<strong> t('Проверьте правила')
+						<span> error
+					<button type="button" @click=(do error = null) aria-label=t('Закрыть сообщение')><outpost-icon name="x">
 			<div.rule-footer .dirty=dirty?>
 				<div.change-state>
 					<span.state-icon><outpost-icon name=(dirty? ? 'pencil-simple' : 'check-circle')>
 					<div>
-						<strong> dirty? ? "Изменено правил: {changes}" : 'Изменений нет'
-						<small> dirty? ? 'Синие точки показывают, что изменится после публикации.' : 'Все текущие правила уже опубликованы.'
+						<strong> dirty? ? t('Изменено правил: {count}', {count: changes}) : t('Изменений нет')
+						<small> dirty? ? t('Синие точки показывают, что изменится после публикации.') : t('Все текущие правила уже опубликованы.')
 				<div.footer-actions>
 					<button.outpost-button.quiet type="button" disabled=!undoable? @click=discard>
 						<outpost-icon name=(discarding ? 'spinner-gap' : 'arrow-counter-clockwise')>
-						<span> discarding ? 'Отменяем…' : 'Отменить изменения'
+						<span> discarding ? t('Отменяем…') : t('Отменить изменения')
 					<button.outpost-button type="button" disabled=!publishable? @click=publish>
 						<outpost-icon name=(publishing ? 'spinner-gap' : 'upload-simple')>
-						<span> publishing ? 'Публикуем…' : t('action.publish')
+						<span> publishing ? t('Публикуем…') : t('action.publish')
 		<outpost-route-modes>
 
 	css self
@@ -813,6 +863,13 @@ tag outpost-routes
 			h2 color: #17213D; font-size: 18px
 			.card-head p margin-top: 10px; color: #71809D; font-size: 13px
 		.rule-footer d:flex ai:center jc:space-between g:18px p:16px 18px border-top:1px solid var(--outpost-line)
+		.route-error d:grid gtc:20px minmax(0, 1fr) 30px ai:center g:10px p:12px 18px border-top:1px solid red2 bgc:red1 c:red7 fs:12px
+		.route-error > outpost-icon fs:18px
+		.route-error strong, .route-error span d:block
+		.route-error strong fw:750
+		.route-error span mt:3px lh:1.4
+		.route-error button s:30px d:grid ja:center p:0 bd:0 rd:8px bgc:transparent c:red7 cur:pointer
+		.route-error button bgc@hover:red2
 		.change-state d:grid gtc:38px minmax(0, 1fr) ai:center g:11px
 		.state-icon s:38px d:grid ja:center rd:10px bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:19px
 		.rule-footer.dirty .state-icon bgc:var(--outpost-auth-start) c:var(--outpost-brand)

@@ -18,7 +18,7 @@ describe("typed journal", () => {
     expect(connectionColumns).toContain("activated_at");
     expect(connectionColumns).toContain("generation");
     expect(connectionColumns).not.toContain("platform");
-    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count).toBe(1);
+    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count).toBe(2);
   });
 
   test("links a typed event to audit details and redacts secrets", () => {
@@ -74,7 +74,7 @@ describe("typed journal", () => {
     app.journal.record("connection.created", { occurredAt: future(1), data: { connectionName: "Мама" } });
     app.journal.record("routes.published", { occurredAt: future(2), data: { version: 4, rulesCount: 8 } });
     app.journal.record("backup.failed", { occurredAt: future(3) });
-    const headers = { authorization: `Bearer ${token}` };
+    const headers = { authorization: `Bearer ${token}`, "x-outpost-language": "ru" };
 
     const firstResponse = await app.fetch(new Request("http://localhost/api/v1/system/events?scope=all&limit=1", { headers }));
     const first = await firstResponse.json() as { events: Array<{ id: number; type: string }>; total: number; next: number | null };
@@ -112,4 +112,25 @@ describe("typed journal", () => {
     expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM connection_presence").get()?.count).toBeGreaterThan(0);
     expect(app.connections.list().every((connection) => Boolean(connection.presence))).toBeTrue();
   }, 15_000);
+
+  test("renders and searches semantic events in every non-Russian locale", () => {
+    const journal = new JournalService(fixture.db);
+    journal.record("backup.created", { actor: "system" });
+    journal.record("routes.published", { actor: "owner", data: { version: 7, rulesCount: 12 } });
+
+    expect(journal.list({ language: "en", q: "revision" }).events[0]).toMatchObject({
+      type: "routes.published",
+      title: "Route revision #7 published",
+      actor: { label: "Owner" },
+    });
+    expect(journal.list({ language: "zh-CN", q: "备份" }).events[0]).toMatchObject({
+      type: "backup.created",
+      title: "已创建备份",
+    });
+    expect(journal.list({ language: "fa", q: "پشتیبان" }).events[0]).toMatchObject({
+      type: "backup.created",
+      title: "نسخهٔ پشتیبان ایجاد شد",
+      actor: { label: "سیستم" },
+    });
+  });
 });

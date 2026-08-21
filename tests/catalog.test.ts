@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { catalog, catalogVersion, detectPlatform, renderCatalogPage } from "../src/server/adapters/catalog";
+import {
+  advanced,
+  applications,
+  catalog,
+  catalogVersion,
+  detectPlatform,
+  renderCatalogPage,
+} from "../src/server/adapters/catalog";
+import type { Locale } from "../src/shared/i18n";
 import type { Connection } from "../src/server/models";
 
 const connection: Connection = {
@@ -8,31 +16,63 @@ const connection: Connection = {
   first_seen_at: null, last_seen_at: null, absence_notified_at: null, archived_at: null,
 };
 
+const baseUrl = "https://proxy.example/s/token";
+const locales: Locale[] = ["ru", "en", "zh-CN", "fa"];
+
 describe("versioned application catalog", () => {
-  test("contains the supported Mihomo, sing-box and Xray applications", () => {
-    const apps = catalog("https://proxy.example/s/token");
-    expect(catalogVersion).toBe(2);
-    const names = apps.map((app) => app.name);
-    for (const name of [
-      "Everywhere Proxy", "Clash Verge Rev", "FlClash", "sing-box",
-      "INCY", "v2rayN", "v2rayNG", "Happ", "Streisand",
-    ]) expect(names).toContain(name);
-    expect(new Set(apps.map((app) => app.technology))).toEqual(new Set(["Mihomo", "sing-box", "Xray"]));
-    expect(apps.every((app) => app.subscriptionUrl.includes(`?format=${app.format}`))).toBeTrue();
+  test("catalog v3 is complete and every application has explicit pricing", () => {
+    expect(catalogVersion).toBe(3);
+    expect(new Set(applications.map((app) => app.id)).size).toBe(applications.length);
+    for (const app of applications) {
+      expect(app.platforms.length).toBeGreaterThan(0);
+      expect(app.transports.length).toBeGreaterThan(0);
+      expect(["free", "freemium", "paid"]).toContain(app.pricing.model);
+      expect(["none", "optional", "one-time", "subscription"]).toContain(app.pricing.billing);
+      expect(app.pricing.sourceUrl).toStartWith("https://");
+      expect(app.pricing.verifiedAt).toBe("2026-08-21");
+      expect(["automatic", "manual"]).toContain(app.updateMode);
+      expect(["exact", "limited"]).toContain(app.routeFidelity);
+      for (const platform of app.platforms) expect(app.installUrls[platform]).toStartWith("https://");
+    }
+    expect(applications.find((app) => app.id === "stash")?.pricing).toMatchObject({ model: "paid", billing: "one-time" });
+  });
+
+  test("uses the requested three primary applications on every operating system", () => {
+    const expected = {
+      ios: ["everywhere", "incy", "stash"],
+      macos: ["everywhere", "clash-verge", "clash-party"],
+      android: ["clash-meta", "flclash", "happ"],
+      windows: ["clash-verge", "clash-party", "happ"],
+      linux: ["clash-verge", "clash-party", "happ"],
+    } as const;
+    for (const [platform, ids] of Object.entries(expected)) {
+      const apps = catalog(baseUrl, platform);
+      expect(apps.filter((app) => app.primaryFor.includes(platform as never)).map((app) => app.id)).toEqual([...ids]);
+      expect(apps.slice(0, 3).map((app) => app.id)).toEqual([...ids]);
+    }
+  });
+
+  test("exposes stable app profiles, lazy QR and only verified deep links", () => {
+    const apps = catalog(baseUrl);
+    expect(apps.every((app) => app.profileUrl === `${baseUrl}/apps/${app.id}`)).toBeTrue();
+    expect(apps.every((app) => app.qrUrl === `${baseUrl}/qr/${app.id}.svg`)).toBeTrue();
+    expect(apps.every((app) => !app.profileUrl.includes("?format="))).toBeTrue();
+    expect(apps.find((app) => app.id === "everywhere")?.openUrl).toBeNull();
+    expect(apps.find((app) => app.id === "happ")?.openUrl).toBeNull();
+    expect(apps.find((app) => app.id === "stash")?.openUrl).toStartWith("stash://");
+    expect(apps.find((app) => app.id === "clash-verge")?.openUrl).toStartWith("clash://");
     expect(apps.every((app) => app.icon.startsWith("/assets/apps/"))).toBeTrue();
   });
 
-  test("platform filters applications and resolves the right install source", () => {
-    const ios = catalog("https://proxy.example/s/token", "ios");
-    const macos = catalog("https://proxy.example/s/token", "macos");
-    const linux = catalog("https://proxy.example/s/token", "linux");
-    expect(ios.map((app) => app.id)).toEqual(["everywhere", "incy", "happ", "streisand"]);
-    expect(ios.some((app) => app.id === "flclash")).toBeFalse();
-    expect(macos.some((app) => app.id === "v2rayn")).toBeTrue();
-    expect(linux.some((app) => app.id === "streisand")).toBeFalse();
-    expect(ios.find((app) => app.id === "incy")?.importUrl).toContain("?format=links");
-    expect(ios.find((app) => app.id === "happ")?.installUrl).toContain("apps.apple.com");
-    expect(linux.find((app) => app.id === "happ")?.installUrl).toContain("github.com/Happ-proxy");
+  test("all application and advanced labels exist in four locales", () => {
+    for (const locale of locales) {
+      const apps = catalog(baseUrl, undefined, locale);
+      expect(apps).toHaveLength(applications.length);
+      expect(apps.every((app) => app.description.length > 0)).toBeTrue();
+      const raw = advanced(baseUrl, locale);
+      expect(raw).toHaveLength(4);
+      expect(raw.every((item) => item.name && item.description && item.profileUrl)).toBeTrue();
+    }
   });
 
   test("detects desktop and mobile operating systems", () => {
@@ -43,35 +83,66 @@ describe("versioned application catalog", () => {
     expect(detectPlatform("Mozilla/5.0 (X11; Linux x86_64)")).toBe("linux");
   });
 
-  test("browser catalog is responsive, platform-aware and does not expose the connection name", () => {
-    const html = renderCatalogPage(connection, "https://proxy.example/s/token", "ios");
-    expect(html).toContain("Настройка подключения");
-    expect(html).toContain("Выберите своё устройство");
+  test("browser catalog is responsive, app-oriented and does not expose the connection name", () => {
+    const html = renderCatalogPage(connection, baseUrl, "ios", "ru");
+    expect(html).toContain("Подключите своё устройство");
+    expect(html).toContain("Способ обновления маршрутов виден сразу");
     expect(html).toContain('data-platform="macos"');
-    expect(html).toContain('data-platform="ios"');
     expect(html).toContain('data-platform-panel="android"');
-    expect(html).toContain("/assets/apps/everywhere.jpg");
-    expect(html).toContain("Где установить");
+    expect(html).toContain('data-app="stash"');
+    expect(html).not.toContain("Бесплатно");
+    expect(html).not.toContain("Посмотреть в магазине");
+    expect(html).not.toContain("Платно · разовая покупка");
+    expect(html).toContain("Скопировать ссылку");
+    expect(html).toContain("Открыть QR-код");
+    expect(html).toContain(`${baseUrl}/apps/everywhere`);
+    expect(html).toContain(`${baseUrl}/qr/everywhere.svg`);
+    expect(html).toContain("Для опытных");
     expect(html).toContain("@media(max-width:640px)");
-    expect(html).toContain('rel="noreferrer"');
+    expect(html).not.toContain("?format=");
     expect(html).not.toContain("Мама");
-    expect(html).not.toContain("FoXray");
-    expect(html).not.toContain("v2RayTun");
+    expect(html).not.toContain("Streisand");
   });
 
-  test("admin creation flow has no application selector or invitation step", async () => {
+  test("renders Persian RTL while app names, profiles and transports stay technical", () => {
+    const html = renderCatalogPage(connection, baseUrl, "android", "fa");
+    expect(html).toContain('<html lang="fa" dir="rtl">');
+    expect(html).toContain("دستگاه خود را متصل کنید");
+    expect(html).toContain("sing-box");
+    expect(html).toContain('data-app="sing-box-android"');
+    expect(html).toContain(`${baseUrl}/qr/sing-box-android.svg`);
+    expect(html).toContain("direction:ltr;unicode-bidi:isolate");
+    expect(html).toContain("Русский");
+    expect(html).toContain("简体中文");
+  });
+
+  test("admin connection dialog uses the same flat application model", async () => {
     const source = await Bun.file(new URL("../src/web/dialogs.imba", import.meta.url)).text();
-    expect(source).not.toContain("client-grid");
-    expect(source).not.toContain("store.invitation");
-    expect(source).not.toContain("приглаш");
-    expect(source).toContain('"/api/v1/connections/{current.id}/retry"');
-    expect(source).toContain("connection.subscription.qrDataUrl");
-    expect(source).toContain("for item in technologies");
-    expect(source).toContain("Конкретный формат");
-    expect(source).toContain("for item in variants");
-    expect(source).not.toContain("Какое это устройство?");
-    expect(source).not.toContain("Добавить в приложение");
-    expect(source).not.toContain("/api/v1/accesses");
-    expect(source).toContain("@media(max-width: 560px)");
+    expect(source).toContain("connection.applications.filter");
+    expect(source).toContain("connection.subscription.qrUrl");
+    expect(source).toContain("for item in primary");
+    expect(source).toContain("for item in secondary");
+    expect(source).toContain("<nav.connect-tabs");
+    expect(source).toContain("<div.link-options>");
+    expect(source).not.toContain("<div.usage-or>");
+    expect(source).toContain("t('connect.reset_confirm')");
+    expect(source).toContain("t('connect.reset')");
+    expect(source).not.toContain("t('Перевыпустить ссылку')");
+    expect(source).toContain("<div.app-strip");
+    expect(source).toContain("<button.connect-tab.expert");
+    expect(source).toContain("<div.expert-screen>");
+    expect(source).not.toContain("<details.expert-tab>");
+    expect(source).not.toContain("<div.expert-popover>");
+    expect(source).toContain("<button.profile-copy-link");
+    expect(source).toContain("t('action.copy')");
+    expect(source).not.toContain("<a.install-link href=install");
+    expect(source).toContain("<a.app-source-link href=install");
+    expect(source).toContain("<details.device-actions>");
+    expect(source).toContain("<a.browser-preview href=connection.subscription.url");
+    expect(source).not.toContain("<nav.connect-menu");
+    expect(source).not.toContain("for item in technologies");
+    expect(source).not.toContain("for item in variants");
+    expect(source).not.toContain("connection.subscription.formats");
+    expect(source).not.toContain("qrDataUrl");
   });
 });

@@ -1,3 +1,5 @@
+import {intl, t} from './i18n.imba'
+
 const avatarCatalog = [
 	{id: 'avatar-current', sex: 'male', age: 'young', glasses: true, facial: 'none', hair: 'hair'}
 	{id: 'avatar-1', sex: 'male', age: 'young', glasses: false, facial: 'none', hair: 'hair'}
@@ -290,47 +292,47 @@ tag outpost-avatar-picker
 		change(item.id) if change and !busy
 
 	def description item
-		const sexLabel = item.sex == 'male' ? 'Мужчина' : 'Женщина'
-		const glassesLabel = item.glasses ? 'в очках' : 'без очков'
-		"{sexLabel}, {labels[item.age]}, {glassesLabel}"
+		const sexLabel = item.sex == 'male' ? t('Мужчина') : t('Женщина')
+		const glassesLabel = item.glasses ? t('в очках') : t('без очков')
+		"{sexLabel}, {t(labels[item.age])}, {glassesLabel}"
 
 	<self .compact=compact>
 		<div.picker-layout>
-			<div.filters aria-label="Фильтры аватаров">
+			<div.filters aria-label=t('Фильтры аватаров')>
 				<div.filter-row>
-					<strong> 'Пол'
+					<strong> t('Пол')
 					<div.chips>
 						for option in filters.sex
-							<button type="button" .active=(sex == option.id) aria-pressed=(sex == option.id) @click=(do set('sex', option.id))> option.label
+							<button type="button" .active=(sex == option.id) aria-pressed=(sex == option.id) @click=(do set('sex', option.id))> t(option.label)
 				<div.filter-row>
-					<strong> 'Возраст'
+					<strong> t('Возраст')
 					<div.chips>
 						for option in filters.age
-							<button type="button" .active=(age == option.id) aria-pressed=(age == option.id) @click=(do set('age', option.id))> option.label
+							<button type="button" .active=(age == option.id) aria-pressed=(age == option.id) @click=(do set('age', option.id))> t(option.label)
 				<div.filter-row>
-					<strong> 'Очки'
+					<strong> t('Очки')
 					<div.chips>
 						for option in filters.glasses
-							<button type="button" .active=(glasses == option.id) aria-pressed=(glasses == option.id) @click=(do set('glasses', option.id))> option.label
+							<button type="button" .active=(glasses == option.id) aria-pressed=(glasses == option.id) @click=(do set('glasses', option.id))> t(option.label)
 				if sex == 'male'
 					<div.filter-row.male-filter>
-						<strong> 'Растительность'
+						<strong> t('Растительность')
 						<div.chips>
 							for option in filters.facial
-								<button type="button" .active=(facial == option.id) aria-pressed=(facial == option.id) @click=(do set('facial', option.id))> option.label
+								<button type="button" .active=(facial == option.id) aria-pressed=(facial == option.id) @click=(do set('facial', option.id))> t(option.label)
 					<div.filter-row.male-filter>
-						<strong> 'Волосы'
+						<strong> t('Волосы')
 						<div.chips>
 							for option in filters.hair
-								<button type="button" .active=(hair == option.id) aria-pressed=(hair == option.id) @click=(do set('hair', option.id))> option.label
+								<button type="button" .active=(hair == option.id) aria-pressed=(hair == option.id) @click=(do set('hair', option.id))> t(option.label)
 			<div.results>
 				<div.results-head>
-					<strong> "Подходят: {filtered.length}"
+					<strong> t('Подходят: {count}', {count: new Intl.NumberFormat(intl!).format(filtered.length)})
 					if sex == 'all'
-						<span> 'Выберите пол, чтобы открыть дополнительные признаки'
-				<div.avatar-grid role="listbox" aria-label="Аватары подключения">
+						<span> t('Выберите пол, чтобы открыть дополнительные признаки')
+				<div.avatar-grid role="listbox" aria-label=t('Аватары подключения')>
 					for item in choices
-						<button type="button" role="option" aria-selected=(item.id == value) .selected=(item.id == value) disabled=busy @click=(do choose(item)) aria-label=(item.label or description(item))>
+						<button type="button" role="option" aria-selected=(item.id == value) .selected=(item.id == value) disabled=busy @click=(do choose(item)) aria-label=(item.label ? t(item.label) : description(item))>
 							<img src=avatarUrl(item.id) alt="">
 							<span><outpost-icon name="check">
 

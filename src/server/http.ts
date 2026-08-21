@@ -4,7 +4,15 @@ import { config } from "./config";
 import type { OutpostDatabase } from "./db/database";
 import { AuthService } from "./auth/webauthn";
 import { renderLinkRoutes, renderers } from "./adapters/subscriptions";
-import { catalog, catalogVersion, detectPlatform, renderCatalogPage } from "./adapters/catalog";
+import {
+  advanced,
+  advancedDefinition,
+  application,
+  catalog,
+  catalogVersion,
+  detectPlatform,
+  renderCatalogPage,
+} from "./adapters/catalog";
 import { ConnectionService, ServiceError } from "./services/connections";
 import { RouteService } from "./services/routes";
 import { TrafficService, configuredCollectors, type TrafficPeriod } from "./services/traffic";
@@ -18,8 +26,11 @@ import { MonitoringService, prepareSetupMonitoring } from "./services/monitoring
 import { ConnectionSyncService } from "./services/connection-sync";
 import { SetupService } from "./services/setup";
 import { RuleSetService } from "./services/rulesets";
+import { DashboardEvents, type DashboardReason } from "./services/dashboard-events";
+import { metadata, type Locale } from "../shared/i18n";
+import { errorCode, languageCookie, localize, localizePresentation, requestLanguage } from "./i18n";
 
-type Owner = { id: string; timezone: string; scopes?: string[] };
+type Owner = { id: string; timezone: string; language: Locale; scopes?: string[] };
 type Handler = (context: RequestContext) => Response | Promise<Response>;
 
 type RequestContext = {
@@ -27,6 +38,7 @@ type RequestContext = {
   url: URL;
   params: Record<string, string>;
   owner: Owner | null;
+  language: Locale;
   json<T = unknown>(): Promise<T>;
 };
 
@@ -46,6 +58,7 @@ export class HttpApplication {
   readonly connectionSync: ConnectionSyncService;
   readonly setup: SetupService;
   readonly rulesets: RuleSetService;
+  readonly dashboardEvents: DashboardEvents;
   private registry: Route[] = [];
 
   constructor(
@@ -53,6 +66,7 @@ export class HttpApplication {
     connectionEngine?: Pick<EngineRuntimeService, "add" | "rotate" | "revoke">,
   ) {
     if (config.setup) prepareSetupMonitoring(db);
+    this.dashboardEvents = new DashboardEvents();
     this.journal = new JournalService(db);
     this.auth = new AuthService(db, this.journal);
     this.setup = new SetupService(this.auth);
@@ -63,23 +77,53 @@ export class HttpApplication {
     this.engines = new EngineRuntimeService(db);
     this.connectionSync = new ConnectionSyncService(db, this.connections, connectionEngine ?? this.engines);
     this.engineConfigs = new EngineConfigService(db, this.journal);
-    this.operations = new OperationService(db, this.journal);
+    this.operations = new OperationService(db, this.journal, undefined, async (connectionId, operationActor) => {
+      const result = await this.connectionSync.rotate(connectionId, operationActor);
+      if (result.state !== "ready") throw new Error(result.error ?? "Не удалось перевыпустить подключение");
+      return { ok: true, connectionId, generation: result.connection.generation };
+    });
     this.system = new SystemService(db, this.journal);
     this.monitoring = new MonitoringService(db, this.journal, undefined, undefined, { setup: config.setup });
+    this.operations.subscribe(() => this.dashboardEvents.publish("operations"));
     this.registerRoutes();
+  }
+
+  async collectTraffic() {
+    await this.traffic.collect();
+    return this.dashboardEvents.publish("traffic");
+  }
+
+  async collectMonitoring() {
+    await this.monitoring.collect();
+    return this.dashboardEvents.publish("monitoring");
+  }
+
+  async syncConnections() {
+    const result = await this.connectionSync.drain();
+    if (result.processed) this.dashboardEvents.publish("connections");
+    return result;
+  }
+
+  async refreshRulesets() {
+    const before = JSON.stringify(this.rulesets.state());
+    const after = await this.rulesets.refresh();
+    if (JSON.stringify(after) !== before) this.dashboardEvents.publish("rulesets");
+    return after;
   }
 
   async fetch(request: Request) {
     const url = new URL(request.url);
     const requestId = crypto.randomUUID();
+    let language = requestLanguage(request, url);
     const previewUrl = canonicalDemoUrl(request, url);
-    if (previewUrl) return secure(Response.redirect(previewUrl, 302), requestId);
+    if (previewUrl) return secure(Response.redirect(previewUrl, 302), requestId, language);
     try {
       const endpoint = this.registry.find((route) => route.method === request.method && route.pattern.test(url));
       if (endpoint) {
         const result = endpoint.pattern.exec(url);
         const params = Object.fromEntries(Object.entries(result?.pathname.groups ?? {}).map(([key, value]) => [key, value ?? ""]));
         const owner = this.auth.authenticate(cookie(request, "outpost_session"), request.headers.get("authorization") ?? undefined);
+        language = requestLanguage(request, url, owner);
         if (!endpoint.public && !owner) throw new ServiceError(401, "Сессия истекла — войдите снова");
         if (!endpoint.public && owner && "scopes" in owner && !authorized(request.method, url.pathname, owner.scopes)) {
           throw new ServiceError(403, "API token не имеет нужного scope");
@@ -89,14 +133,17 @@ export class HttpApplication {
           url,
           params,
           owner,
+          language,
           json: () => readJson(request),
         });
-        return secure(response, requestId);
+        const reason = dashboardMutation(request.method, url.pathname, endpoint.public, response.status);
+        if (reason) this.dashboardEvents.publish(reason);
+        return secure(response, requestId, language);
       }
-      return secure(await this.staticResponse(url), requestId);
+      return secure(await this.staticResponse(request, url, language), requestId, language);
     } catch (error) {
-      const response = errorResponse(error, requestId);
-      return secure(response, requestId);
+      const response = errorResponse(error, requestId, language);
+      return secure(response, requestId, language);
     }
   }
 
@@ -105,7 +152,7 @@ export class HttpApplication {
     this.get("/readyz", true, () => json({ ok: true, database: true }));
 
     this.get("/api/v1/auth/state", true, () => json(this.auth.state()));
-    this.get("/api/v1/setup", true, (ctx) => json(this.setup.state(ctx.url.searchParams.get("bootstrap") ?? undefined)));
+    this.get("/api/v1/setup", true, () => json(this.setup.state()));
     this.post("/api/v1/setup/domain", true, async (ctx) => json(await this.setup.finalize(await ctx.json())));
     this.post("/api/v1/auth/register/options", true, async (ctx) => {
       const body = await ctx.json();
@@ -150,24 +197,31 @@ export class HttpApplication {
     this.get("/api/v1/status", false, () => json(this.system.status()));
     this.get("/api/v1/dashboard", false, async (ctx) => {
       ownerOnly(ctx);
+      const system = localizePresentation(await this.system.state(), ctx.language);
       return json({
+        revision: this.dashboardEvents.revision,
         auth: this.auth.state(),
         connections: publicConnections(this.connections.list()),
         routes: this.routes.state(),
         traffic: this.traffic.overview(period(ctx.url.searchParams.get("period")), ctx.owner?.timezone),
-        system: await this.system.state(),
+        system,
         settings: this.system.settings(),
         engineConfigs: this.engineConfigs.state(),
         tokens: this.auth.apiTokens(),
-        operations: this.operations.list().slice(0, 5),
+        operations: localizePresentation(this.operations.list().slice(0, 5), ctx.language),
+        security: this.auth.security(cookie(ctx.request, "outpost_session")),
       });
+    });
+    this.get("/api/v1/dashboard/events", false, (ctx) => {
+      ownerOnly(ctx);
+      return this.dashboardEventStream();
     });
 
     this.get("/api/v1/connections", false, () => json({ connections: publicConnections(this.connections.list()) }));
     this.post("/api/v1/connections", false, async (ctx) => {
       const created = this.connections.create(await ctx.json(), actor(ctx));
       const state = await this.connectionSync.activate(created.id);
-      return json(await this.connectionResult(state), state.state === "ready" ? 201 : 202);
+      return json(await this.connectionResult(state, ctx.language), state.state === "ready" ? 201 : 202);
     });
     this.get("/api/v1/connections/:id", false, (ctx) => json(publicConnection(this.connections.get(ctx.params.id!))));
     this.patch("/api/v1/connections/:id", false, async (ctx) => {
@@ -175,20 +229,19 @@ export class HttpApplication {
     });
     this.delete("/api/v1/connections/:id", false, async (ctx) => {
       ownerOnly(ctx);
-      return json(await this.connectionResult(await this.connectionSync.archive(ctx.params.id!, actor(ctx))), 202);
+      return json(await this.connectionResult(await this.connectionSync.archive(ctx.params.id!, actor(ctx)), ctx.language), 202);
     });
     this.get("/api/v1/connections/:id/subscription", false, async (ctx) => {
-      ownerOnly(ctx);
-      return json(await this.connectionResult(this.connectionSync.connection(ctx.params.id!)));
+      return json(await this.connectionResult(this.connectionSync.connection(ctx.params.id!), ctx.language));
     });
     this.post("/api/v1/connections/:id/retry", false, async (ctx) => {
       const state = await this.connectionSync.retry(ctx.params.id!);
-      return json(await this.connectionResult(state), state.state === "ready" ? 200 : 202);
+      return json(await this.connectionResult(state, ctx.language), state.state === "ready" ? 200 : 202);
     });
     this.post("/api/v1/connections/:id/rotate", false, async (ctx) => {
       ownerOnly(ctx);
       const state = await this.connectionSync.rotate(ctx.params.id!, actor(ctx));
-      return json(await this.connectionResult(state), state.state === "ready" ? 200 : 202);
+      return json(await this.connectionResult(state, ctx.language), state.state === "ready" ? 200 : 202);
     });
 
     this.get("/api/v1/routes", false, () => json(this.routes.state()));
@@ -217,9 +270,9 @@ export class HttpApplication {
     });
 
     this.get("/api/v1/traffic", false, (ctx) => json(this.traffic.overview(period(ctx.url.searchParams.get("period")), ctx.owner?.timezone)));
-    this.get("/api/v1/system", false, async () => {
+    this.get("/api/v1/system", false, async (ctx) => {
       await this.monitoring.refreshServices();
-      return json(await this.system.state());
+      return json(localizePresentation(await this.system.state(), ctx.language));
     });
     this.get("/api/v1/system/events", false, (ctx) => {
       const scope = journalScope(ctx.url.searchParams.get("scope"));
@@ -227,7 +280,7 @@ export class HttpApplication {
       const q = ctx.url.searchParams.get("q") ?? undefined;
       const before = optionalPositiveInteger(ctx.url.searchParams.get("before"));
       const limit = optionalPositiveInteger(ctx.url.searchParams.get("limit"));
-      return json(this.journal.list({ scope, category, q, before, limit }));
+      return json(this.journal.list({ scope, category, q, before, limit, language: ctx.language }));
     });
     this.post("/api/v1/engines/reorder", false, async (ctx) => {
       ownerOnly(ctx);
@@ -255,12 +308,13 @@ export class HttpApplication {
       ));
     });
 
-    this.get("/api/v1/operations", false, () => json({ operations: this.operations.list() }));
-    this.get("/api/v1/operations/events", false, () => this.operationEvents());
+    this.get("/api/v1/operations", false, (ctx) => json({ operations: localizePresentation(this.operations.list(), ctx.language) }));
+    this.get("/api/v1/operations/events", false, (ctx) => this.operationEvents(ctx.language));
     this.get("/api/v1/backups/:name", false, (ctx) => this.backupDownload(ctx.params.name!));
     this.post("/api/v1/operations/preview", false, async (ctx) => {
       const body = await ctx.json<{ action: Parameters<OperationService["preview"]>[0]; payload?: Record<string, unknown> }>();
-      return json(this.operations.preview(body.action, body.payload ?? {}, actor(ctx)), 201);
+      if (body.action === "connection.rotate") requireApiScope(ctx, "connections:rotate");
+      return json(localizePresentation(this.operations.preview(body.action, body.payload ?? {}, actor(ctx)), ctx.language), 201);
     });
     this.post("/api/v1/operations/confirm", false, async (ctx) => {
       const body = await ctx.json<{
@@ -268,7 +322,8 @@ export class HttpApplication {
         action: Parameters<OperationService["confirm"]>[1];
         payload?: Record<string, unknown>;
       }>();
-      return json(this.operations.confirm(body.confirmationId, body.action, body.payload ?? {}, actor(ctx)), 202);
+      if (body.action === "connection.rotate") requireApiScope(ctx, "connections:rotate");
+      return json(localizePresentation(this.operations.confirm(body.confirmationId, body.action, body.payload ?? {}, actor(ctx)), ctx.language), 202);
     });
     this.post("/api/v1/tokens", false, async (ctx) => {
       const body = await ctx.json<{ name: string; scopes: string[] }>();
@@ -285,22 +340,49 @@ export class HttpApplication {
       return json(this.connections.authenticateHysteria(body.auth ?? ""));
     });
 
-    this.get("/s/:token/routes", true, (ctx) => this.linkRoutes(ctx.params.token!));
+    this.get("/s/:token/routes", true, (ctx) => this.linkRoutes(ctx));
+    this.head("/s/:token/routes", true, (ctx) => this.linkRoutes(ctx, true));
+    this.get("/s/:token/apps/:appId", true, (ctx) => this.applicationProfile(ctx));
+    this.head("/s/:token/apps/:appId", true, (ctx) => this.applicationProfile(ctx, true));
+    this.get("/s/:token/advanced/:target", true, (ctx) => this.advancedProfile(ctx));
+    this.head("/s/:token/advanced/:target", true, (ctx) => this.advancedProfile(ctx, true));
+    this.get("/s/:token/qr/:target", true, (ctx) => this.subscriptionQr(ctx));
+    this.head("/s/:token/qr/:target", true, (ctx) => this.subscriptionQr(ctx, true));
     this.get("/s/:token", true, (ctx) => this.subscription(ctx));
+    this.head("/s/:token", true, (ctx) => this.subscription(ctx, true));
     this.get("/rulesets/:family/:code", true, (ctx) => this.ruleSet(ctx));
   }
 
-  private subscription(ctx: RequestContext) {
+  private async subscription(ctx: RequestContext, head = false) {
     const token = ctx.params.token!;
     const connection = this.connections.bySubscriptionToken(token);
-    const format = subscriptionFormat(ctx.request, ctx.url.searchParams.get("format"));
-    if (!format) {
-      const baseUrl = `${config.origin}/s/${token}`;
-      const platform = detectPlatform(ctx.request.headers.get("user-agent") ?? "");
-      return new Response(renderCatalogPage(connection, baseUrl, platform), {
-        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "private, no-store" },
+    if (ctx.url.searchParams.has("format")) {
+      return new Response(head ? null : "Legacy format URLs are gone", {
+        status: 410,
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "private, no-store" },
       });
     }
+    const baseUrl = `${config.origin}/s/${token}`;
+    const platform = ctx.url.searchParams.get("platform") ?? detectPlatform(ctx.request.headers.get("user-agent") ?? "");
+    const html = renderCatalogPage(connection, baseUrl, platform, ctx.language);
+    return contentResponse(ctx.request, html, "text/html; charset=utf-8", head);
+  }
+
+  private async applicationProfile(ctx: RequestContext, head = false) {
+    const item = application(ctx.params.appId!);
+    if (!item) throw new ServiceError(404, "Приложение не найдено");
+    return this.profile(ctx, item.format, head, item.id);
+  }
+
+  private async advancedProfile(ctx: RequestContext, head = false) {
+    const item = advancedDefinition(ctx.params.target!);
+    if (!item) throw new ServiceError(404, "Профиль не найден");
+    return this.profile(ctx, item.format, head);
+  }
+
+  private async profile(ctx: RequestContext, format: SubscriptionFormat, head: boolean, appId?: string) {
+    const token = ctx.params.token!;
+    const connection = this.connections.bySubscriptionToken(token);
     const credentials = this.connections.credentials(connection.id);
     const rendered = renderers[format].render({
       connection,
@@ -310,17 +392,38 @@ export class HttpApplication {
       engineOrder: this.system.engineOrder(),
       clientPlatform: detectPlatform(ctx.request.headers.get("user-agent") ?? ""),
     });
-    this.connections.markFetched(connection.id, format);
-    return new Response(rendered.body, { headers: { "content-type": rendered.contentType, ...rendered.headers } });
+    const body = appId === "stash"
+      ? `#SUBSCRIBED ${config.origin}/s/${token}/apps/stash\n${rendered.body}`
+      : rendered.body;
+    const response = await contentResponse(ctx.request, body, rendered.contentType, head, rendered.headers);
+    if (!head && response.status === 200) this.connections.markFetched(connection.id);
+    return response;
   }
 
-  private linkRoutes(token: string) {
+  private async subscriptionQr(ctx: RequestContext, head = false) {
+    const token = ctx.params.token!;
+    this.connections.bySubscriptionToken(token);
+    const target = ctx.params.target!;
+    if (!target.endsWith(".svg")) throw new ServiceError(404, "QR-код не найден");
+    const id = target.slice(0, -4);
+    const baseUrl = `${config.origin}/s/${token}`;
+    let value = baseUrl;
+    if (id !== "landing") {
+      const item = application(id);
+      if (!item) throw new ServiceError(404, "QR-код не найден");
+      const profileUrl = `${baseUrl}/apps/${item.id}`;
+      value = item.deepLink?.(profileUrl) ?? profileUrl;
+    }
+    const svg = await QRCode.toString(value, { type: "svg", margin: 1, width: 320, errorCorrectionLevel: "M" });
+    return contentResponse(ctx.request, svg, "image/svg+xml; charset=utf-8", head);
+  }
+
+  private async linkRoutes(ctx: RequestContext, head = false) {
+    const token = ctx.params.token!;
     this.connections.bySubscriptionToken(token);
     const rendered = renderLinkRoutes(this.routes.published());
     const version = this.db.setting("active_route_version", 0);
-    return new Response(rendered.body, {
-      headers: { "content-type": rendered.contentType, "cache-control": "private, no-store", "x-routes-version": String(version) },
-    });
+    return contentResponse(ctx.request, rendered.body, rendered.contentType, head, { "x-routes-version": String(version) });
   }
 
   private ruleSet(ctx: RequestContext) {
@@ -341,12 +444,12 @@ export class HttpApplication {
     });
   }
 
-  private operationEvents() {
+  private operationEvents(language: Locale) {
     let unsubscribe = () => {};
     let timer: ReturnType<typeof setInterval>;
     const stream = new ReadableStream({
       start: (controller) => {
-        const push = (event: unknown) => controller.enqueue(`event: operation\ndata: ${JSON.stringify(event)}\n\n`);
+        const push = (event: unknown) => controller.enqueue(`event: operation\ndata: ${JSON.stringify(localizePresentation(event, language))}\n\n`);
         unsubscribe = this.operations.subscribe(push);
         controller.enqueue(`event: ready\ndata: {}\n\n`);
         timer = setInterval(() => controller.enqueue(": keepalive\n\n"), 15_000);
@@ -357,6 +460,41 @@ export class HttpApplication {
       },
     });
     return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" } });
+  }
+
+  private dashboardEventStream() {
+    let unsubscribe = () => {};
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start: (controller) => {
+        const push = (event: ReturnType<DashboardEvents["publish"]>) => {
+          controller.enqueue(encoder.encode(`id: ${event.revision}\nevent: snapshot\ndata: ${JSON.stringify(event)}\n\n`));
+        };
+        unsubscribe = this.dashboardEvents.subscribe(push);
+        controller.enqueue(encoder.encode(`retry: 3000\nevent: ready\ndata: ${JSON.stringify({ revision: this.dashboardEvents.revision, at: new Date().toISOString() })}\n\n`));
+        timer = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(`event: heartbeat\ndata: ${JSON.stringify({ revision: this.dashboardEvents.revision, at: new Date().toISOString() })}\n\n`));
+          } catch {
+            unsubscribe();
+            if (timer) clearInterval(timer);
+          }
+        }, 15_000);
+      },
+      cancel: () => {
+        unsubscribe();
+        if (timer) clearInterval(timer);
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "x-accel-buffering": "no",
+      },
+    });
   }
 
   private backupDownload(name: string) {
@@ -373,32 +511,41 @@ export class HttpApplication {
     });
   }
 
-  private async staticResponse(url: URL) {
-    if (url.pathname === "/") return coverPage();
+  private async staticResponse(request: Request, url: URL, language: Locale) {
+    const surface = request.headers.get("x-outpost-surface") === "setup" ? "setup" : "admin";
+    if (url.pathname === "/setup" || url.pathname.startsWith("/setup/")
+      || url.pathname === `${config.adminPath}/setup` || url.pathname.startsWith(`${config.adminPath}/setup/`)) {
+      return new Response("Not found", { status: 404 });
+    }
+    if (url.pathname === "/") {
+      return surface === "setup"
+        ? indexResponse(`${config.webRoot}/index.html`, language, surface)
+        : coverPage(language);
+    }
     if (url.pathname === config.adminPath) return Response.redirect(`${config.origin}${config.adminPath}/`, 302);
-    if (url.pathname.startsWith(`${config.adminPath}/`)) return fileResponse(`${config.webRoot}/index.html`);
+    if (url.pathname.startsWith(`${config.adminPath}/`)) return indexResponse(`${config.webRoot}/index.html`, language, "admin");
     const safePath = decodeURIComponent(url.pathname).replace(/^\/+/, "");
     if (safePath.includes("..")) throw new ServiceError(400, "Некорректный путь");
     const file = Bun.file(`${config.webRoot}/${safePath}`);
-    if (await file.exists()) return new Response(file);
+    if (await file.exists()) {
+      const versioned = url.searchParams.get("v") === config.version;
+      const cache = config.production && versioned
+        ? "public, max-age=31536000, immutable"
+        : "no-cache";
+      return new Response(file, { headers: { "cache-control": cache } });
+    }
     return new Response("Not found", { status: 404 });
   }
 
-  private async connectionResult(result: ReturnType<ConnectionSyncService["connection"]>) {
-    if (!result.subscription) return { ...result, connection: publicConnection(result.connection), catalogVersion, applications: [] };
-    const qrDataUrl = await QRCode.toDataURL(result.subscription.url, { margin: 1, width: 320, errorCorrectionLevel: "M" });
-    const formats = Object.fromEntries(await Promise.all(
-      Object.entries(result.subscription.formats).map(async ([format, url]) => [
-        format,
-        { url, qrDataUrl: await QRCode.toDataURL(url, { margin: 1, width: 320, errorCorrectionLevel: "M" }) },
-      ]),
-    ));
+  private async connectionResult(result: ReturnType<ConnectionSyncService["connection"]>, language: Locale) {
+    if (!result.subscription) return { ...result, connection: publicConnection(result.connection), catalogVersion, applications: [], advanced: [] };
     return {
       ...result,
       connection: publicConnection(result.connection),
-      subscription: { ...result.subscription, qrDataUrl, formats },
+      subscription: { ...result.subscription, qrUrl: `${result.subscription.url}/qr/landing.svg` },
       catalogVersion,
-      applications: catalog(result.subscription.url),
+      applications: catalog(result.subscription.url, undefined, language),
+      advanced: advanced(result.subscription.url, language),
     };
   }
 
@@ -411,6 +558,7 @@ export class HttpApplication {
   }
 
   private get(path: string, isPublic: boolean, handler: Handler) { this.route("GET", path, isPublic, handler); }
+  private head(path: string, isPublic: boolean, handler: Handler) { this.route("HEAD", path, isPublic, handler); }
   private post(path: string, isPublic: boolean, handler: Handler) { this.route("POST", path, isPublic, handler); }
   private patch(path: string, isPublic: boolean, handler: Handler) { this.route("PATCH", path, isPublic, handler); }
   private delete(path: string, isPublic: boolean, handler: Handler) { this.route("DELETE", path, isPublic, handler); }
@@ -431,22 +579,54 @@ function json(value: unknown, status = 200, headers?: HeadersInit) {
 
 function empty() { return new Response(null, { status: 204 }); }
 
+async function contentResponse(
+  request: Request,
+  body: string,
+  contentType: string,
+  head = false,
+  extra: HeadersInit = {},
+) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+  const tag = `"${Buffer.from(digest).toString("base64url")}"`;
+  const headers = new Headers(extra);
+  headers.set("content-type", contentType);
+  headers.set("cache-control", "private, no-store");
+  headers.set("etag", tag);
+  if ((request.headers.get("if-none-match") ?? "").split(",").map((item) => item.trim()).includes(tag)) {
+    return new Response(null, { status: 304, headers });
+  }
+  headers.set("content-length", String(Buffer.byteLength(body)));
+  return new Response(head ? null : body, { headers });
+}
+
 async function readJson(request: Request) {
   const length = Number(request.headers.get("content-length") ?? "0");
   if (length > 1024 * 1024) throw new ServiceError(413, "Запрос слишком большой");
   try { return await request.json(); } catch { throw new ServiceError(400, "Ожидался корректный JSON"); }
 }
 
-function errorResponse(error: unknown, requestId: string) {
-  if (error instanceof ServiceError) return json({ error: { message: error.message, details: error.details, requestId } }, error.status);
-  if (error instanceof ZodError) return json({ error: { message: "Проверьте введённые данные", details: error.issues, requestId } }, 400);
+function errorResponse(error: unknown, requestId: string, language: Locale) {
+  if (error instanceof ServiceError) return json({
+    code: errorCode(error.message, error.status),
+    message: localize(error.message, language),
+    details: error.details,
+    requestId,
+  }, error.status);
+  if (error instanceof ZodError) return json({
+    code: "validation.invalid",
+    message: localize("Проверьте введённые данные", language),
+    details: error.issues,
+    requestId,
+  }, 400);
   console.error(`[${requestId}]`, error);
-  return json({ error: { message: "Внутренняя ошибка", requestId } }, 500);
+  return json({ code: "internal.error", message: localize("Внутренняя ошибка", language), requestId }, 500);
 }
 
-function secure(response: Response, requestId: string) {
+function secure(response: Response, requestId: string, language: Locale) {
   const headers = new Headers(response.headers);
   headers.set("x-request-id", requestId);
+  headers.set("content-language", language);
+  headers.append("set-cookie", languageCookie(language));
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "no-referrer");
   headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
@@ -492,11 +672,19 @@ function ownerOnly(ctx: RequestContext) {
   if (!ctx.owner || ctx.owner.scopes) throw new ServiceError(403, "Действие доступно только владельцу панели");
 }
 
+function requireApiScope(ctx: RequestContext, scope: string) {
+  if (ctx.owner?.scopes && !ctx.owner.scopes.includes("*") && !ctx.owner.scopes.includes(scope)) {
+    throw new ServiceError(403, "API token не имеет нужного scope");
+  }
+}
+
 function authorized(method: string, path: string, scopes: string[]) {
   if (scopes.includes("*")) return true;
+  if (/^\/api\/v1\/connections\/[^/]+\/subscription$/.test(path)) return scopes.includes("connections:secret");
+  if (/^\/api\/v1\/connections\/[^/]+\/rotate$/.test(path)) return scopes.includes("connections:rotate");
   const read = method === "GET";
   const required = path === "/api/v1/status" ? "status:read"
-    : path === "/api/v1/dashboard" ? "owner:session"
+    : path.startsWith("/api/v1/dashboard") ? "owner:session"
     : path.startsWith("/api/v1/me") ? `settings:${read ? "read" : "write"}`
     : path.startsWith("/api/v1/connections") ? `connections:${read ? "read" : "write"}`
       : path.startsWith("/api/v1/routes") ? `routes:${read ? "read" : "write"}`
@@ -534,21 +722,6 @@ function optionalPositiveInteger(value: string | null) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-function subscriptionFormat(request: Request, requested: string | null): SubscriptionFormat | null {
-  const formats: SubscriptionFormat[] = ["mihomo", "sing-box", "xray", "xray-json", "links"];
-  if (requested) {
-    if (!formats.includes(requested as SubscriptionFormat)) throw new ServiceError(404, "Формат подписки не поддерживается");
-    return requested as SubscriptionFormat;
-  }
-  const agent = (request.headers.get("user-agent") ?? "").toLowerCase();
-  if (/mihomo|clash|everywhere|flclash/.test(agent)) return "mihomo";
-  if (/sing-box|singbox|sfa|sfi|sfm/.test(agent)) return "sing-box";
-  if (/incy/.test(agent)) return "links";
-  if (/xray|v2ray|happ|foxray|streisand/.test(agent)) return "xray";
-  if ((request.headers.get("accept") ?? "").includes("text/html")) return null;
-  return "xray";
-}
-
 function engineName(value: string) {
   if (value !== "hysteria" && value !== "xray") throw new ServiceError(404, "Движок не найден");
   return value;
@@ -561,12 +734,37 @@ function engineTemplate(value: unknown) {
   return value;
 }
 
-async function fileResponse(path: string) {
+async function indexResponse(path: string, language: Locale, surface: "admin" | "setup") {
   const file = Bun.file(path);
   if (!await file.exists()) return new Response("Frontend is not built", { status: 503 });
-  return new Response(file);
+  const meta = metadata(language);
+  const html = (await file.text())
+    .replaceAll("__OUTPOST_VERSION__", encodeURIComponent(config.version))
+    .replaceAll("__OUTPOST_SURFACE__", surface)
+    .replace(/<html[^>]*>/, `<html lang="${language}" dir="${meta.direction}">`);
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-cache",
+    },
+  });
 }
 
-function coverPage() {
-  return new Response(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Сервис</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px system-ui;color:#344054;background:#f7f9fc}.box{text-align:center}.dot{width:10px;height:10px;border-radius:50%;background:#16a34a;display:inline-block;margin-right:8px}</style></head><body><div class="box"><p><span class="dot"></span>Сервис работает</p></div></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } });
+function dashboardMutation(method: string, path: string, isPublic: boolean, status: number): DashboardReason | null {
+  if (isPublic || method === "GET" || status >= 400 || path === "/api/v1/operations/preview") return null;
+  if (path.startsWith("/api/v1/rulesets")) return "rulesets";
+  return "mutation";
+}
+
+function coverPage(language: Locale) {
+  const meta = metadata(language);
+  const copy = language === "ru" ? { title: "Сервис", status: "Сервис работает" }
+    : language === "zh-CN" ? { title: "服务", status: "服务正在运行" }
+      : language === "fa" ? { title: "سرویس", status: "سرویس در حال اجرا است" }
+        : { title: "Service", status: "Service is running" };
+  const labels: Record<Locale, string> = { ru: "Русский", en: "English", "zh-CN": "简体中文", fa: "فارسی" };
+  const switcher = (["ru", "en", "zh-CN", "fa"] as Locale[]).map((item) =>
+    `<a href="/?lang=${encodeURIComponent(item)}" lang="${item}"${item === language ? ' aria-current="true"' : ""}>${labels[item]}</a>`,
+  ).join("");
+  return new Response(`<!doctype html><html lang="${language}" dir="${meta.direction}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${copy.title}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px system-ui;color:#344054;background:#f7f9fc}.box{text-align:center}.dot{width:10px;height:10px;border-radius:50%;background:#16a34a;display:inline-block;margin-inline-end:8px}nav{position:fixed;inset-block-start:18px;inset-inline-end:22px;display:flex;gap:4px;direction:ltr}nav a{padding:6px 8px;border-radius:7px;color:#667085;font-size:12px;text-decoration:none}nav a[aria-current=true]{background:#e8f0ff;color:#075bea;font-weight:700}</style></head><body><nav aria-label="Language">${switcher}</nav><div class="box"><p><span class="dot"></span>${copy.status}</p></div></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } });
 }

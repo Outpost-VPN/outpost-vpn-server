@@ -19,6 +19,7 @@ regexes = [
 description = "Golden SHA-256 fingerprints of deterministic subscription fixtures"
 regexTarget = "secret"
 regexes = [
+  '''^3d72c8f7bd3679c46451ee119f7de235c9b66f439cea0a1777c8a50e178efae6$''',
   '''^4acd88ef98861fed276fc4716ab1f1cbd3cba56134e6a4acf4c4a59619a69b16$''',
   '''^ffc86874cf27c00cb9c47f4aee7fd52b6debcce8a457000cd49f787d024928a8$''',
 ]

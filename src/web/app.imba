@@ -14,15 +14,24 @@ import {t} from './i18n.imba'
 import {Store} from './store.imba'
 
 const store = new Store
+const meta = window.document.querySelector('meta[name="outpost-surface"]')
+const surface = meta ? meta.getAttribute('content') : 'admin'
+const params = new URLSearchParams(window.location.search)
+const preview = window.location.pathname.startsWith('/admin') and params.get('preview') == 'setup'
+const install = surface == 'setup' or preview
 
 tag App
 	def mount
-		if store.path.startsWith('/setup') or store.path.startsWith('/onboarding')
-			return
-		store.load!
+		if install
+			window.document.title = "Outpost · {t('title.setup')}"
+		else
+			store.start!
+
+	def unmount
+		store.destroy! unless install
 
 	<self>
-		if store.path.startsWith('/setup')
+		if install
 			<outpost-setup store=store>
 		elif store.path.startsWith('/onboarding')
 			<outpost-onboarding store=store>
@@ -33,7 +42,7 @@ tag App
 				<outpost-icon name="spinner-gap">
 				<span> t('loading')
 		elif store.error and !store.data
-			<div.loading><div.outpost-error> store.error; <button.outpost-button.small @click=store.load> 'Повторить'
+			<div.loading><div.outpost-error> store.error; <button.outpost-button.small @click=store.load> t('Повторить')
 		else
 			<outpost-shell store=store>
 			if store.dialog == 'connection'

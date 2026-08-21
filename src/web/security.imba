@@ -1,3 +1,5 @@
+import {intl, plural, t} from './i18n.imba'
+
 const authn = {
 	decode: do(options)
 		const copy = {...options}
@@ -24,16 +26,13 @@ const authn = {
 }
 
 const calendar = do(value)
-	new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'}).format(value)
+	new Intl.DateTimeFormat(intl!, {day: 'numeric', month: 'long', year: 'numeric'}).format(value)
 
 tag outpost-access
 	store = null
 	busy = null
 	notice = null
 	dismissed = []
-
-	def mount
-		store.secure!
 
 	get owner do store.data.auth.owner
 	get raw do store.security or {passkeys: [], sessions: [], tokens: []}
@@ -56,28 +55,28 @@ tag outpost-access
 	get tokens
 		const items = if raw.tokens.length or !store.data.auth.demo then raw.tokens else [
 			{id: 'demo-codex-8K2F', name: 'Codex MCP', scopes: ['status:read', 'connections:read', 'routes:write'], created_at: new Date(Date.now! - 10 * 86400000).toISOString!, last_used_at: new Date(Date.now! - 2 * 3600000).toISOString!, demo: true}
-			{id: 'demo-monitor-3M7A', name: 'Мониторинг', scopes: ['status:read', 'traffic:read'], created_at: new Date(Date.now! - 18 * 86400000).toISOString!, last_used_at: new Date(Date.now! - 26 * 3600000).toISOString!, demo: true}
+			{id: 'demo-monitor-3M7A', name: t('Мониторинг'), scopes: ['status:read', 'traffic:read'], created_at: new Date(Date.now! - 18 * 86400000).toISOString!, last_used_at: new Date(Date.now! - 26 * 3600000).toISOString!, demo: true}
 		]
 		items.filter do(item) !dismissed.includes(item.id)
 
 	def stamp value
-		return 'никогда' unless value
+		return t('никогда') unless value
 		const date = new Date(value)
 		const today = new Date
-		const time = new Intl.DateTimeFormat('ru-RU', {hour: '2-digit', minute: '2-digit'}).format(date)
-		return "сегодня, {time}" if date.toDateString! == today.toDateString!
+		const time = new Intl.DateTimeFormat(intl!, {hour: '2-digit', minute: '2-digit'}).format(date)
+		return t('сегодня, {time}', {time: time}) if date.toDateString! == today.toDateString!
 		const yesterday = new Date(today.getTime! - 86400000)
-		return "вчера, {time}" if date.toDateString! == yesterday.toDateString!
-		new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'}).format(date)
+		return t('вчера, {time}', {time: time}) if date.toDateString! == yesterday.toDateString!
+		new Intl.DateTimeFormat(intl!, {day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'}).format(date)
 
 	def credential item
-		const name = item.label or (item.backedUp ? 'Связка ключей' : 'Passkey')
-		const platform = item.browser or (item.deviceType == 'multiDevice' ? 'Синхронизирован' : 'Это устройство')
-		{name: name, detail: "{platform} · добавлен {calendar(new Date(item.createdAt))}"}
+		const name = item.label or (item.backedUp ? t('Связка ключей') : 'Passkey')
+		const platform = item.browser or (item.deviceType == 'multiDevice' ? t('Синхронизирован') : t('Это устройство'))
+		{name: name, detail: t('{platform} · добавлен {date}', {platform: platform, date: calendar(new Date(item.createdAt))})}
 
 	def client item
 		const source = item.userAgent or ''
-		const name = source.includes('iPad') ? 'iPad' : source.includes('iPhone') ? 'iPhone' : source.includes('Android') ? 'Android' : source.includes('Windows') ? 'Windows' : 'Этот Mac'
+		const name = source.includes('iPad') ? 'iPad' : source.includes('iPhone') ? 'iPhone' : source.includes('Android') ? 'Android' : source.includes('Windows') ? 'Windows' : t('Этот Mac')
 		const browser = source.includes('Firefox') ? 'Firefox' : source.includes('Chrome') ? 'Chrome' : 'Safari'
 		{name: name, detail: "{browser} · {stamp(item.lastSeenAt)}"}
 
@@ -89,7 +88,7 @@ tag outpost-access
 		'other'
 
 	def scope item
-		item.scopes.some(do(value) value.endsWith(':write')) ? 'Управление' : 'Только чтение'
+		item.scopes.some(do(value) value.endsWith(':write')) ? t('Управление') : t('Только чтение')
 
 	def passkey
 		return if busy
@@ -98,10 +97,10 @@ tag outpost-access
 		try
 			const start = await store.api('POST', '/api/v1/auth/register/options', {timezone: owner.timezone})
 			const credential = await window.navigator.credentials.create({publicKey: authn.decode(start.options)})
-			throw new Error('Создание passkey отменено') unless credential
+			throw new Error(t('Создание passkey отменено')) unless credential
 			await store.api('POST', '/api/v1/auth/register/verify', {challengeId: start.challengeId, response: authn.json(credential)})
 			await store.secure!
-			notice = {kind: 'passkeys', text: 'Новый passkey добавлен'}
+			notice = {kind: 'passkeys', text: t('Новый passkey добавлен')}
 		catch issue
 			notice = {kind: 'passkeys', text: issue.message}
 		finally
@@ -143,21 +142,21 @@ tag outpost-access
 	<self>
 		<header.access-header>
 			<div>
-				<small> 'Безопасность'
-				<h1> 'Доступ'
-				<p> 'Вход, активные сеансы и интеграции'
+				<small> t('Безопасность')
+				<h1> t('Доступ')
+				<p> t('Вход, активные сеансы и интеграции')
 			<button.outpost-button.secondary.small.header-action type="button" @click=logout>
 				<outpost-icon name="sign-out">
-				<span> 'Выйти'
+				<span> t('Выйти')
 		<div.access-layout>
 			<section.access-group>
 				<div.subhead>
 					<div>
 						<h3> 'Passkeys'
-						<p> 'Вход без пароля с доверенных устройств'
+						<p> t('Вход без пароля с доверенных устройств')
 					<button.outpost-button.secondary.small type="button" disabled=busy @click=passkey>
 						<outpost-icon name="plus">
-						<span> busy == 'passkey' ? 'Добавляем…' : 'Добавить passkey'
+						<span> busy == 'passkey' ? t('Добавляем…') : t('Добавить passkey')
 				<div.rows>
 					for item in passkeys
 						<div.access-row key=item.id>
@@ -165,17 +164,17 @@ tag outpost-access
 							<div>
 								<strong> credential(item).name
 								<small> credential(item).detail
-							<span.used> "Использован {stamp(item.lastUsedAt)}"
-							<button.icon-button type="button" disabled=(busy or passkeys.length < 2) @click=(do revoke('passkeys', item)) aria-label="Отозвать passkey"><outpost-icon name="trash">
+							<span.used> t('Использован {time}', {time: stamp(item.lastUsedAt)})
+							<button.icon-button type="button" disabled=(busy or passkeys.length < 2) @click=(do revoke('passkeys', item)) aria-label=t('Отозвать passkey')><outpost-icon name="trash">
 				if notice and notice.kind == 'passkeys'
 					<p.notice aria-live="polite"> notice.text
 			<section.access-group>
 				<div.subhead>
 					<div>
-						<h3> 'Активные сеансы'
-						<p> 'Браузеры, в которых выполнен вход'
+						<h3> t('Активные сеансы')
+						<p> t('Браузеры, в которых выполнен вход')
 					if sessions.length > 1
-						<button.outpost-button.secondary.small type="button" disabled=busy @click=finish> busy == 'sessions' ? 'Завершаем…' : 'Завершить остальные'
+						<button.outpost-button.secondary.small type="button" disabled=busy @click=finish> busy == 'sessions' ? t('Завершаем…') : t('Завершить остальные')
 				<div.rows>
 					for item in sessions
 						<div.access-row.session key=item.id>
@@ -184,18 +183,18 @@ tag outpost-access
 								<strong> client(item).name
 								<small> client(item).detail
 							if item.current
-								<span.current> 'Текущий'
+								<span.current> t('Текущий')
 							else
-								<span.used> "Активен {stamp(item.lastSeenAt)}"
-							<button.icon-button type="button" disabled=(busy or item.current) @click=(do revoke('sessions', item)) aria-label="Завершить сеанс"><outpost-icon name="sign-out">
+								<span.used> t('Активен {time}', {time: stamp(item.lastSeenAt)})
+							<button.icon-button type="button" disabled=(busy or item.current) @click=(do revoke('sessions', item)) aria-label=t('Завершить сеанс')><outpost-icon name="sign-out">
 			<section.access-group.tokens>
 				<div.subhead>
 					<div>
 						<h3> 'API / MCP'
-						<p> 'Токены для интеграций и автоматизации'
+						<p> t('Токены для интеграций и автоматизации')
 					<button.outpost-button.secondary.small type="button" @click=(do store.open('token'))>
 						<outpost-icon name="plus">
-						<span> 'Создать токен'
+						<span> t('Создать токен')
 				if tokens.length
 					<div.token-rows>
 						for item in tokens
@@ -204,11 +203,11 @@ tag outpost-access
 								<div.token-copy>
 									<strong> item.name
 									<small> scope(item)
-								<span.used> "Активен {stamp(item.last_used_at or item.lastUsedAt)}"
-								<button.icon-button type="button" disabled=busy @click=(do revoke('tokens', item)) aria-label="Отозвать токен"><outpost-icon name="trash">
+								<span.used> t('Активен {time}', {time: stamp(item.last_used_at or item.lastUsedAt)})
+								<button.icon-button type="button" disabled=busy @click=(do revoke('tokens', item)) aria-label=t('Отозвать токен')><outpost-icon name="trash">
 						<p.token-note>
 							<outpost-icon name="lock-key">
-							<span> 'Полное значение токена показывается только один раз'
+							<span> t('Полное значение токена показывается только один раз')
 
 	css self
 		maw:1110px mx:auto c:var(--outpost-text)
@@ -268,21 +267,21 @@ tag outpost-security
 	get passkeys
 		return raw.passkeys if raw.passkeys.length or !store.data.auth.demo
 		[
-			{id: 'demo-touch', backedUp: true, label: 'Touch ID на MacBook', demo: true}
+			{id: 'demo-touch', backedUp: true, label: t('Touch ID на MacBook'), demo: true}
 			{id: 'demo-phone', backedUp: true, label: 'iPhone', demo: true}
 		]
 
 	get sessions
 		return raw.sessions if raw.sessions.length or !store.data.auth.demo
 		[
-			{id: 'demo-current', current: true, lastSeenAt: new Date!.toISOString!, userAgent: 'Safari macOS', label: 'Safari · macOS · сейчас', demo: true}
-			{id: 'demo-phone', current: false, lastSeenAt: new Date(Date.now! - 18 * 60000).toISOString!, userAgent: 'Safari iPhone', label: 'Safari · iPhone · 18 минут назад', demo: true}
+			{id: 'demo-current', current: true, lastSeenAt: new Date!.toISOString!, userAgent: 'Safari macOS', label: t('Safari · macOS · сейчас'), demo: true}
+			{id: 'demo-phone', current: false, lastSeenAt: new Date(Date.now! - 18 * 60000).toISOString!, userAgent: 'Safari iPhone', label: t('Safari · iPhone · 18 минут назад'), demo: true}
 		]
 
 	get tokens
 		return raw.tokens if raw.tokens.length or !store.data.auth.demo
 		[
-			{id: 'demo-codex', name: 'Codex на MacBook', scopes: ['status:read', 'connections:read', 'routes:read'], demo: true}
+			{id: 'demo-codex', name: t('Codex на MacBook'), scopes: ['status:read', 'connections:read', 'routes:read'], demo: true}
 		]
 
 	get healthy?
@@ -290,24 +289,24 @@ tag outpost-security
 
 	get expiry
 		const value = store.data.system.tls.expiresAt
-		value ? "до {calendar(new Date(value))}" : 'Обновится автоматически'
+		value ? t('до {date}', {date: calendar(new Date(value))}) : t('Обновится автоматически')
 
 	get keydetail
-		return 'Touch ID на MacBook · iPhone' if passkeys.some(do(item) item.demo)
-		return 'Passkey ещё не добавлен' unless passkeys.length
-		passkeys.every(do(item) item.backedUp) ? 'Синхронизированы через связку ключей' : 'Привязаны к этому устройству'
+		return t('Touch ID на MacBook · iPhone') if passkeys.some(do(item) item.demo)
+		return t('Passkey ещё не добавлен') unless passkeys.length
+		passkeys.every(do(item) item.backedUp) ? t('Синхронизированы через связку ключей') : t('Привязаны к этому устройству')
 
 	def session item
 		return item.label if item.label
 		const source = item.userAgent or ''
-		const browser = source.includes('Safari') ? 'Safari' : source.includes('Firefox') ? 'Firefox' : source.includes('Chrome') ? 'Chrome' : 'Браузер'
-		const device = source.includes('iPhone') ? 'iPhone' : source.includes('Android') ? 'Android' : source.includes('Windows') ? 'Windows' : source.includes('Mac') ? 'macOS' : 'устройство'
-		"{browser} · {device} · {item.current ? 'сейчас' : ago(item.lastSeenAt)}"
+		const browser = source.includes('Safari') ? 'Safari' : source.includes('Firefox') ? 'Firefox' : source.includes('Chrome') ? 'Chrome' : t('Браузер')
+		const device = source.includes('iPhone') ? 'iPhone' : source.includes('Android') ? 'Android' : source.includes('Windows') ? 'Windows' : source.includes('Mac') ? 'macOS' : t('устройство')
+		"{browser} · {device} · {item.current ? t('сейчас') : ago(item.lastSeenAt)}"
 
 	def ago value
 		const minutes = Math.max(1, Math.round((Date.now! - new Date(value).getTime!) / 60000))
-		return "{minutes} минут назад" if minutes < 60
-		"{Math.round(minutes / 60)} ч назад"
+		return new Intl.RelativeTimeFormat(intl!, {numeric: 'auto'}).format(-minutes, 'minute') if minutes < 60
+		new Intl.RelativeTimeFormat(intl!, {numeric: 'auto'}).format(-Math.round(minutes / 60), 'hour')
 
 	def check
 		return if busy
@@ -316,7 +315,7 @@ tag outpost-security
 		try
 			await store.load!
 			await store.secure!
-			notice = 'Проверка завершена'
+			notice = t('Проверка завершена')
 		finally
 			busy = null
 			imba.commit!
@@ -327,15 +326,15 @@ tag outpost-security
 		notice = null
 		try
 			if store.data.auth.demo
-				notice = 'В рабочей панели откроется системное окно создания passkey'
+				notice = t('В рабочей панели откроется системное окно создания passkey')
 				return
 			const owner = store.data.auth.owner
 			const start = await store.api('POST', '/api/v1/auth/register/options', {timezone: owner.timezone})
 			const credential = await window.navigator.credentials.create({publicKey: authn.decode(start.options)})
-			throw new Error('Создание passkey отменено') unless credential
+			throw new Error(t('Создание passkey отменено')) unless credential
 			await store.api('POST', '/api/v1/auth/register/verify', {challengeId: start.challengeId, response: authn.json(credential)})
 			await store.secure!
-			notice = 'Новый passkey добавлен'
+			notice = t('Новый passkey добавлен')
 		catch issue
 			notice = issue.message
 		finally
@@ -352,7 +351,7 @@ tag outpost-security
 			else
 				await store.api('DELETE', '/api/v1/sessions')
 				await store.secure!
-			notice = 'Другие сессии завершены'
+			notice = t('Другие сессии завершены')
 		finally
 			busy = null
 			imba.commit!
@@ -362,84 +361,84 @@ tag outpost-security
 		store.open('security')
 
 	<self>
-		<outpost-header large=true eyebrow="Система" title="Безопасность" subtitle="Вход, сертификат и доступ к управлению сервером">
+		<outpost-header large=true eyebrow=t('Система') title=t('Безопасность') subtitle=t('Вход, сертификат и доступ к управлению сервером')>
 		<div.security-grid>
 			<div.security-main>
 				<section.health aria-live="polite">
 					<span.health-icon><outpost-icon name=(healthy? ? 'shield-check' : 'shield-warning')>
 					<div>
-						<strong> healthy? ? 'Сервер защищён' : 'Требуется внимание'
-						<p> healthy? ? 'Критических проблем не обнаружено' : 'Проверьте службы и TLS-сертификат'
-					<button.action type="button" disabled=busy @click=check> busy == 'check' ? 'Проверяем…' : 'Проверить снова'
+						<strong> healthy? ? t('Сервер защищён') : t('Требуется внимание')
+						<p> healthy? ? t('Критических проблем не обнаружено') : t('Проверьте службы и TLS-сертификат')
+					<button.action type="button" disabled=busy @click=check> busy == 'check' ? t('Проверяем…') : t('Проверить снова')
 				<section.outpost-card.access-card>
 					<div.security-row.owner-row>
 						<span.row-icon><outpost-icon name="key">
 						<div.row-copy>
-							<h2> 'Вход владельца'
+							<h2> t('Вход владельца')
 							<p.state>
 								<outpost-icon name="dot">
 								<span> "{passkeys.length} passkey"
 							<p.detail> keydetail
 						<div.row-actions>
-							<button.action type="button" disabled=busy @click=passkey> busy == 'passkey' ? 'Добавляем…' : 'Добавить passkey'
-							<button.quiet type="button" @click=(do manage('passkeys'))> 'Управлять'
+							<button.action type="button" disabled=busy @click=passkey> busy == 'passkey' ? t('Добавляем…') : t('Добавить passkey')
+							<button.quiet type="button" @click=(do manage('passkeys'))> t('Управлять')
 					<div.security-row.session-row>
 						<span.row-icon><outpost-icon name="monitor">
 						<div.row-copy>
-							<h2> 'Активные сеансы'
+							<h2> t('Активные сеансы')
 							<p.state>
 								<outpost-icon name="dot">
-								<span> "{sessions.length} {sessions.length == 1 ? 'устройство' : 'устройства'}"
+								<span> plural('security.devices', sessions.length)
 							for item in sessions.slice(0, 2)
 								<p.detail> session(item)
 						<div.row-actions>
-							<button.action type="button" disabled=(busy or sessions.length < 2) @click=finish> busy == 'sessions' ? 'Завершаем…' : 'Завершить другие'
+							<button.action type="button" disabled=(busy or sessions.length < 2) @click=finish> busy == 'sessions' ? t('Завершаем…') : t('Завершить другие')
 					<div.security-row.token-row>
 						<span.row-icon><outpost-icon name="brackets-curly">
 						<div.row-copy>
-							<h2> 'API и MCP'
+							<h2> t('API и MCP')
 							<p.state>
 								<outpost-icon name="dot">
-								<span> "{tokens.length} {tokens.length == 1 ? 'активный токен' : 'активных токена'}"
-							<p.detail> tokens[0] ? tokens[0].name : 'Токены ещё не созданы'
+								<span> plural('security.tokens', tokens.length)
+							<p.detail> tokens[0] ? tokens[0].name : t('Токены ещё не созданы')
 							if tokens.length
-								<p.detail> 'Чтение · Подключения · Маршруты'
+								<p.detail> t('Чтение · Подключения · Маршруты')
 						<div.row-actions>
-							<button.action type="button" @click=(do store.open('token'))> 'Создать токен'
-							<button.quiet type="button" @click=(do manage('tokens'))> 'Управлять'
+							<button.action type="button" @click=(do store.open('token'))> t('Создать токен')
+							<button.quiet type="button" @click=(do manage('tokens'))> t('Управлять')
 				if notice
 					<p.notice> notice
 			<aside.security-side>
 				<section.outpost-card.side-card.tls-card>
-					<h2> 'Домен и TLS'
+					<h2> t('Домен и TLS')
 					<div.side-row.first>
 						<outpost-icon name="globe">
-						<span> store.data.system.domain
+						<span.technical> store.data.system.domain
 					<div.side-row>
 						<outpost-icon name="check-circle">
 						<div>
-							<strong> 'Сертификат действителен'
-							<small> 'Обновится автоматически'
+							<strong> t('Сертификат действителен')
+							<small> t('Обновится автоматически')
 					<div.side-row>
 						<outpost-icon name="calendar-blank">
 						<span> expiry
 				<section.outpost-card.side-card.protection-card>
-					<h2> 'Защита сервера'
+					<h2> t('Защита сервера')
 					<div.side-row.first>
 						<outpost-icon name="shield-check">
 						<div>
-							<strong> 'Межсетевой экран'
-							<small.success> 'Включён'
+							<strong> t('Межсетевой экран')
+							<small.success> t('Включён')
 					<div.side-row>
 						<outpost-icon name="tree-structure">
 						<div>
-							<strong> 'Публичные порты'
+							<strong> t('Публичные порты')
 							<small> '22, 80, 443 TCP · 443 UDP'
 					<div.side-row>
 						<outpost-icon name="user">
 						<div>
-							<strong> 'Доступ root-агента'
-							<small.success> 'Ограничен'
+							<strong> t('Доступ root-агента')
+							<small.success> t('Ограничен')
 
 	css self
 		margin-top:-14px; margin-left:-4px; width:calc(100% + 20px)
@@ -516,28 +515,28 @@ tag outpost-security-modal
 	get items do store.selected.items
 
 	get title
-		return 'Passkeys владельца' if kind == 'passkeys'
-		return 'Активные сеансы' if kind == 'sessions'
-		'API и MCP токены'
+		return t('Passkeys владельца') if kind == 'passkeys'
+		return t('Активные сеансы') if kind == 'sessions'
+		t('API и MCP токены')
 
 	get hint
-		return 'Оставьте минимум один способ входа в панель.' if kind == 'passkeys'
-		return 'Сессии браузеров, в которых выполнен вход в панель.' if kind == 'sessions'
-		'Создавайте отдельный токен для каждого приложения и отзывайте неиспользуемые.'
+		return t('Оставьте минимум один способ входа в панель.') if kind == 'passkeys'
+		return t('Сессии браузеров, в которых выполнен вход в панель.') if kind == 'sessions'
+		t('Создавайте отдельный токен для каждого приложения и отзывайте неиспользуемые.')
 
 	def label item
 		return item.label if item.label
 		return item.name if item.name
 		if kind == 'sessions'
 			const source = item.userAgent or ''
-			const browser = source.includes('Safari') ? 'Safari' : source.includes('Firefox') ? 'Firefox' : source.includes('Chrome') ? 'Chrome' : 'Браузер'
-			const device = source.includes('iPhone') ? 'iPhone' : source.includes('Android') ? 'Android' : source.includes('Windows') ? 'Windows' : source.includes('Mac') ? 'macOS' : 'устройство'
+			const browser = source.includes('Safari') ? 'Safari' : source.includes('Firefox') ? 'Firefox' : source.includes('Chrome') ? 'Chrome' : t('Браузер')
+			const device = source.includes('iPhone') ? 'iPhone' : source.includes('Android') ? 'Android' : source.includes('Windows') ? 'Windows' : source.includes('Mac') ? 'macOS' : t('устройство')
 			return "{browser} · {device}"
 		'Passkey'
 
 	def detail item
-		return item.current ? 'Текущий сеанс' : 'Активный сеанс' if kind == 'sessions'
-		item.demo ? 'Демонстрационные данные' : 'Активен'
+		return item.current ? t('Текущий сеанс') : t('Активный сеанс') if kind == 'sessions'
+		item.demo ? t('Демонстрационные данные') : t('Активен')
 
 	def revoke item
 		return if busy or item.demo or kind == 'sessions'
@@ -561,16 +560,16 @@ tag outpost-security-modal
 		message = null
 		try
 			if store.data.auth.demo
-				message = 'В рабочей панели откроется системное окно создания passkey'
+				message = t('В рабочей панели откроется системное окно создания passkey')
 				return
 			const owner = store.data.auth.owner
 			const start = await store.api('POST', '/api/v1/auth/register/options', {timezone: owner.timezone})
 			const credential = await window.navigator.credentials.create({publicKey: authn.decode(start.options)})
-			throw new Error('Создание passkey отменено') unless credential
+			throw new Error(t('Создание passkey отменено')) unless credential
 			await store.api('POST', '/api/v1/auth/register/verify', {challengeId: start.challengeId, response: authn.json(credential)})
 			await store.secure!
 			store.selected.items = store.security.passkeys
-			message = 'Новый passkey добавлен'
+			message = t('Новый passkey добавлен')
 		catch issue
 			message = issue.message
 		finally
@@ -588,21 +587,21 @@ tag outpost-security-modal
 				await store.api('DELETE', '/api/v1/sessions')
 				await store.secure!
 				store.selected.items = store.security.sessions
-			message = 'Другие сеансы завершены'
+			message = t('Другие сеансы завершены')
 		catch issue
 			message = issue.message
 		finally
 			busy = null
 			imba.commit!
 
-	<self.outpost-modal-backdrop role="dialog" aria-modal="true" aria-label="Безопасность и доступ" tabindex="-1" @click.self=store.close>
+	<self.outpost-modal-backdrop role="dialog" aria-modal="true" aria-label=t('Безопасность и доступ') tabindex="-1" @click.self=store.close>
 		<div.outpost-modal.security-modal>
 			<header.outpost-modal-header>
 				<span.outpost-modal-mark><outpost-icon name=(kind == 'passkeys' ? 'key' : kind == 'sessions' ? 'devices' : 'brackets-curly')>
 				<div>
 					<h2> title
 					<p> hint
-				<button.outpost-modal-close type="button" @click=store.close aria-label="Закрыть"><outpost-icon name="x">
+				<button.outpost-modal-close type="button" @click=store.close aria-label=t('Закрыть')><outpost-icon name="x">
 			<div.outpost-modal-body>
 				<div.security-list>
 					if items.length
@@ -613,18 +612,18 @@ tag outpost-security-modal
 									<strong> label(item)
 									<small> detail(item)
 								if kind != 'sessions'
-									<button type="button" disabled=(busy or item.demo or (kind == 'passkeys' and items.length < 2)) @click=(do revoke(item))> busy == item.id ? 'Отзываем…' : 'Отозвать'
+									<button type="button" disabled=(busy or item.demo or (kind == 'passkeys' and items.length < 2)) @click=(do revoke(item))> busy == item.id ? t('Отзываем…') : t('Отозвать')
 					else
-						<p.empty> 'Активных записей нет'
+						<p.empty> t('Активных записей нет')
 				if message
 					<p.modal-message> message
 			<footer.outpost-modal-footer>
 				<div.modal-actions>
-					<button.outpost-button.quiet type="button" @click=store.close> 'Готово'
+					<button.outpost-button.quiet type="button" @click=store.close> t('Готово')
 					if kind == 'sessions'
-						<button.outpost-button type="button" disabled=(busy or items.length < 2) @click=finish> busy == 'finish' ? 'Завершаем…' : 'Завершить другие'
+						<button.outpost-button type="button" disabled=(busy or items.length < 2) @click=finish> busy == 'finish' ? t('Завершаем…') : t('Завершить другие')
 					else
-						<button.outpost-button type="button" disabled=busy @click=add> kind == 'passkeys' ? (busy == 'add' ? 'Добавляем…' : 'Добавить passkey') : 'Создать токен'
+						<button.outpost-button type="button" disabled=busy @click=add> kind == 'passkeys' ? (busy == 'add' ? t('Добавляем…') : t('Добавить passkey')) : t('Создать токен')
 
 	css self
 		.security-modal w:min(620px, 100%)

@@ -11,14 +11,14 @@
 - Xray API, Hysteria stats и root-agent слушают только localhost/Unix socket;
 - root-agent валидирует action, service, engine и каждый filesystem path;
 - scoped token `status:read` видит только минимальный status endpoint; owner dashboard доступен только browser session владельца;
-- raw bootstrap token не сохраняется в WebAuthn challenge, просроченные challenge удаляются, число незавершённых challenge ограничено;
+- внутренние setup claim и owner-recovery token хранятся только как SHA-256 hash; claim повторно проверяется при старте и завершении WebAuthn registration и однократно потребляется после создания владельца;
 - публичная конфигурация недоступна до `active`; активация добавляет UUID в оба Xray inbound, а частичный успех исправляется полным recovery config;
 - отзыв завершается только после очистки движка; операции сохраняются в outbox, повторяются после рестарта и сериализуются с незавершённой активацией;
 - все ответы `/s/:token` используют `Cache-Control: no-store` и `Referrer-Policy: no-referrer`; format URLs и tokens не записываются в application/audit logs;
 - GeoIP/Geosite manifest имеет detached Minisign signature, bundle проверяется по SHA-256 и переключается атомарно; ошибка сохраняет предыдущий набор;
 - release archive имеет detached Minisign signature, проверяемую installer/updater до распаковки;
-- временный IP edge разрешает только setup API, setup SPA и статические ресурсы; WebAuthn и обычная панель до final domain снаружи недоступны;
-- setup token проверяется до DNS lookup и root-action, а DNS повторно сверяется с установленным public IPv4 внутри привилегированного finalize-скрипта;
+- setup IP edge разрешает только корень, setup API/SPA и статические ресурсы; после final domain тот же IP edge оставляет read-only setup status и предупреждение, но не публикует WebAuthn, dashboard, мутации, подписки или transports;
+- до domain finalize действует first-claim модель фиксированного `https://<IP>/`; DNS проверяется control plane и повторно сверяется с установленным public IPv4 внутри привилегированного finalize-скрипта;
 - все мутации создают audit entries; passphrases и raw secrets туда не передаются;
 - история посещённых доменов не собирается.
 
