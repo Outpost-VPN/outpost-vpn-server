@@ -7,7 +7,7 @@ traffic by connection without storing browsing history. Every connection has
 one credential generation and one link that may be shared by any number of
 people and physical devices.
 
-> **Status:** `0.1.0-rc.8` pre-release. Local tests and production builds pass;
+> **Status:** `0.1.0-rc.9` pre-release. Local tests and production builds pass;
 > the signed release passes a clean Ubuntu VPS installation, with the remaining
 > end-to-end field gate tracked in [STATUS.md](STATUS.md).
 
@@ -80,7 +80,7 @@ with a passkey.
 To install a specific release candidate instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.8 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.9 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,
@@ -88,7 +88,7 @@ updates, and recovery procedures.
 
 ### Run locally
 
-Local development requires Bun `1.3.13` and Go `1.24` or newer.
+Local development requires Bun `1.3.13` and Go `1.25` or newer.
 
 ```bash
 git clone https://github.com/Outpost-VPN/outpost-vpn-server.git
