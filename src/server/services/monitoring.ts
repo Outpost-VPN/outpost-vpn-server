@@ -8,6 +8,11 @@ import type { JournalSeverity } from "../models";
 import { JournalService } from "./journal";
 
 const monitoredServices = ["outpost", "nginx", "hysteria-server", "xray"] as const;
+const setupServices = ["outpost", "nginx"] as const;
+const setupMonitorKeys = [
+  "service:hysteria-server", "service:xray", "service:vless-xhttp", "service:vless-grpc",
+  "telemetry:hysteria", "telemetry:xray", "system:tls",
+] as const;
 
 export type MonitoringSnapshot = {
   services: Record<string, boolean>;
@@ -47,14 +52,17 @@ type ServiceStates = Record<string, boolean>;
 
 export class MonitoringService {
   private journal: JournalService;
+  private setup: boolean;
 
   constructor(
     private db: OutpostDatabase,
     journal?: JournalService,
     private probe: () => Promise<MonitoringSnapshot> = defaultProbe,
     private serviceProbe: () => Promise<ServiceStates> = defaultServiceProbe,
+    options: { setup?: boolean } = {},
   ) {
     this.journal = journal ?? new JournalService(db);
+    this.setup = options.setup ?? config.setup;
   }
 
   async collect(reference = new Date()) {
@@ -63,8 +71,9 @@ export class MonitoringService {
     const overrides = config.demo ? this.db.setting<Record<string, boolean>>("demo_service_states", {}) : {};
     const services = { ...snapshot.services, ...overrides };
     const observedAt = reference.toISOString();
-    for (const service of monitoredServices) this.observeService(service, services[service] ?? false, observedAt);
-    if (snapshot.transports) {
+    const tls = snapshot.tlsDays === null ? null : tlsLevel(snapshot.tlsDays, this.setup);
+    for (const service of this.expectedServices()) this.observeService(service, services[service] ?? false, observedAt);
+    if (snapshot.transports && !this.setup) {
       this.observeService("vless-xhttp", snapshot.transports.xhttp, observedAt);
       this.observeService("vless-grpc", snapshot.transports.grpc, observedAt);
     }
@@ -75,10 +84,10 @@ export class MonitoringService {
       { percent: snapshot.diskPercent },
       { warning: "system.disk_warning", critical: "system.disk_critical", recovered: "system.disk_restored" },
     );
-    if (snapshot.tlsDays !== null) {
+    if (snapshot.tlsDays !== null && tls !== null) {
       this.observeThreshold(
         "system:tls",
-        snapshot.tlsDays < 7 ? "critical" : snapshot.tlsDays < 30 ? "warning" : "healthy",
+        tls,
         observedAt,
         { days: snapshot.tlsDays },
         { warning: "system.tls_warning", critical: "system.tls_critical", recovered: "system.tls_restored" },
@@ -90,7 +99,7 @@ export class MonitoringService {
       services: monitoredServices.map((name) => ({ name, status: services[name] ? "active" : "inactive" })),
       transports: snapshot.transports ?? previous.transports,
       tls: {
-        status: snapshot.tlsDays === null ? "unknown" : snapshot.tlsDays < 7 ? "critical" : snapshot.tlsDays < 30 ? "warning" : "valid",
+        status: tls === null ? "unknown" : tls === "healthy" ? "valid" : tls,
         expiresAt: snapshot.tlsExpiresAt ?? (snapshot.tlsDays === null ? null : new Date(reference.getTime() + snapshot.tlsDays * 24 * 60 * 60 * 1000).toISOString()),
         error: snapshot.tlsDays === null ? snapshot.tlsError ?? "Не удалось проверить TLS-сертификат" : null,
       },
@@ -109,7 +118,7 @@ export class MonitoringService {
     const overrides = config.demo ? this.db.setting<Record<string, boolean>>("demo_service_states", {}) : {};
     const services = { ...probed, ...overrides };
     const observedAt = reference.toISOString();
-    for (const service of monitoredServices) this.observeService(service, services[service] ?? false, observedAt);
+    for (const service of this.expectedServices()) this.observeService(service, services[service] ?? false, observedAt);
     const snapshot = this.db.setting<Record<string, unknown>>("monitor_snapshot", {});
     this.db.setSetting("monitor_snapshot", {
       ...snapshot,
@@ -148,6 +157,10 @@ export class MonitoringService {
       });
     }
     this.save(key, failures >= 2 ? "unavailable" : previous?.status ?? "baseline", "error", failures, observedAt, {});
+  }
+
+  private expectedServices() {
+    return this.setup ? setupServices : monitoredServices;
   }
 
   private observeThreshold(
@@ -205,6 +218,22 @@ export class MonitoringService {
         changed_at = excluded.changed_at
     `).run(key, status, severity, failures, JSON.stringify(data), observedAt, changedAt);
   }
+}
+
+export function prepareSetupMonitoring(db: OutpostDatabase) {
+  if (db.setting("setup_monitoring_v2", false)) return;
+  const keyPlaceholders = setupMonitorKeys.map(() => "?").join(", ");
+  db.raw.transaction(() => {
+    db.raw.query(`DELETE FROM monitor_states WHERE key IN (${keyPlaceholders})`).run(...setupMonitorKeys);
+    db.raw.exec(`
+      DELETE FROM events WHERE actor = 'monitor' AND (
+        (type = 'engine.telemetry_unavailable' AND source IN ('hysteria', 'xray'))
+        OR (type = 'service.unavailable' AND source IN ('hysteria-server', 'xray', 'vless-xhttp', 'vless-grpc'))
+        OR (type IN ('system.tls_warning', 'system.tls_critical') AND source = 'system')
+      )
+    `);
+    db.setSetting("setup_monitoring_v2", true);
+  })();
 }
 
 async function defaultProbe(): Promise<MonitoringSnapshot> {
@@ -319,6 +348,11 @@ function networkUsage() {
 
 function percent(value: number, total: number) {
   return total ? Math.max(0, Math.min(100, Math.round(value / total * 100))) : 0;
+}
+
+function tlsLevel(days: number, setup: boolean) {
+  if (setup) return days < 1 ? "critical" : days < 3 ? "warning" : "healthy";
+  return days < 7 ? "critical" : days < 30 ? "warning" : "healthy";
 }
 
 async function certificate() {

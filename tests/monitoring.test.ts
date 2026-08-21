@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { JournalService } from "../src/server/services/journal";
-import { certificateTlsOptions, MonitoringService, type MonitoringSnapshot } from "../src/server/services/monitoring";
+import {
+  certificateTlsOptions, MonitoringService, prepareSetupMonitoring, type MonitoringSnapshot,
+} from "../src/server/services/monitoring";
 import { database } from "./helpers";
 
 describe("system monitoring", () => {
@@ -67,6 +69,59 @@ describe("system monitoring", () => {
     snapshot = { ...snapshot, diskPercent: 79, tlsDays: 45 };
     await monitoring.collect(at(4));
     expect(journal.latest(2).map((event) => event.type)).toContainAllValues(["system.disk_restored", "system.tls_restored"]);
+  });
+
+  test("keeps expected setup services and a fresh short-lived IP certificate healthy", async () => {
+    const monitoring = new MonitoringService(fixture.db, undefined, async () => ({
+      services: { "outpost": true, nginx: true, "hysteria-server": false, xray: false },
+      transports: { xhttp: false, grpc: false },
+      diskPercent: 40,
+      tlsDays: 6,
+    }), undefined, { setup: true });
+
+    await monitoring.collect(new Date("2026-08-17T10:00:00.000Z"));
+    await monitoring.collect(new Date("2026-08-17T10:01:00.000Z"));
+
+    const keys = fixture.db.raw.query<{ key: string }, []>("SELECT key FROM monitor_states ORDER BY key").all().map((row) => row.key);
+    expect(keys).toEqual(["service:nginx", "service:outpost", "system:disk", "system:tls"]);
+    expect(fixture.db.setting<{ tls: { status: string } }>("monitor_snapshot", { tls: { status: "" } }).tls.status).toBe("valid");
+    expect(new JournalService(fixture.db).list().events).toHaveLength(0);
+  });
+
+  test("uses renewal-aware warning and critical thresholds for setup certificates", async () => {
+    let days = 2;
+    const monitoring = new MonitoringService(fixture.db, undefined, async () => ({
+      services: { "outpost": true, nginx: true, "hysteria-server": false, xray: false },
+      diskPercent: 40,
+      tlsDays: days,
+    }), undefined, { setup: true });
+
+    await monitoring.collect(new Date("2026-08-17T10:00:00.000Z"));
+    await monitoring.collect(new Date("2026-08-17T10:01:00.000Z"));
+    expect(new JournalService(fixture.db).list().events.map((event) => event.type)).toContain("system.tls_warning");
+
+    days = 0;
+    await monitoring.collect(new Date("2026-08-17T10:02:00.000Z"));
+    await monitoring.collect(new Date("2026-08-17T10:03:00.000Z"));
+    expect(new JournalService(fixture.db).list().events.map((event) => event.type)).toContain("system.tls_critical");
+  });
+
+  test("clears rc.10 setup false positives once", () => {
+    const journal = new JournalService(fixture.db);
+    fixture.db.raw.query(`
+      INSERT INTO monitor_states (key, status, severity, failures, observed_at, changed_at)
+      VALUES ('service:xray', 'unavailable', 'error', 3, '2026-08-17T10:00:00.000Z', '2026-08-17T10:00:00.000Z')
+    `).run();
+    journal.record("service.unavailable", { actor: "monitor", source: "xray", data: { service: "xray" } });
+    journal.record("service.unavailable", { actor: "monitor", source: "outpost", data: { service: "outpost" } });
+
+    prepareSetupMonitoring(fixture.db);
+    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM monitor_states WHERE key = 'service:xray'").get()?.count).toBe(0);
+    expect(journal.list().events.map((event) => event.source)).toEqual(["outpost"]);
+
+    journal.record("service.unavailable", { actor: "monitor", source: "xray", data: { service: "xray" } });
+    prepareSetupMonitoring(fixture.db);
+    expect(journal.list().events.map((event) => event.source)).toContainAllValues(["outpost", "xray"]);
   });
 
   test("keeps a compact rolling network-rate history in the monitor snapshot", async () => {

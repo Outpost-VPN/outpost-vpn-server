@@ -17,11 +17,17 @@ export type TrafficPeriod = "today" | "24h" | "week" | "7d" | "month" | "30d" | 
 export class TrafficService {
   private journal: JournalService;
 
-  constructor(private db: OutpostDatabase, private collectors: TrafficCollector[] = [], journal?: JournalService) {
+  constructor(
+    private db: OutpostDatabase,
+    private collectors: TrafficCollector[] = [],
+    journal?: JournalService,
+    private enabled = true,
+  ) {
     this.journal = journal ?? new JournalService(db);
   }
 
   async collect(reference = new Date()) {
+    if (!this.enabled) return;
     for (const collector of this.collectors) {
       try {
         const snapshot = await collector.collect();

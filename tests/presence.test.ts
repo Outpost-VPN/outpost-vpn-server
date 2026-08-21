@@ -97,4 +97,16 @@ describe("connection presence telemetry", () => {
     expect(connections.get(connectionId).presence?.status).toBe("unknown");
     expect(new JournalService(fixture.db).list().events.some((event) => event.type === "connection.offline_long")).toBeFalse();
   });
+
+  test("does not probe engine telemetry during setup", async () => {
+    hysteria.error = new Error("must not run");
+    xray.error = new Error("must not run");
+    const setupTraffic = new TrafficService(fixture.db, [hysteria, xray], undefined, false);
+
+    await setupTraffic.collect(new Date("2026-08-15T08:00:00.000Z"));
+    await setupTraffic.collect(new Date("2026-08-15T08:00:30.000Z"));
+
+    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM monitor_states WHERE key LIKE 'telemetry:%'").get()?.count).toBe(0);
+    expect(new JournalService(fixture.db).list().events.some((event) => event.type === "engine.telemetry_unavailable")).toBeFalse();
+  });
 });
