@@ -32,6 +32,8 @@ export const config = {
   grpcService: normalizeSegment(process.env.OUTPOST_GRPC_SERVICE ?? "grpc-change-me"),
   hysteriaStatsSecret: process.env.OUTPOST_HYSTERIA_STATS_SECRET ?? "development-stats-secret",
   agentSocket: process.env.OUTPOST_AGENT_SOCKET ?? "/run/outpost/agent.sock",
+  releasePublicKey: resolve(process.env.OUTPOST_RELEASE_PUBLIC_KEY
+    ?? (production ? "/opt/outpost/current/infra/release/minisign.pub" : join(projectRoot, "infra/release/minisign.pub"))),
   rulesetDir: resolve(process.env.OUTPOST_RULESET_DIR ?? join(dataDir, "rulesets")),
   rulesetIndex: process.env.OUTPOST_RULESET_INDEX
     ?? "https://github.com/Outpost-VPN/outpost-vpn-server/releases/download/rulesets/rulesets.json",

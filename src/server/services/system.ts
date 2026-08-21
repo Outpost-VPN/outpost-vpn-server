@@ -9,17 +9,24 @@ import { config } from "../config";
 import type { EngineId } from "../models";
 import { ServiceError } from "./connections";
 import { JournalService, type JournalQuery } from "./journal";
+import { ApplicationUpdateService } from "./application-updates";
 
 const engineIds: EngineId[] = ["hysteria", "xray"];
 const interfaceSettingsInput = z.object({
   compact: z.boolean().optional(),
 }).strict();
+const systemSettingsInput = z.object({
+  timezone: z.string().min(1).max(100).optional(),
+  updateChannel: z.enum(["stable", "candidate"]).optional(),
+}).strict();
 
 export class SystemService {
   readonly journal: JournalService;
+  readonly updates: ApplicationUpdateService;
 
-  constructor(private db: OutpostDatabase, journal?: JournalService) {
+  constructor(private db: OutpostDatabase, journal?: JournalService, updates?: ApplicationUpdateService) {
     this.journal = journal ?? new JournalService(db);
+    this.updates = updates ?? new ApplicationUpdateService(db);
   }
 
   async state() {
@@ -80,9 +87,7 @@ export class SystemService {
           history: monitored.metrics?.network?.history ?? [],
         },
       },
-      updates: config.demo
-        ? { available: true, current: config.version, latest: "0.1.1" }
-        : { available: false, current: config.version, latest: config.version },
+      updates: this.updates.state(),
       events: this.journal.latest(8),
       checkedAt: monitored.checkedAt ?? now(),
     };
@@ -157,21 +162,24 @@ export class SystemService {
   settings() {
     const interfaceSettings = this.db.setting<{ compact?: boolean }>("interface", {});
     const systemSettings = this.db.setting<{ timezone?: string; updateChannel?: string }>("system", {});
+    const channel = systemSettings.updateChannel === "candidate" ? "candidate" : "stable";
     return {
       interface: {
         compact: interfaceSettings.compact ?? false,
       },
-      system: { timezone: "UTC", updateChannel: "stable", ...systemSettings },
+      system: { timezone: systemSettings.timezone ?? "UTC", updateChannel: channel },
     };
   }
 
   updateSettings(value: { interface?: unknown; system?: unknown }, actor = "owner") {
     const before = this.settings();
-    if (value.interface !== undefined) {
-      const next = interfaceSettingsInput.parse(value.interface);
-      this.db.setSetting("interface", { ...before.interface, ...next });
-    }
-    if (value.system !== undefined) this.db.setSetting("system", value.system);
+    const nextInterface = value.interface === undefined ? null : interfaceSettingsInput.parse(value.interface);
+    const nextSystem = value.system === undefined ? null : systemSettingsInput.parse(value.system);
+    this.db.raw.transaction(() => {
+      if (nextInterface) this.db.setSetting("interface", { ...before.interface, ...nextInterface });
+      if (nextSystem) this.db.setSetting("system", { ...before.system, ...nextSystem });
+    })();
+    if (nextSystem?.updateChannel !== undefined && nextSystem.updateChannel !== before.system.updateChannel) this.updates.reset();
     const after = this.settings();
     this.db.audit({ actor, action: "settings.update", resource: "settings", before, after });
     return after;

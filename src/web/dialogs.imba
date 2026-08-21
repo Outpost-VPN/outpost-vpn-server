@@ -719,7 +719,21 @@ tag outpost-confirm-modal
 		try
 			const action = store.confirmation.action
 			const operation = await store.api('POST', '/api/v1/operations/confirm', {confirmationId: store.confirmation.confirmationId, action: action, payload: payload})
-			if action == 'engine.update' or action.startsWith('service.')
+			if action == 'update.apply'
+				let completed = false
+				for attempt in [0 ... 180]
+					await new Promise(do(resolve) setTimeout(resolve, 750))
+					try
+						const response = await window.fetch('/healthz', {cache: 'no-store', signal: window.AbortSignal.timeout(3000)})
+						if response.ok
+							const state = await response.json!
+							if state.version == payload.version
+								completed = true
+								break
+					catch
+						continue
+				throw new Error(t('settings.update.restart_wait')) unless completed
+			elif action == 'engine.update' or action.startsWith('service.')
 				let completed = false
 				const limit = action == 'engine.update' ? 240 : 60
 				for attempt in [0 ... limit]

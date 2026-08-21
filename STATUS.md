@@ -1,6 +1,6 @@
 # Состояние Outpost v1
 
-Обновлено: 21 августа 2026.
+Обновлено: 22 августа 2026.
 
 ## Реализовано
 
@@ -24,6 +24,7 @@
 - pinned Hysteria/Xray с SHA-256;
 - отдельно публикуемый подписанный GeoIP/Geosite SRS bundle из официальных SagerNet sources: manifest, SHA-256, source commits, licenses, atomic switch и две rollback-версии;
 - immutable releases, migration snapshot и автоматический rollback обновления;
+- production web updater с stable/candidate channels, обнаружением GitHub Release, потоковой staging-загрузкой archive + Minisign, фиксированными asset URL/именами/размерами, двухэтапным подтверждением и ожиданием целевой версии после restart;
 - переносимый age-backup из CLI и UI, restore на установке без владельца;
 - локальный stdio MCP с двухэтапным подтверждением опасных операций;
 - единое внутреннее именование `outpost` для служб, бинарников, CLI,
@@ -48,7 +49,7 @@
 ## Проверено локально и на VPS
 
 - TypeScript typecheck и Imba production build;
-- 165 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
+- 173 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, signed application update discovery/staging/channel/version binding/restart recovery/bounded proxy timeout, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
 - сгенерированные Mihomo, sing-box и Xray JSON профили приняты нативными `mihomo 1.19.30`, `sing-box 1.13.19` и `xray 26.7.28`;
 - Go policy tests и статический linux/amd64 agent build;
 - standalone Linux server/CLI и macOS CLI builds;
@@ -78,11 +79,11 @@
 - `rc.11` опубликован из точного зелёного `main`, анонимно проверен по Minisign, внешнему SHA-256 `9e8b3880bba6721ef1dd8e965d2005025ff04c71b242cc83f1a4ff1b27975f24`, внутреннему `SHA256SUMS` и manifest; signed updater перевёл HostKey без повторного ACME order или rollback;
 - Nginx, Outpost, root-agent, Hysteria и Xray active/enabled с нулём рестартов и warning/error; все services, transports, telemetry, disk и TLS остаются healthy/available после нескольких monitoring intervals. Running root-agent SHA-256 совпадает с анонимно скачанным signed archive.
 - точный signed `rc.12` установлен на заново переустановленный HostKey одной публичной post-install командой; все release-файлы совпали с проверенным архивом, browser setup завершён на `outpost.semenova.icu`, а services, transports, telemetry, disk, TLS и SQLite прошли полевую проверку без рестартов и incidents;
-- первый прямой импорт универсального `/s/:token` в Everywhere 1.5 выявил регрессию `rc.12`: корневой URL всегда отдавал HTML-каталог, поэтому Mihomo завершался с `yaml: line 5: found character that cannot start any token`. Исправление `rc.13` вернуло User-Agent negotiation для `Everywhere/1.0 Clash/1.11.0`, сохранило HTML для браузера и explicit `/apps/:appId`; профильные тесты, полный `bun run check` и native subscription validation зелёные. HostKey намеренно остаётся на `rc.12` до ручного обновления через веб-панель.
+- первый прямой импорт универсального `/s/:token` в Everywhere 1.5 выявил регрессию `rc.12`: корневой URL всегда отдавал HTML-каталог, поэтому Mihomo завершался с `yaml: line 5: found character that cannot start any token`. Исправление `rc.13` вернуло User-Agent negotiation для `Everywhere/1.0 Clash/1.11.0`, сохранило HTML для браузера и explicit `/apps/:appId`; профильные тесты, полный `bun run check` и native subscription validation зелёные. HostKey намеренно остаётся на `rc.12` до одноразового bridge update.
 
 ## Оставшийся полевой gate
 
-Чистая signed-установка `rc.12` и browser setup на HostKey завершены. Первый прямой импорт нашёл и закрыл в `rc.13` ошибку content negotiation универсальной ссылки; для продолжения клиентского gate нужно вручную обновить HostKey через веб-панель. После его развёртывания остаются:
+Чистая signed-установка `rc.12` и browser setup на HostKey завершены. Первый прямой импорт нашёл и закрыл в `rc.13` ошибку content negotiation универсальной ссылки. `rc.14` добавляет настоящий web updater, но backend `rc.12` не может загрузить код собственного исправления: нужен один ручной signed bridge до `rc.14`, после чего web flow проверяется отдельным переходом на следующий candidate. После этого остаются:
 
 1. прямой импорт минимум в один Mihomo-, sing-box- и Xray-клиент без обязательного browser step;
 2. Hysteria UDP/443, XHTTP и gRPC через общий TCP/443 и автоматическое переключение при недоступном UDP;
@@ -112,6 +113,29 @@ ShellCheck, native Mihomo/sing-box/Xray validation, XHTTP/gRPC/Mihomo transport
 integration, Linux server/CLI и macOS CLI builds, dependency audit и release
 archive verification.
 
-Точный `rc.12` прошёл чистую установку и browser setup на HostKey. Следующий
-checkpoint после публикации signed `rc.13` — ручное обновление HostKey через
-веб-панель и повторный импорт той же универсальной ссылки в Everywhere.
+Точный `rc.12` прошёл чистую установку и browser setup на HostKey. `rc.13`
+опубликован и независимо проверен, но старый production backend не обнаруживает
+release и не скачивает assets. Следующий checkpoint — публикация signed `rc.14`,
+одноразовый bridge `rc.12 → rc.14` без изменения данных и затем отдельный
+web-update на следующий candidate, которым проверяется новый механизм end-to-end.
+
+## Кандидат 0.1.0-rc.14
+
+Кандидат превращает прежнюю декоративную кнопку обновления в production flow.
+Owner panel проверяет фиксированный публичный GitHub repository, поддерживает
+stable и candidate channels, выбирает только более новую SemVer, требует точные
+versioned archive/signature assets и ограничивает их размер. Загрузка идёт во
+временные файлы под `/var/lib/outpost/incoming`; финальные имена появляются
+только после успешной Minisign verification. Пользовательские URL в API не
+принимаются.
+
+После staging панель использует существующее preview/confirm. Root-agent заново
+проверяет version/path/signature contract, а `apply-update` связывает target с
+подписанным manifest, делает SQLite snapshot, атомарный switch и rollback.
+Operation ID передаётся отдельным валидированным значением: updater фиксирует
+success/failure в SQLite после readiness, а новый control plane восстанавливает
+семантическое journal event. Браузер ждёт `/healthz` именно с target version.
+
+Поскольку `rc.12` всегда возвращает `updates.available: false`, он не может сам
+перейти на версию, где этот updater реализован. Это ограничение bootstrap старой
+версии, а не дефект `rc.14`; первый переход остаётся одноразовым ручным bridge.

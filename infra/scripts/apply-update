@@ -3,7 +3,10 @@ set -euo pipefail
 
 archive=${1:-}
 signature=${2:-"${archive}.minisig"}
+expected_version=${3:-}
+operation_id=${4:-}
 test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
+test -z "$operation_id" || [[ "$operation_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || { echo "Invalid operation ID" >&2; exit 1; }
 test -f "$archive" || { echo "Release archive not found" >&2; exit 1; }
 test -f "$signature" || { echo "Release signature not found" >&2; exit 1; }
 test -f /opt/outpost/current/infra/release/minisign.pub || { echo "Trusted release public key not found" >&2; exit 1; }
@@ -24,6 +27,18 @@ hysteria_was_active=0
 xray_was_active=0
 next=""
 trap 'rm -rf "$update_tmp"' EXIT
+
+mark_operation() {
+  test -n "$operation_id" || return 0
+  if test "$1" = completed; then
+    sqlite3 -cmd '.timeout 5000' /var/lib/outpost/outpost.sqlite \
+      "UPDATE operations SET status='completed', progress=100, message='operation.completed', result_json='{\"ok\":true,\"version\":\"$expected_version\"}', error=NULL, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='$operation_id' AND kind='update.apply';"
+  else
+    sqlite3 -cmd '.timeout 5000' /var/lib/outpost/outpost.sqlite \
+      "UPDATE operations SET status='failed', error='Update failed and was rolled back', updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='$operation_id' AND kind='update.apply';"
+  fi
+}
+
 test -f "$env_file" || { echo "Outpost environment not found" >&2; exit 1; }
 cp "$env_file" "$env_previous"
 cp /etc/outpost/engines/hysteria.yaml "$hysteria_previous"
@@ -35,6 +50,7 @@ tar -xzf "$archive" -C "$update_tmp"
 source_dir=$(find "$update_tmp" -mindepth 1 -maxdepth 1 -type d | head -1)
 version=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$source_dir/manifest.json")
 [[ "$version" =~ ^[0-9][0-9A-Za-z.-]{0,39}$ ]] || { echo "Invalid release manifest" >&2; exit 1; }
+test -z "$expected_version" || test "$version" = "$expected_version" || { echo "Release manifest version does not match requested update" >&2; exit 1; }
 (cd "$source_dir" && sha256sum -c SHA256SUMS)
 sed "s/^OUTPOST_VERSION=.*/OUTPOST_VERSION=$version/" "$env_file" >"$update_tmp/outpost.env.next"
 grep -qxF "OUTPOST_VERSION=$version" "$update_tmp/outpost.env.next"
@@ -58,6 +74,7 @@ rollback() {
   systemctl restart outpost-agent
   if test "$hysteria_was_active" = 1; then systemctl restart hysteria-server || true; fi
   if test "$xray_was_active" = 1; then systemctl restart xray || true; fi
+  mark_operation failed || true
   systemctl restart outpost
   echo "Update failed and was rolled back to $previous" >&2
 }
@@ -79,9 +96,11 @@ for _ in {1..30}; do
   sleep 1
 done
 curl -fsS http://127.0.0.1:8181/readyz >/dev/null
+mark_operation completed
 trap - ERR
 
 # Keep current plus two previous immutable releases.
 find /opt/outpost/releases -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | awk 'NR>3 {print $2}' | xargs -r rm -rf --
 find /var/lib/outpost/update-snapshots -type f -name '*.sqlite' -printf '%T@ %p\n' | sort -nr | awk 'NR>5 {print $2}' | xargs -r rm -f --
+rm -f -- "$archive" "$signature"
 echo "Updated to $version"

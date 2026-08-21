@@ -70,10 +70,27 @@ func Validate(request Request) error {
 		}
 		return nil
 	case "update.apply":
+		version, ok := request.Payload["version"].(string)
+		if !ok || !safeVersion(version) {
+			return errors.New("valid application version is required")
+		}
+		operationID, ok := request.Payload["operationId"].(string)
+		if !ok || !validOperationID(operationID) {
+			return errors.New("valid operation id is required")
+		}
 		if err := requirePath(request.Payload, "bundle", "/var/lib/outpost/incoming"); err != nil {
 			return err
 		}
-		return requirePath(request.Payload, "signature", "/var/lib/outpost/incoming")
+		if err := requirePath(request.Payload, "signature", "/var/lib/outpost/incoming"); err != nil {
+			return err
+		}
+		bundle := request.Payload["bundle"].(string)
+		signature := request.Payload["signature"].(string)
+		expected := filepath.Join("/var/lib/outpost/incoming", "outpost-"+version+"-linux-amd64.tar.gz")
+		if bundle != expected || signature != expected+".minisig" {
+			return errors.New("application archive does not match version")
+		}
+		return nil
 	case "backup.export":
 		if err := requirePath(request.Payload, "output", "/var/lib/outpost/backups"); err != nil {
 			return err
@@ -137,6 +154,21 @@ func validSHA256(value string) bool {
 	}
 	for _, char := range value {
 		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func validOperationID(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		return false
+	}
+	for index, char := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') && (char < 'A' || char > 'F') {
 			return false
 		}
 	}
