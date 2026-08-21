@@ -22,6 +22,10 @@ export interface SubscriptionRenderer {
   render(context: SubscriptionContext): RenderedSubscription;
 }
 
+const MIHOMO_QUIC_REJECT_RULE = "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT";
+const SING_BOX_QUIC_REJECT_RULE = { network: "udp", port: 443, action: "reject" } as const;
+const XRAY_QUIC_REJECT_RULE = { type: "field", network: "udp", port: 443, outboundTag: "block" } as const;
+
 export function endpoints(context: SubscriptionContext) {
   const label = encodeURIComponent(context.connection.name);
   const host = config.publicIp || config.domain;
@@ -70,6 +74,7 @@ export const mihomoRenderer: SubscriptionRenderer = {
   render(context) {
     const host = config.publicIp || config.domain;
     const credential = context.credentials;
+    const rules = context.routes.filter(enabled);
     const proxies = ordered<Record<string, unknown>>(context.engineOrder, {
       hysteria: [{
         name: "Hysteria 2",
@@ -127,7 +132,11 @@ export const mihomoRenderer: SubscriptionRenderer = {
       },
       proxies,
       "proxy-groups": [{ name: "PROXY", type: "fallback", url: "http://1.1.1.1", interval: 300, proxies: names }],
-      rules: context.routes.filter(enabled).map(mihomoRule),
+      rules: [
+        ...rules.filter((rule) => !isCatchAll(rule)).map(mihomoRule),
+        MIHOMO_QUIC_REJECT_RULE,
+        ...rules.filter(isCatchAll).map(mihomoRule),
+      ],
     };
     return output(YAML.stringify(profile), "text/yaml; charset=utf-8", {
       "profile-title": encodeURIComponent(`Outpost · ${context.connection.name}`),
@@ -184,7 +193,7 @@ export const singBoxRenderer: SubscriptionRenderer = {
         auto_detect_interface: true,
         default_domain_resolver: "local",
         rule_set: sets,
-        rules: rules.filter((rule) => !(rule.matcher === "SUFFIX" && rule.value === "*")).map(singBoxRule),
+        rules: [...rules.filter((rule) => !isCatchAll(rule)).map(singBoxRule), SING_BOX_QUIC_REJECT_RULE],
         final: catchAll(rules),
       },
     };
@@ -196,6 +205,7 @@ export const xrayJsonRenderer: SubscriptionRenderer = {
   id: "xray-json",
   render(context) {
     const host = config.publicIp || config.domain;
+    const rules = context.routes.filter(enabled);
     const outbounds = [
       xrayOutbound("proxy-xhttp", host, context.credentials.xray.id, "xhttp"),
       xrayOutbound("proxy-grpc", host, context.credentials.xray.id, "grpc"),
@@ -214,7 +224,11 @@ export const xrayJsonRenderer: SubscriptionRenderer = {
       routing: {
         domainStrategy: "IPIfNonMatch",
         balancers: [{ tag: "proxy", selector: ["proxy-"], strategy: { type: "leastPing" } }],
-        rules: context.routes.filter(enabled).map(xrayRule),
+        rules: [
+          ...rules.filter((rule) => !isCatchAll(rule)).map(xrayRule),
+          XRAY_QUIC_REJECT_RULE,
+          ...rules.filter(isCatchAll).map(xrayRule),
+        ],
       },
     };
     return output(`${JSON.stringify(profile, null, 2)}\n`, "application/json; charset=utf-8");
@@ -253,6 +267,10 @@ function singBoxOrder(order: readonly EngineId[]) {
 
 function enabled(rule: RouteRule) {
   return Boolean(rule.enabled);
+}
+
+function isCatchAll(rule: RouteRule) {
+  return rule.matcher === "SUFFIX" && rule.value === "*";
 }
 
 function utf8Header(value: string) {
@@ -305,7 +323,8 @@ function mihomoRule(rule: RouteRule) {
   if (rule.matcher === "SUFFIX" && rule.value === "*") return `MATCH,${target}`;
   const types = { DOMAIN: "DOMAIN", SUFFIX: "DOMAIN-SUFFIX", IP_CIDR: "IP-CIDR", GEOSITE: "GEOSITE", GEOIP: "GEOIP" } as const;
   const value = rule.matcher === "SUFFIX" ? rule.value.replace(/^\./, "") : rule.value;
-  return `${types[rule.matcher]},${value},${target}`;
+  const type = rule.matcher === "IP_CIDR" && value.includes(":") ? "IP-CIDR6" : types[rule.matcher];
+  return `${type},${value},${target}`;
 }
 
 function singBoxSets(rules: RouteRule[]) {

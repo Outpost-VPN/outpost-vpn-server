@@ -19,6 +19,7 @@
 - фоновый мониторинг systemd, XHTTP/gRPC localhost listeners, telemetry, диска, TLS и rule-set updater с конкретной причиной сбоя;
 - privacy-redaction журнала: credentials, tokens, passphrase, IP и destination history не сохраняются;
 - raw templates движков с protected blocks, preview/diff, ревизиями, validator и rollback;
+- versioned presets Hysteria/Xray с семантическим three-way merge `старый preset + пользовательский template + новый preset`: пользовательские поля, удаления и YAML-комментарии сохраняются, массивы совмещаются по `tag`/`name`/`id`, системная политика защищена, а конфликты остаются для явного разрешения;
 - Nginx one-domain split, отключённые secret URL logs, systemd hardening и UFW;
 - pinned Hysteria/Xray с SHA-256;
 - отдельно публикуемый подписанный GeoIP/Geosite SRS bundle из официальных SagerNet sources: manifest, SHA-256, source commits, licenses, atomic switch и две rollback-версии;
@@ -30,11 +31,14 @@
   legacy-алиасов;
 - CI для Bun/Imba/TypeScript, Linux build, macOS CLI и Go-agent.
 - публичный server-side bootstrap: одна команда на чистой Ubuntu 24.04, signed GitHub Release, Certbot 5.4+ из snap и trusted short-lived IP certificate;
-- pre-launch API проверяет bootstrap token и DNS, root-agent повторно валидирует domain/IPv4 и атомарно переключает Nginx/Hysteria/Xray на final domain certificate;
-- временный IP Nginx разрешает только setup UI/API и не публикует WebAuthn или owner dashboard;
+- pre-launch API без install-time token проверяет DNS, root-agent повторно валидирует domain/IPv4 и атомарно переключает Nginx/Hysteria/Xray на final domain certificate;
+- IP Nginx показывает setup прямо на `https://<IP>/`; после настройки сохраняет IP certificate и разрешает только предупреждение, setup assets, read-only setup status и ACME, не публикуя WebAuthn, owner dashboard, мутации, подписки или transports;
 - UI entrypoint механически разнесён по feature-модулям; `app.imba` содержит только composition root;
+- dashboard синхронизируется через authenticated SSE с монотонной revision, heartbeat и 30-секундным polling fallback; навигация и мутации сохраняют текущий snapshot и обновляют его неблокирующе;
+- единый dashboard snapshot включает security-состояние, а открытый журнал повторяет текущий запрос при новой revision с сохранением фильтров;
+- production edge сжимает JavaScript, CSS и JSON через gzip; HTML всегда ревалидируется, а versioned JS/CSS получают годовой immutable cache;
 - owner dashboard отделён от минимального `/api/v1/status`, поэтому `status:read` не раскрывает подключения, маршруты, settings, configs и tokens;
-- WebAuthn challenge не хранит raw bootstrap token, просроченные записи чистятся, незавершённые записи ограничены;
+- WebAuthn challenge не хранит raw setup claim/recovery token; claim имеет TTL, повторно проверяется при завершении, однократно потребляется, просроченные challenge чистятся, незавершённые записи ограничены;
 - персистентный connection-sync outbox завершает activation/rotate/archive в БД только после синхронизации Xray, повторяет interrupted/failed jobs и сразу инвалидирует старую ссылку при ротации или архивировании;
 - Nginx hardening: default Host/SNI servers, fixed-domain redirect, rate/body limits, HSTS и fixed upstream Host;
 - actions pinned по commit SHA, release workflow запускается вручную из `main`, checkout делает только точный `refs/tags/<tag>`, затем workflow подписывает Minisign и публикует GitHub Release через environment secret;
@@ -44,7 +48,7 @@
 ## Проверено локально и на VPS
 
 - TypeScript typecheck и Imba production build;
-- 111 unit/integration tests, включая единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract, WebAuthn, journal, presence и pre-launch monitoring;
+- 164 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
 - сгенерированные Mihomo, sing-box и Xray JSON профили приняты нативными `mihomo 1.19.30`, `sing-box 1.13.19` и `xray 26.7.28`;
 - Go policy tests и статический linux/amd64 agent build;
 - standalone Linux server/CLI и macOS CLI builds;
@@ -62,7 +66,7 @@
 - Nginx, Outpost и root-agent active/enabled, UFW active; Xray и Hysteria остаются disabled до browser-перехода на конечный домен;
 - Gitleaks повторно проверил текущее дерево и всю Git-историю перед публикацией: секретов и legacy-названия нет; `bun audit` не нашёл уязвимостей.
 - signed workflow опубликовал pre-release [`v0.1.0-rc.8`](https://github.com/Outpost-VPN/outpost-vpn-server/releases/tag/v0.1.0-rc.8) из точного зелёного `main`; анонимная загрузка повторно прошла detached Minisign, внешний portable SHA-256, внутренний `SHA256SUMS` и manifest `linux-amd64`;
-- чистая установка `v0.1.0-rc.8` прошла на HostKey Ubuntu 24.04 amd64 даже при вызывающем `umask 077`: Certbot выдал trusted short-lived IP certificate, Nginx, Outpost и root-agent active, UFW active, `/readyz` и одноразовая setup page доступны;
+- чистая установка `v0.1.0-rc.8` прошла на HostKey Ubuntu 24.04 amd64 даже при вызывающем `umask 077`: Certbot выдал trusted short-lived IP certificate, Nginx, Outpost и root-agent active, UFW active, `/readyz` и setup page доступны;
 - полевая установка выявила и закрыла три дефекта до `rc.8`: transient restart snapd при установке Certbot, недопустимый IP в TLS SNI monitoring probe и неявный mode временного ACME-файла; rollback после каждой неуспешной попытки оставлял Outpost paths, services и порты чистыми;
 - после установки Outpost пережил следующий цикл мониторинга без warning/error и рестартов; IP certificate проверен с `verify_ip`, а `/etc/outpost/outpost.env` имеет mode `0640` и владельца `root:outpost`.
 - security pre-release [`v0.1.0-rc.9`](https://github.com/Outpost-VPN/outpost-vpn-server/releases/tag/v0.1.0-rc.9) обновил runtime `golang.org/x/crypto` до `0.52.0` и Go toolchain до 1.25; `govulncheck` не нашёл достигаемых уязвимостей, а число открытых Dependabot alerts стало нулевым;
@@ -89,3 +93,22 @@
 9. WebAuthn e2e на final domain.
 
 До прохождения gate проект следует считать pre-release, а не production-ready.
+
+## Кандидат 0.1.0-rc.12
+
+В кандидат собраны завершённый многоязычный интерфейс и стабилизация control
+plane: единый каталог приложений, SSE-dashboard, локализованный журнал и API,
+строгие route validators, versioned engine presets с three-way merge и
+безопасный first-claim setup по фиксированному IP-корню.
+
+Перед публикацией закрыты отказные сценарии первоначального claim handoff,
+кэширования secret subscription responses, dashboard reconnect после restart,
+rollback domain finalization и нового CLI/MCP error envelope. Полный локальный
+gate проходит: `bun run check` (164 теста), Go tests/vet/static build,
+ShellCheck, native Mihomo/sing-box/Xray validation, XHTTP/gRPC/Mihomo transport
+integration, Linux server/CLI и macOS CLI builds, dependency audit и release
+archive verification.
+
+HostKey на `rc.12` ещё не переустанавливался. Следующий checkpoint после
+публикации signed pre-release — чистая установка точной версии на HostKey и
+повторное прохождение browser setup и полевого gate.

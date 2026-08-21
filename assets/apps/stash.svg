@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Stash">
+  <rect width="128" height="128" rx="28" fill="#2b2439"/>
+  <path d="M36 38c0-9 8-16 18-16h38v18H56c-3 0-5 2-5 5s2 5 5 5h17c13 0 23 10 23 23v11c0 13-10 23-23 23H35V89h36c5 0 8-3 8-8s-3-8-8-8H54c-10 0-18-8-18-18V38z" fill="#fff"/>
+</svg>

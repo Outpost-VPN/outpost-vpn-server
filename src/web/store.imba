@@ -1,28 +1,31 @@
+import {language, setLanguage, t} from './i18n.imba'
+
 def pathnow
 	const value = window.location.pathname.replace(/^\/admin\/?/, '')
 	return value ? "/{value}" : '/'
 
 def canonical path
 	const value = path.length > 1 ? path.replace(/\/+$/, '') : path
-	const routes = ['/', '/connections', '/protocols', '/routes', '/journal', '/access', '/settings', '/login', '/setup', '/onboarding']
+	const routes = ['/', '/connections', '/protocols', '/routes', '/journal', '/access', '/settings', '/login', '/onboarding']
 	routes.includes(value) ? value : '/'
 
 def pagetitle path
-	return 'Outpost · Первоначальная настройка' if path.startsWith('/setup')
-	return 'Outpost · Настройка доступа' if path.startsWith('/onboarding')
-	return 'Outpost · Вход' if path.startsWith('/login')
-	return 'Outpost · Доступ' if path == '/access'
-	return 'Outpost · Настройки панели' if path == '/settings'
-	return 'Outpost · Подключения' if path == '/connections'
-	return 'Outpost · Маршруты' if path == '/routes'
-	return 'Outpost · Протоколы' if path == '/protocols'
-	return 'Outpost · Журнал' if path == '/journal'
-	'Outpost · Обзор'
+	return "Outpost · {t('title.onboarding')}" if path.startsWith('/onboarding')
+	return "Outpost · {t('title.login')}" if path.startsWith('/login')
+	return "Outpost · {t('title.access')}" if path == '/access'
+	return "Outpost · {t('title.settings')}" if path == '/settings'
+	return "Outpost · {t('connections.title')}" if path == '/connections'
+	return "Outpost · {t('routes.title')}" if path == '/routes'
+	return "Outpost · {t('nav.protocols')}" if path == '/protocols'
+	return "Outpost · {t('system.log')}" if path == '/journal'
+	"Outpost · {t('title.overview')}"
 
 export class Store
 	data = null
 	loading = true
+	refreshing = false
 	error = null
+	stale = null
 	path = canonical(pathnow!)
 	dialog = null
 	dialogKey = 0
@@ -31,6 +34,12 @@ export class Store
 	confirmation = null
 	trafficPeriod = '30d'
 	security = null
+	pending = false
+	cycle = null
+	source = null
+	timer = null
+	connected = false
+	started = false
 
 	def constructor
 		const rawPath = pathnow!
@@ -40,14 +49,18 @@ export class Store
 			trafficPeriod = window.localStorage.getItem('outpost:traffic-period') or '30d'
 		catch
 			trafficPeriod = '30d'
-		window.document.title = pagetitle(path)
+		title!
 		window.addEventListener 'popstate', do
 			const raw = pathnow!
 			path = canonical(raw)
 			window.history.replaceState({}, '', "/admin{path}") if path != raw
-			window.document.title = pagetitle(path)
+			title!
 			dialog = null
 			imba.commit!
+			self.changed!
+		window.document.addEventListener 'visibilitychange', do self.visibility!
+		window.addEventListener 'online', do self.resume!
+		window.addEventListener 'offline', do self.stop!
 		window.addEventListener 'keydown', do(event)
 			return unless dialog
 			if event.key == 'Escape'
@@ -56,31 +69,79 @@ export class Store
 			elif event.key == 'Tab'
 				self.trap(event)
 
+	get live?
+		!path.startsWith('/login') and !path.startsWith('/onboarding')
+
+	def start
+		started = true
+		load! if live?
+
+	def destroy
+		started = false
+		stop!
+
 	def load
-		loading = true
-		error = null
+		pending = true
+		return cycle if cycle
+		cycle = drain!
 		try
-			const response = await window.fetch("/api/v1/dashboard?period={trafficPeriod}")
+			await cycle
+		finally
+			cycle = null
+			load! if pending
+
+	def drain
+		refreshing = true
+		while pending
+			pending = false
+			await pull!
+		refreshing = false
+		imba.commit!
+
+	def pull
+		const initial = !data
+		loading = initial
+		error = null if initial
+		try
+			const response = await window.fetch("/api/v1/dashboard?period={trafficPeriod}", {headers: {'X-Outpost-Language': language!}})
 			if response.status == 401
-				self.goto('/login')
+				self.expire!
 				return
-			throw new Error((await response.json!).error.message) if !response.ok
-			data = await response.json!
-			self.goto('/') if path.startsWith('/login')
+			unless response.ok
+				const failure = await response.json!
+				throw new Error(self.problem(failure))
+			const snapshot = await response.json!
+			data = snapshot
+			setLanguage(snapshot.auth.owner.language) if snapshot.auth.owner and snapshot.auth.owner.language
+			title!
+			security = snapshot.security
+			stale = null
+			error = null
+			self.goto('/', false) if path.startsWith('/login')
+			self.connect! if live?
 		catch issue
-			error = issue.message
+			if data
+				stale = issue.message
+			else
+				error = issue.message
 		finally
 			loading = false
 			imba.commit!
 
 	def api method, url, body = undefined
-		const options = {method: method, headers: {'content-type': 'application/json'}}
+		const options = {method: method, headers: {'content-type': 'application/json', 'X-Outpost-Language': language!}}
 		options.body = JSON.stringify(body) if body != undefined
 		const response = await window.fetch(url, options)
 		const payload = response.status == 204 ? null : await response.json!
+		self.expire! if response.status == 401
 		if !response.ok
-			throw new Error(payload.error.message)
+			throw new Error(problem(payload))
 		return payload
+
+	def problem payload
+		return payload.message if payload and payload.message
+		return payload.error.message if payload and payload.error and payload.error.message
+		t('error.request')
 
 	def mutate method, url, body = undefined
 		try
@@ -95,6 +156,7 @@ export class Store
 	def secure
 		try
 			security = await api('GET', '/api/v1/security')
+			data.security = security if data
 		catch issue
 			error = issue.message
 		finally
@@ -113,6 +175,76 @@ export class Store
 			error = issue.message
 		finally
 			imba.commit!
+
+	def signal event
+		try
+			const update = JSON.parse(event.data or '{}')
+			const current = (data and data.revision) or 0
+			load! if update.revision > current
+		catch
+			return
+
+	def connect
+		return unless started and data and live? and !window.document.hidden
+		return if source
+		source = new window.EventSource('/api/v1/dashboard/events')
+		source.addEventListener 'open', do
+			connected = true
+			self.poll(false)
+			imba.commit!
+		source.addEventListener 'ready', do self.load!
+		source.addEventListener 'snapshot', do(event) self.signal(event)
+		source.addEventListener 'heartbeat', do
+			connected = true
+			self.poll(false)
+		source.addEventListener 'error', do
+			connected = false
+			self.poll(true) unless window.document.hidden
+			imba.commit!
+
+	def poll enabled
+		if enabled
+			return if timer
+			const tick = do self.load!
+			timer = window.setInterval(tick, 30000)
+		elif timer
+			window.clearInterval(timer)
+			timer = null
+
+	def stop
+		if source
+			source.close!
+			source = null
+		if timer
+			window.clearInterval(timer)
+			timer = null
+		connected = false
+
+	def visibility
+		if window.document.hidden
+			stop!
+		else
+			resume!
+
+	def resume
+		return unless started and live? and !window.document.hidden
+		load!
+		connect!
+
+	def changed
+		if live?
+			load!
+			connect!
+		else
+			stop!
+
+	def expire
+		stop!
+		pending = false
+		data = null
+		security = null
+		loading = false
+		goto('/login', false) unless path.startsWith('/login')
 
 	def open name
 		trigger ||= window.document.activeElement
@@ -153,11 +285,15 @@ export class Store
 			event.preventDefault!
 			first.focus!
 
-	def goto next
+	def goto next, refresh = true
 		const base = '/admin'
 		const target = next.startsWith('/') ? next : "/{next}"
 		window.history.pushState({}, '', "{base}{target}")
 		path = target
-		window.document.title = pagetitle(path)
+		title!
 		dialog = null
 		imba.commit!
+		changed! if refresh
+
+	def title
+		window.document.title = pagetitle(path)

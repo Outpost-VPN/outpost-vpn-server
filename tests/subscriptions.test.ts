@@ -37,10 +37,10 @@ describe("technology subscription renderers", () => {
   test("five formats match their golden SHA-256 fingerprints", () => {
     const expected = {
       links: "ee90de33a4c5b6b1f8b62830c05dc51f33e19c045d417230974eee89648ed336",
-      mihomo: "46aee42098f92e861b0ae11807ef33797a51c8381a937316deed648bb892a625",
-      "sing-box": "4c79e63f6db7b7388862bc19df3acba987d0fa299a6264ec8f2db2c8033be47e",
+      mihomo: "05a9e4e26b848242200afab2b777fd79bb134114a7c9accf5600ad77ae5af24a",
+      "sing-box": "c1079ea6a06931ecafd62761a20601c21727bc135cff6c4ef4e6e3deb95ed45c",
       xray: "4acd88ef98861fed276fc4716ab1f1cbd3cba56134e6a4acf4c4a59619a69b16",
-      "xray-json": "ffc86874cf27c00cb9c47f4aee7fd52b6debcce8a457000cd49f787d024928a8",
+      "xray-json": "3d72c8f7bd3679c46451ee119f7de235c9b66f439cea0a1777c8a50e178efae6",
     };
     const rendered = [linksRenderer, mihomoRenderer, singBoxRenderer, xrayRenderer, xrayJsonRenderer];
     for (const renderer of rendered) {
@@ -69,13 +69,49 @@ describe("technology subscription renderers", () => {
     expect(profile.ProxySites).toContain("geosite:google");
   });
 
+  test("a top-level suffix is rendered for every supported routing engine", () => {
+    const suffix = { ...context.routes[0]!, id: "ru", matcher: "SUFFIX" as const, value: "ru", action: "DIRECT" as const };
+    const routed = { ...context, routes: [context.routes[0]!, suffix, context.routes.at(-1)!] };
+
+    expect(JSON.parse(renderLinkRoutes(routed.routes).body).DirectSites).toContain("domain:ru");
+    expect(YAML.parse(mihomoRenderer.render(routed).body).rules).toContain("DOMAIN-SUFFIX,ru,DIRECT");
+    expect(JSON.parse(singBoxRenderer.render(routed).body).route.rules).toContainEqual({
+      domain_suffix: ["ru"],
+      action: "route",
+      outbound: "direct",
+    });
+    expect(JSON.parse(xrayJsonRenderer.render(routed).body).routing.rules).toContainEqual(expect.objectContaining({
+      domain: ["domain:ru"],
+      outboundTag: "direct",
+    }));
+  });
+
+  test("Mihomo distinguishes IPv4 and IPv6 CIDR rules", () => {
+    const ipv6 = { ...context.routes[0]!, id: "ipv6", value: "2001:db8::17/128", source: "user" as const, locked: false };
+    const routed = { ...context, routes: [context.routes[0]!, ipv6, context.routes.at(-1)!] };
+    const rules = YAML.parse(mihomoRenderer.render(routed).body).rules;
+    expect(rules).toContain("IP-CIDR,10.0.0.0/8,DIRECT");
+    expect(rules).toContain("IP-CIDR6,2001:db8::17/128,DIRECT");
+  });
+
   test("Mihomo has Hysteria, XHTTP and gRPC in fallback order", () => {
     const profile = YAML.parse(mihomoRenderer.render(context).body);
     expect(profile.proxies.map((proxy: { name: string }) => proxy.name)).toEqual(["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"]);
     expect(profile["proxy-groups"][0]).toMatchObject({ type: "fallback", proxies: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"] });
     expect(profile.proxies[1]["xhttp-opts"].mode).toBe("packet-up");
     expect(profile.dns.enable).toBeTrue();
+    expect(profile.rules.at(-2)).toBe("AND,((NETWORK,UDP),(DST-PORT,443)),REJECT");
     expect(profile.rules.at(-1)).toBe("MATCH,PROXY");
+  });
+
+  test("full client configurations reject QUIC before their catch-all route", () => {
+    const singBox = JSON.parse(singBoxRenderer.render(context).body);
+    expect(singBox.route.rules.at(-1)).toEqual({ network: "udp", port: 443, action: "reject" });
+    expect(singBox.route.final).toBe("proxy");
+
+    const xray = JSON.parse(xrayJsonRenderer.render(context).body);
+    expect(xray.routing.rules.at(-2)).toEqual({ type: "field", network: "udp", port: 443, outboundTag: "block" });
+    expect(xray.routing.rules.at(-1)).toMatchObject({ type: "field", network: "tcp,udp", balancerTag: "proxy" });
   });
 
   test("sing-box uses Hysteria and gRPC with urltest and remote SRS rules", () => {

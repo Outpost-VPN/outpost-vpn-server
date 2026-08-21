@@ -6,6 +6,8 @@ import type {
   JournalOutcome,
   JournalSeverity,
 } from "../models";
+import type { Locale } from "../../shared/i18n";
+import { journalActor, journalPresentation } from "./journal-locales";
 
 type EventData = Record<string, unknown>;
 
@@ -27,6 +29,7 @@ export type JournalQuery = {
   q?: string;
   before?: number;
   limit?: number;
+  language?: Locale;
 };
 
 export type JournalEvent = {
@@ -56,7 +59,9 @@ const definitions: Record<string, EventDefinition> = {
   "connection.created": change("connections", "Подключение создано", connectionDescription),
   "connection.updated": change("connections", "Подключение изменено", connectionDescription),
   "connection.activated": change("connections", "Подключение готово", connectionDescription),
+  "connection.rotation_started": started("connections", "Перевыпуск credentials начат"),
   "connection.rotated": change("connections", "Credentials перевыпущены", connectionDescription, true),
+  "connection.rotation_failed": failed("connections", "Не удалось перевыпустить credentials"),
   "connection.archived": change("connections", "Подключение перенесено в архив", connectionDescription, true),
   "connection.first_used": activity("connections", "Ссылка впервые использована", connectionDescription),
   "connection.first_seen": activity("connections", "Подключение впервые активно", connectionDescription),
@@ -196,7 +201,7 @@ export class JournalService {
       LEFT JOIN audit_log ON audit_log.id = events.audit_id
       ${where}
       ORDER BY events.occurred_at DESC, events.id DESC
-    `).all(...values).map((row) => this.render(row));
+    `).all(...values).map((row) => this.render(row, query.language ?? "ru"));
 
     const term = query.q?.trim().toLocaleLowerCase("ru") ?? "";
     const searched: JournalEvent[] = term
@@ -216,7 +221,7 @@ export class JournalService {
     return this.list({ limit }).events;
   }
 
-  private render(row: EventRow): JournalEvent {
+  private render(row: EventRow, language: Locale): JournalEvent {
     const data = parseObject(row.data_json);
     const definition = definitions[row.type] ?? {
       category: row.category,
@@ -224,8 +229,9 @@ export class JournalService {
       title: row.type,
       description: "",
     };
-    const title = value(definition.title, data);
-    const description = definition.description ? value(definition.description, data) : "";
+    const fallbackTitle = value(definition.title, data);
+    const fallbackDescription = definition.description ? value(definition.description, data) : "";
+    const presented = journalPresentation(row.type, data, language, fallbackTitle, fallbackDescription);
     const subject = row.subject_type && row.subject_id
       ? { type: row.subject_type, id: row.subject_id, label: subjectLabel(data, row.subject_type, row.subject_id) }
       : null;
@@ -241,12 +247,12 @@ export class JournalService {
       outcome: row.outcome,
       important: Boolean(row.important),
       source: row.source,
-      actor: row.actor ? { id: row.actor, label: actorLabel(this.db, row.actor) } : null,
+      actor: row.actor ? { id: row.actor, label: journalActor(actorLabel(this.db, row.actor), language) } : null,
       subject,
       operation_id: row.operation_id,
       audit_id: row.audit_id,
-      title,
-      description,
+      title: presented.title,
+      description: presented.description,
       details: {
         component: row.source,
         data,

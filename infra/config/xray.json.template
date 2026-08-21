@@ -24,5 +24,14 @@
       "streamSettings": { "network": "grpc", "grpcSettings": { "serviceName": "__GRPC_SERVICE__" } }
     }
   ],
-  "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+  "outbounds": [
+    { "tag": "direct", "protocol": "freedom" },
+    { "tag": "block", "protocol": "blackhole" }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      { "type": "field", "network": "udp", "port": 443, "outboundTag": "block" }
+    ]
+  }
 }

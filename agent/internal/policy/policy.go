@@ -9,7 +9,7 @@ import (
 )
 
 var allowedServices = map[string]bool{
-	"outpost":       true,
+	"outpost":         true,
 	"nginx":           true,
 	"hysteria-server": true,
 	"xray":            true,
@@ -95,6 +95,11 @@ func Validate(request Request) error {
 		engine, ok := request.Payload["engine"].(string)
 		if !ok || (engine != "hysteria" && engine != "xray") {
 			return errors.New("engine is not allowed")
+		}
+		if restart, ok := request.Payload["restart"]; ok {
+			if _, valid := restart.(bool); !valid {
+				return errors.New("restart must be boolean")
+			}
 		}
 		return nil
 	case "xray.user.add":

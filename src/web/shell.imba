@@ -62,7 +62,7 @@ tag outpost-logo
 		<span.copy>
 			<span.name> t('app.name')
 			if version
-				<small.version> "Версия {version}"
+				<small.version> t('Версия {version}', {version: version})
 
 	css
 		display: flex
@@ -86,19 +86,20 @@ tag outpost-sidebar
 		!serverIssue
 
 	get serverIssue
+		return t('Данные не удалось обновить: {error}', {error: store.stale}) if store.stale
 		return null unless store.data and store.data.system
 		const failed = store.data.system.services.find do(item) item.status != 'active'
-		return "{fmt.serviceName(failed.name)} не отвечает" if failed
+		return t('{service} не отвечает', {service: fmt.serviceName(failed.name)}) if failed
 		const transport = store.data.system.transports and store.data.system.transports.find do(item) item.status == 'inactive'
-		return "{transport.name} не слушает localhost" if transport
+		return t('{transport} не слушает localhost', {transport: transport.name}) if transport
 		const rulesets = store.data.system.rulesets
 		return "GeoIP/Geosite: {rulesets.lastError}" if rulesets and rulesets.lastError
 		const tls = store.data.system.tls
 		return null if tls.status == 'valid'
 		return tls.error if tls.error
-		return 'TLS-сертификат скоро истечёт' if tls.status == 'warning'
-		return 'TLS-сертификат истекает' if tls.status == 'critical'
-		'TLS не удалось проверить'
+		return t('TLS-сертификат скоро истечёт') if tls.status == 'warning'
+		return t('TLS-сертификат истекает') if tls.status == 'critical'
+		t('TLS не удалось проверить')
 
 	def active path
 		store.path == path
@@ -133,19 +134,19 @@ tag outpost-sidebar
 				<span> t('system.log')
 		<div.sidebar-footer>
 			<div.utility-nav>
-				<button.utility-item type="button" .active=active('/access') @click=(do store.goto('/access')) aria-label="Доступ" title="Доступ" aria-current=(active('/access') ? 'page' : null)>
+				<button.utility-item type="button" .active=active('/access') @click=(do store.goto('/access')) aria-label=t('title.access') title=t('title.access') aria-current=(active('/access') ? 'page' : null)>
 					<span.utility-mark><outpost-icon name="shield-check">
-					<span> 'Доступ'
-				<button.utility-item type="button" .active=active('/settings') @click=(do store.goto('/settings')) aria-label="Настройки" title="Настройки" aria-current=(active('/settings') ? 'page' : null)>
+					<span> t('title.access')
+				<button.utility-item type="button" .active=active('/settings') @click=(do store.goto('/settings')) aria-label=t('title.settings_short') title=t('title.settings_short') aria-current=(active('/settings') ? 'page' : null)>
 					<span.utility-mark><outpost-icon name="gear-six">
-					<span> 'Настройки'
+					<span> t('title.settings_short')
 			<div.server-health .pending=!serverHealthy?>
-				<div.health-state title=(serverIssue or 'Всё работает штатно')>
+				<div.health-state title=(serverIssue or t('Всё работает штатно'))>
 					<outpost-icon name=(serverHealthy? ? 'check-circle' : 'warning-circle')>
 					<span>
-						<strong> serverIssue or 'Всё работает штатно'
+						<strong> serverIssue or t('Всё работает штатно')
 						<small> fmt.checked(store.data.system.checkedAt)
-				<button.health-check type="button" disabled=checking @click=check aria-label="Обновить состояние" title="Обновить состояние">
+				<button.health-check type="button" disabled=checking @click=check aria-label=t('Обновить состояние') title=t('Обновить состояние')>
 					<outpost-icon name=(checking ? 'spinner-gap' : 'arrows-clockwise')>
 
 	css
@@ -293,7 +294,7 @@ tag outpost-shell
 			elif store.path == '/protocols'
 				<outpost-protocols store=store>
 			elif store.path == '/journal'
-				<outpost-journal store=store>
+				<outpost-journal store=store revision=store.data.revision>
 
 	css
 		display: block

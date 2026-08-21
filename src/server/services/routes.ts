@@ -1,12 +1,15 @@
 import { z } from "zod";
+import { isIP } from "node:net";
 import type { OutpostDatabase } from "../db/database";
 import { now } from "../db/database";
 import type { RouteRule } from "../models";
 import { ServiceError } from "./connections";
 import { JournalService } from "./journal";
 
+type ValidatableRoute = Pick<RouteRule, "matcher" | "value" | "enabled">;
+
 type RuleSetCatalog = {
-  assert(rules: RouteRule[]): void;
+  assert(rules: ValidatableRoute[]): void;
   version(rules: RouteRule[]): string | null;
 };
 
@@ -18,6 +21,9 @@ const routeInput = z.object({
 });
 const routeUpdate = routeInput.partial().extend({ enabled: z.boolean().optional() });
 const localNetworks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
+const dnsLabel = String.raw`[\p{L}0-9](?:[\p{L}0-9-]{0,61}[\p{L}0-9])?`;
+const domainPattern = new RegExp(`^${dnsLabel}(?:\\.${dnsLabel})+$`, "u");
+const suffixPattern = new RegExp(`^${dnsLabel}(?:\\.${dnsLabel})*$`, "u");
 
 export class RouteService {
   private journal: JournalService;
@@ -55,8 +61,11 @@ export class RouteService {
 
   add(input: unknown, actor = "owner") {
     const data = routeInput.parse(input);
-    this.validateValue(data.matcher, data.value);
-    if (this.terminal(data)) throw new ServiceError(409, "Последнее правило уже существует");
+    const value = this.validateValue(data.matcher, data.value);
+    const candidate = { ...data, value };
+    this.rulesets?.assert([candidate]);
+    if (this.terminal(candidate)) throw new ServiceError(409, "Последнее правило уже существует");
+    if (this.duplicate(candidate)) throw new ServiceError(409, "Правило с таким условием уже существует");
     const current = this.draft();
     const timestamp = now();
     const locals = current.filter((entry) => this.local(entry));
@@ -64,7 +73,7 @@ export class RouteService {
     const rule: RouteRule = {
       id: crypto.randomUUID(),
       position: locals.length,
-      ...data,
+      ...candidate,
       source: "user",
       locked: false,
       created_at: timestamp,
@@ -95,10 +104,13 @@ export class RouteService {
       return this.updateLocal(data.action, actor);
     }
     const matcher = data.matcher ?? before.matcher;
-    const value = data.value ?? before.value;
-    this.validateValue(matcher, value);
+    const value = this.validateValue(matcher, data.value ?? before.value);
     if (!this.terminal(before) && this.terminal({ matcher, value })) {
       throw new ServiceError(409, "Последнее правило уже существует");
+    }
+    const identityChanged = matcher !== before.matcher || value !== this.normalizeValue(before.matcher, before.value);
+    if (identityChanged && this.duplicate({ matcher, value }, id)) {
+      throw new ServiceError(409, "Правило с таким условием уже существует");
     }
     const next = {
       action: data.action ?? before.action,
@@ -107,6 +119,7 @@ export class RouteService {
       enabled: data.enabled ?? Boolean(before.enabled),
       updated_at: now(),
     };
+    this.rulesets?.assert([next]);
     this.db.raw.query(`
       UPDATE route_drafts SET action = ?, matcher = ?, value = ?, enabled = ?, updated_at = ? WHERE id = ?
     `).run(next.action, next.matcher, next.value, next.enabled ? 1 : 0, next.updated_at, id);
@@ -157,6 +170,8 @@ export class RouteService {
   ) {
     const rules = replacement ?? this.draft();
     if (rules.length === 0) throw new ServiceError(409, "Нельзя опубликовать пустой набор маршрутов");
+    rules.forEach((rule) => this.validateValue(rule.matcher, rule.value));
+    this.assertUnique(rules);
     this.rulesets?.assert(rules);
     const rulesetVersion = this.rulesets?.version(rules) ?? null;
     const version = (this.db.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM route_revisions").get()?.version ?? 0) + 1;
@@ -282,18 +297,60 @@ export class RouteService {
     return rule.matcher === "SUFFIX" && rule.value === "*";
   }
 
+  private duplicate(rule: Pick<RouteRule, "matcher" | "value">, except?: string) {
+    const identity = this.identity(rule);
+    return this.draft().some((entry) => entry.id !== except && this.identity(entry) === identity);
+  }
+
+  private assertUnique(rules: Array<Pick<RouteRule, "matcher" | "value">>) {
+    const identities = new Set<string>();
+    for (const rule of rules) {
+      const identity = this.identity(rule);
+      if (identities.has(identity)) throw new ServiceError(409, "Правило с таким условием уже существует");
+      identities.add(identity);
+    }
+  }
+
+  private identity(rule: Pick<RouteRule, "matcher" | "value">) {
+    return `${rule.matcher}\u0000${this.normalizeValue(rule.matcher, rule.value)}`;
+  }
+
   private local(rule: Pick<RouteRule, "source" | "matcher" | "value">) {
     return rule.source === "system" && rule.matcher === "IP_CIDR" && localNetworks.includes(rule.value);
   }
 
   private validateValue(matcher: RouteRule["matcher"], raw: string) {
-    const value = raw.trim();
-    if (matcher === "IP_CIDR" && !/^[0-9a-f:.]+\/\d{1,3}$/i.test(value)) {
-      throw new ServiceError(400, "CIDR должен иметь вид 192.0.2.0/24");
+    const value = this.normalizeValue(matcher, raw);
+    if (matcher === "IP_CIDR") {
+      const addressFamily = isIP(value);
+      if (addressFamily) return `${value}/${addressFamily === 4 ? 32 : 128}`;
+      const [address, rawPrefix, extra] = value.split("/");
+      const family = isIP(address ?? "");
+      const prefix = Number(rawPrefix);
+      if (extra !== undefined || !family || rawPrefix === undefined || !/^\d{1,3}$/.test(rawPrefix)
+        || !Number.isInteger(prefix) || prefix < 0 || prefix > (family === 4 ? 32 : 128)) {
+        throw new ServiceError(400, "Укажите IP-адрес или CIDR, например 192.0.2.1 или 2001:db8::/32");
+      }
     }
-    if ((matcher === "DOMAIN" || matcher === "SUFFIX") && value !== "*" && !/^(\.)?[\p{L}0-9-]+(\.[\p{L}0-9-]+)+$/u.test(value)) {
-      throw new ServiceError(400, "Укажите корректный домен или суффикс");
+    if (matcher === "DOMAIN" && !domainPattern.test(value)) {
+      throw new ServiceError(400, "Укажите полный домен, например example.com");
     }
+    if (matcher === "SUFFIX" && value !== "*" && !suffixPattern.test(value)) {
+      throw new ServiceError(400, "Укажите доменный суффикс, например example.com или ru");
+    }
+    if ((matcher === "GEOSITE" || matcher === "GEOIP") && !/^[a-z0-9_@.!+-]{1,80}$/.test(value)) {
+      throw new ServiceError(400, "Укажите код GeoSite/GeoIP без префикса, например google или ru");
+    }
+    return value;
+  }
+
+  private normalizeValue(matcher: RouteRule["matcher"], raw: string) {
+    let value = raw.trim();
+    if (matcher === "SUFFIX" && value !== "*") value = value.replace(/^\./, "");
+    if (matcher === "DOMAIN" || matcher === "SUFFIX" || matcher === "GEOSITE" || matcher === "GEOIP" || matcher === "IP_CIDR") {
+      value = value.toLowerCase();
+    }
+    return value;
   }
 
   private normalize(rules: RouteRule[]) {

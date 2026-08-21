@@ -40,7 +40,7 @@ export async function runMcp(api: OutpostApi = apiFromEnvironment()) {
 
   server.registerTool("connection_subscription", {
     title: "Использовать подключение",
-    description: "Возвращает единственную секретную ссылку и варианты подписки для подключения.",
+    description: "Возвращает единственную секретную ссылку и варианты подписки для подключения. Требует scope connections:secret.",
     inputSchema: {
       connection_id: z.string().uuid(),
     },
@@ -48,11 +48,13 @@ export async function runMcp(api: OutpostApi = apiFromEnvironment()) {
   }, async ({ connection_id }) => result(await api.get(`/api/v1/connections/${connection_id}/subscription`)));
 
   server.registerTool("connection_rotate", {
-    title: "Перевыпустить подключение",
-    description: "Сразу отключает прежнюю ссылку и создаёт новые credentials для всего подключения.",
+    title: "Подготовить перевыпуск подключения",
+    description: "Создаёт preview перевыпуска без изменения подключения. Для выполнения передайте тот же action и payload в operation_confirm.",
     inputSchema: { connection_id: z.string().uuid() },
-    annotations: { destructiveHint: true },
-  }, async ({ connection_id }) => result(await api.post(`/api/v1/connections/${connection_id}/rotate`, {})));
+  }, async ({ connection_id }) => result(await api.post("/api/v1/operations/preview", {
+    action: "connection.rotate",
+    payload: { connectionId: connection_id },
+  })));
 
   server.registerTool("routes_get", {
     title: "Маршруты",
@@ -79,9 +81,9 @@ export async function runMcp(api: OutpostApi = apiFromEnvironment()) {
 
   server.registerTool("operation_preview", {
     title: "Предпросмотр опасной операции",
-    description: "Возвращает immutable preview и confirmation ID. Ничего не применяет.",
+    description: "Возвращает immutable preview и confirmation ID. Ничего не применяет. Для connection.rotate передайте payload { connectionId: UUID }.",
     inputSchema: {
-      action: z.enum(["service.restart", "service.start", "service.stop", "engine.update", "nginx.reload", "update.apply", "backup.export"]),
+      action: z.enum(["service.restart", "service.start", "service.stop", "engine.update", "nginx.reload", "update.apply", "backup.export", "connection.rotate"]),
       payload: z.record(z.string(), z.unknown()).default({}),
     },
     annotations: { readOnlyHint: true },
@@ -92,7 +94,7 @@ export async function runMcp(api: OutpostApi = apiFromEnvironment()) {
     description: "Применяет ровно тот preview, которому соответствует confirmation ID и payload.",
     inputSchema: {
       confirmation_id: z.string().uuid(),
-      action: z.enum(["service.restart", "service.start", "service.stop", "engine.update", "nginx.reload", "update.apply", "backup.export"]),
+      action: z.enum(["service.restart", "service.start", "service.stop", "engine.update", "nginx.reload", "update.apply", "backup.export", "connection.rotate"]),
       payload: z.record(z.string(), z.unknown()).default({}),
     },
     annotations: { destructiveHint: true },

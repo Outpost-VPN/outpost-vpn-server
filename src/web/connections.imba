@@ -30,16 +30,16 @@ tag outpost-connections
 	def connectionword count
 		const mod10 = count % 10
 		const mod100 = count % 100
-		return 'подключение' if mod10 == 1 and mod100 != 11
-		return 'подключения' if mod10 >= 2 and mod10 <= 4 and (mod100 < 12 or mod100 > 14)
-		'подключений'
+		return t('подключение') if mod10 == 1 and mod100 != 11
+		return t('подключения') if mod10 >= 2 and mod10 <= 4 and (mod100 < 12 or mod100 > 14)
+		t('подключений')
 
 	def activity connection
-		return 'Готовим подключение' if connection.status == 'provisioning'
-		return 'Перевыпускаем ссылку' if connection.status == 'rotating'
-		return 'Архивируем' if connection.status == 'archiving'
-		return 'Онлайн' if fmt.connectionOnline(connection)
-		return 'Активность неизвестна' if connection.presence == 'unknown'
+		return t('Готовим подключение') if connection.status == 'provisioning'
+		return t('Перевыпускаем ссылку') if connection.status == 'rotating'
+		return t('Архивируем') if connection.status == 'archiving'
+		return t('Онлайн') if fmt.connectionOnline(connection)
+		return t('Активность неизвестна') if connection.presence == 'unknown'
 		fmt.seen(connection)
 
 	def traffic connection
@@ -67,7 +67,7 @@ tag outpost-connections
 	<self>
 		<div.page-top>
 			<div>
-				<span.eyebrow> 'ПОДКЛЮЧЕНИЯ'
+				<span.eyebrow> t('ПОДКЛЮЧЕНИЯ')
 				<outpost-header title=t('connections.title') subtitle=t('connections.subtitle')>
 			<button.outpost-button.small.header-action @click=create>
 				<outpost-icon name="plus">
@@ -79,7 +79,7 @@ tag outpost-connections
 			<span.separator> '·'
 			<div>
 				<span.online-dot aria-hidden="true">
-				<span> "{online} онлайн"
+				<span> t('{count} онлайн', {count: online})
 			<span.separator> '·'
 			<div>
 				<outpost-icon name="chart-line-up">
@@ -90,18 +90,18 @@ tag outpost-connections
 			<div.connection-table>
 				<div.table-head>
 					<span aria-hidden="true">
-					<span> 'Общий трафик'
-					<span> "Всего {fmt.period(store.trafficPeriod).short}"
-					<span> 'Действия'
+					<span> t('Общий трафик')
+					<span> t('Всего {period}', {period: fmt.period(store.trafficPeriod).short})
+					<span> t('Действия')
 				for connection in store.data.connections
 					<article.connection key=connection.id .expanded=shown(connection)>
 						<div.connection-row @click=(do toggle(connection))>
-							<button.expand type="button" @click.stop=(do toggle(connection)) aria-label=(shown(connection) ? 'Свернуть' : 'Показать статистику') aria-expanded=shown(connection)>
+							<button.expand type="button" @click.stop=(do toggle(connection)) aria-label=(shown(connection) ? t('Свернуть') : t('Показать статистику')) aria-expanded=shown(connection)>
 								<outpost-icon name=(shown(connection) ? 'caret-down' : 'caret-right')>
 							<div.identity>
 								<outpost-avatar value=connection.avatar size="48">
 								<div>
-									<button.name-button type="button" @click.stop=(do edit(connection)) aria-label="Редактировать {connection.name}"> connection.name
+									<button.name-button type="button" @click.stop=(do edit(connection)) aria-label=t('Редактировать {name}', {name: connection.name})> connection.name
 									<small.connection-state .online=fmt.connectionOnline(connection) .pending=(connection.presence == 'unknown' or connection.status != 'active')> activity(connection)
 							<div.trend>
 								<outpost-line-chart points=trend(connection) mini=true tone="neutral">
@@ -113,14 +113,14 @@ tag outpost-connections
 							<div.row-actions>
 								<button.table-action.primary type="button" @click.stop=(do use(connection))>
 									<outpost-icon name=(connection.status == 'active' ? 'qr-code' : 'spinner-gap')>
-									<span> 'Подписка'
+									<span> t('Подписка')
 						if shown(connection)
 							<div.connection-details ease>
 								<div.detail-chart>
 									<outpost-line-chart points=received(connection) secondary=sent(connection) edge=false>
 									<div.chart-legend>
-										<div.received><i>; <span> "Получено {fmt.bytes(traffic(connection)..download or 0)}"
-										<div.sent><i>; <span> "Отправлено {fmt.bytes(traffic(connection)..upload or 0)}"
+										<div.received><i>; <span> t('Получено {amount}', {amount: fmt.bytes(traffic(connection)..download or 0)})
+										<div.sent><i>; <span> t('Отправлено {amount}', {amount: fmt.bytes(traffic(connection)..upload or 0)})
 
 	css self
 		d:block

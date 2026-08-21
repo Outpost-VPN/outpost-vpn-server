@@ -10,8 +10,8 @@ tag outpost-home-server
 	get rows
 		[
 			{title: 'CPU', percent: metrics.cpu.percent, detail: ''}
-			{title: 'Память', percent: metrics.memory.percent, detail: "{fmt.bytes(metrics.memory.used)} из {fmt.bytes(metrics.memory.total)}"}
-			{title: 'Диск', percent: metrics.disk.percent, detail: "{fmt.bytes(metrics.disk.used)} из {fmt.bytes(metrics.disk.total)}"}
+			{title: t('Память'), percent: metrics.memory.percent, detail: t('{used} из {total}', {used: fmt.bytes(metrics.memory.used), total: fmt.bytes(metrics.memory.total)})}
+			{title: t('Диск'), percent: metrics.disk.percent, detail: t('{used} из {total}', {used: fmt.bytes(metrics.disk.used), total: fmt.bytes(metrics.disk.total)})}
 		]
 
 	get network
@@ -28,17 +28,17 @@ tag outpost-home-server
 				<outpost-icon name="hard-drives">
 				<i.health>
 			<div>
-				<h2> 'Сервер'
+				<h2> t('Сервер')
 				<p> 'Ubuntu 24.04'
 			<span.uptime> fmt.uptime(store.data.system.uptime)
 		<div.metrics>
 			for row in rows
-				<div.metric .disk=(row.title == 'Диск')>
+				<div.metric .disk=(row.title == t('Диск'))>
 					<strong> row.title
 					<outpost-gauge value=row.percent>
 					<small> row.detail if row.detail
 			<div.metric.network>
-				<strong> 'Сеть сейчас'
+				<strong> t('Сеть сейчас')
 				<div.network-body>
 					<outpost-line-chart mini=true points=signal>
 					<div.rates>
@@ -117,14 +117,14 @@ tag outpost-home-traffic
 		<header>
 			<div.summary>
 				<h2>
-					<span> "Трафик {fmt.period(store.trafficPeriod).short}:"
+					<span> t('Трафик {period}:', {period: fmt.period(store.trafficPeriod).short})
 					<strong> volume(store.data.traffic.totals.upload + store.data.traffic.totals.download)
 				<div.totals>
 					<span>
-						<small> 'Загружено:'
+						<small> t('Загружено:')
 						<strong> volume(store.data.traffic.totals.download)
 					<span>
-						<small> 'Отдано:'
+						<small> t('Отдано:')
 						<strong> volume(store.data.traffic.totals.upload)
 			<details.period>
 				<summary>
@@ -133,7 +133,7 @@ tag outpost-home-traffic
 				<menu>
 					for option in trafficPeriods
 						<button type="button" .active=(option.id == store.trafficPeriod) @click=period(option.id)>
-							<span> option.label
+							<span> t(option.label)
 							if option.id == store.trafficPeriod
 								<outpost-icon name="check">
 		<div.chart>
@@ -200,15 +200,15 @@ tag outpost-home-connections
 
 	<self.outpost-card>
 		<header>
-			<h2> 'Подключения'
+			<h2> t('Подключения')
 			<span.online-count>
 				<i>
-				<span> "{online} онлайн"
+				<span> t('{count} онлайн', {count: online})
 		<div.columns>
-			<span> 'Подключение'
-			<span> 'Использовано'
-			<span> 'Последняя активность'
-			<span> 'Статус'
+			<span> t('Подключение')
+			<span> t('Использовано')
+			<span> t('Последняя активность')
+			<span> t('Статус')
 		<div.rows>
 			for connection in connections
 				<button.user type="button" @click=connectionspage>
@@ -262,7 +262,7 @@ tag outpost-home
 
 	<self>
 		<header.overview-head>
-			<span.eyebrow> 'ОБЗОР'
+			<span.eyebrow> t('ОБЗОР')
 			<outpost-header title=t('overview.title') subtitle=t('overview.subtitle')>
 		<outpost-home-server store=store>
 		<outpost-home-traffic store=store>

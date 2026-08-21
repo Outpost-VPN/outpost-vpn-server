@@ -1,4 +1,4 @@
-import {t} from './i18n.imba'
+import {intl, t} from './i18n.imba'
 
 tag outpost-protocols-overview
 	store = null
@@ -10,7 +10,7 @@ tag outpost-protocols-overview
 		const hysteria = versions.find do(item) item.engine == 'hysteria'
 		const xray = versions.find do(item) item.engine == 'xray'
 		[
-			{id: 'hysteria', name: 'Hysteria 2', icon: 'wave-sine', service: 'hysteria-server', connection: 'UDP 443 · основной', version: hysteria..installed_version or hysteria..desired_version or '—', config: store.data.engineConfigs.hysteria}
+			{id: 'hysteria', name: 'Hysteria 2', icon: 'wave-sine', service: 'hysteria-server', connection: t('UDP 443 · основной'), version: hysteria..installed_version or hysteria..desired_version or '—', config: store.data.engineConfigs.hysteria}
 			{id: 'xray', name: 'Xray', icon: 'shield', service: 'xray', connection: 'VLESS · XHTTP · TCP 443', version: xray..installed_version or xray..desired_version or '—', config: store.data.engineConfigs.xray}
 		]
 
@@ -36,14 +36,14 @@ tag outpost-protocols-overview
 		service and service.status == 'active'
 
 	def revision engine
-		engine.config.activeVersion ? "Ревизия №{engine.config.activeVersion}" : 'Базовая ревизия'
+		engine.config.activeVersion ? t('Ревизия №{version}', {version: engine.config.activeVersion}) : t('Базовая ревизия')
 
 	def clock value
 		return '—' unless value
-		new Intl.DateTimeFormat('ru-RU', {hour: '2-digit', minute: '2-digit'}).format(new Date(value))
+		new Intl.DateTimeFormat(intl!, {hour: '2-digit', minute: '2-digit'}).format(new Date(value))
 
 	def edit engine
-		store.selected = {engine: engine.id, template: engine.config.template, activeVersion: engine.config.activeVersion}
+		store.selected = {engine: engine.id, template: engine.config.template, activeVersion: engine.config.activeVersion, preset: engine.config.preset}
 		store.open('engine')
 		imba.commit!
 
@@ -69,7 +69,7 @@ tag outpost-protocols-overview
 		store.open('history')
 
 	<self>
-		<span.engines-eyebrow> 'ПРОТОКОЛЫ'
+		<span.engines-eyebrow> t('ПРОТОКОЛЫ')
 		<outpost-header large=true title=t('engines.title') subtitle=t('engines.subtitle')>
 		<div.health .pending=!healthy?>
 			<outpost-icon name=(healthy? ? 'check-circle' : 'warning-circle')>
@@ -94,7 +94,7 @@ tag outpost-protocols-overview
 					<span.engine-connection> engine.connection
 					<span.engine-revision> revision(engine)
 					<button.configure type="button" @click=edit(engine)> t('engines.configure')
-					<button.restart type="button" @click=(do restart(engine)) aria-label="Перезапустить {engine.name}" title="Перезапустить {engine.name}">
+					<button.restart type="button" @click=(do restart(engine)) aria-label=t('Перезапустить {engine}', {engine: engine.name}) title=t('Перезапустить {engine}', {engine: engine.name})>
 						<outpost-icon name="arrows-clockwise">
 		<div.engine-lower>
 			<section.outpost-card.update-card>
@@ -118,7 +118,7 @@ tag outpost-protocols-overview
 							<outpost-icon name="circle-fill">
 							<p>
 								<strong> item.engine.name
-								<span> " · {item.baseline ? t('engines.baseline') : "ревизия №{item.version} {t('engines.published')}"}"
+								<span> item.baseline ? " · {t('engines.baseline')}" : " · {t('Ревизия №{version}', {version: item.version})} {t('engines.published')}"
 							<time> clock(item.created_at)
 				<button.history type="button" @click=history> t('engines.history')
 		<p.engine-note>
@@ -212,7 +212,7 @@ tag outpost-engine-history
 		(store.selected and store.selected.revisions) or []
 
 	def clock value
-		new Intl.DateTimeFormat('ru-RU', {dateStyle: 'medium', timeStyle: 'short'}).format(new Date(value))
+		new Intl.DateTimeFormat(intl!, {dateStyle: 'medium', timeStyle: 'short'}).format(new Date(value))
 
 	<self.outpost-modal-backdrop role="dialog" aria-modal="true" aria-label=t('engines.history_title') tabindex="-1" @click.self=store.close>
 		<div.outpost-modal.history-modal>
@@ -221,19 +221,19 @@ tag outpost-engine-history
 				<div>
 					<h2> t('engines.history_title')
 					<p> t('engines.history_hint')
-				<button.outpost-modal-close type="button" @click=store.close aria-label="Закрыть"><outpost-icon name="x">
+				<button.outpost-modal-close type="button" @click=store.close aria-label=t('Закрыть')><outpost-icon name="x">
 			<div.outpost-modal-body>
 				if revisions.length
 					<div.history-list>
 						for item in revisions
 							<div>
 								<span.history-engine><outpost-icon name=item.engine.icon>
-								<p><strong> item.engine.name; <span> "Ревизия №{item.version}"
+								<p><strong> item.engine.name; <span> t('Ревизия №{version}', {version: item.version})
 								<time> clock(item.created_at)
 				else
 					<p.history-empty> t('engines.history_empty')
 			<footer.outpost-modal-footer>
-				<div.modal-actions><button.outpost-button type="button" @click=store.close> 'Закрыть'
+				<div.modal-actions><button.outpost-button type="button" @click=store.close> t('Закрыть')
 
 	css self
 		.history-modal w:min(680px,100%)
@@ -306,14 +306,14 @@ tag outpost-system-map
 	get healthy? do online? and services.every(do(item) item.status == 'active')
 	get tlsdetail
 		const tls = store.data.system.tls
-		return 'TLS действителен' if tls.status == 'valid'
-		tls.error or 'TLS требует внимания'
+		return t('TLS действителен') if tls.status == 'valid'
+		tls.error or t('TLS требует внимания')
 
 	def service name
 		services.find(do(item) item.name == name) or {name: name, status: 'unknown'}
 
 	<self.outpost-card>
-		<outpost-status-node.domain title="Интернет и домен" detail="{store.data.system.domain} · {tlsdetail}" icon="globe" working=online?>
+		<outpost-status-node.domain title=t('Интернет и домен') detail="{store.data.system.domain} · {tlsdetail}" icon="globe" working=online?>
 		<div.flow-line aria-hidden="true">
 		<outpost-status-node title="Nginx" detail="HTTPS · TCP 443" icon="hard-drives" working=(nginx.status == 'active')>
 		<div.connector.split aria-hidden="true">
@@ -322,17 +322,17 @@ tag outpost-system-map
 			<i.left>
 			<i.right>
 		<div.branches>
-			<outpost-status-node compact=true title="Hysteria 2" detail="UDP 443 · основной" icon="wave-sine" working=(hysteria.status == 'active')>
-			<outpost-status-node compact=true title="Xray" detail="VLESS · XHTTP · резервный" icon="shield" working=(xray.status == 'active')>
+			<outpost-status-node compact=true title="Hysteria 2" detail=t('UDP 443 · основной') icon="wave-sine" working=(hysteria.status == 'active')>
+			<outpost-status-node compact=true title="Xray" detail=t('VLESS · XHTTP · резервный') icon="shield" working=(xray.status == 'active')>
 		<div.connector.merge aria-hidden="true">
 			<i.left>
 			<i.right>
 			<i.bar>
 			<i.stem>
-		<outpost-status-node.proxy title="Outpost" detail="Панель, подписки и маршруты" icon="circles-four" working=(proxy.status == 'active')>
+		<outpost-status-node.proxy title="Outpost" detail=t('Панель, подписки и маршруты') icon="circles-four" working=(proxy.status == 'active')>
 		<div.map-footer>
 			<outpost-icon name=(healthy? ? 'check-circle' : 'warning-circle') [c:{healthy? ? 'var(--outpost-success)' : 'orange'} fs:20px]>
-			<span> healthy? ? 'Все протоколы доступны' : 'Некоторые протоколы требуют внимания'
+			<span> healthy? ? t('Все протоколы доступны') : t('Некоторые протоколы требуют внимания')
 
 	css self
 		min-height: 768px
@@ -384,8 +384,8 @@ tag outpost-connection-guide
 		<button.guide-head type="button" @click=toggle aria-expanded=expanded>
 			<span.guide-icon><outpost-icon name="info">
 			<span.guide-label>
-				<strong> 'Как это работает'
-				<small> 'Подписка объединяет маршруты и способы подключения в одном профиле'
+				<strong> t('Как это работает')
+				<small> t('Подписка объединяет маршруты и способы подключения в одном профиле')
 			<outpost-icon.chevron name="caret-down">
 		<div.guide-body .open=expanded>
 			<div.guide-content>
@@ -394,23 +394,23 @@ tag outpost-connection-guide
 						<article>
 							<span.step> '1'
 							<div>
-								<h3> 'Подписка'
-								<p> 'Постоянная ссылка подписки. По ней клиент получает доступные протоколы, их порядок и актуальные маршруты — всё вместе. Когда настройки меняются, клиент забирает новую версию профиля при следующем обновлении.'
+								<h3> t('Подписка')
+								<p> t('Постоянная ссылка подписки. По ней клиент получает доступные протоколы, их порядок и актуальные маршруты — всё вместе. Когда настройки меняются, клиент забирает новую версию профиля при следующем обновлении.')
 						<article>
 							<span.step> '2'
 							<div>
-								<h3> 'Маршруты'
-								<p> 'Для разных доменов и сетей можно выбрать способ доступа: напрямую, через сервер или заблокировать. Маршруты не привязаны к Hysteria 2 или Xray и тоже приходят в подписке. Клиент проверяет правила по порядку и применяет первое подходящее.'
+								<h3> t('Маршруты')
+								<p> t('Для разных доменов и сетей можно выбрать способ доступа: напрямую, через сервер или заблокировать. Маршруты не привязаны к Hysteria 2 или Xray и тоже приходят в подписке. Клиент проверяет правила по порядку и применяет первое подходящее.')
 						<article>
 							<span.step> '3'
 							<div>
-								<h3> 'Протоколы'
-								<p> 'Это способы связи клиента с вашим сервером. Hysteria 2 и Xray по-разному маскируют соединение, чтобы сетевому фильтру было сложнее его распознать и заблокировать. Если первый способ недоступен, клиент пробует следующий.'
+								<h3> t('Протоколы')
+								<p> t('Это способы связи клиента с вашим сервером. Hysteria 2 и Xray по-разному маскируют соединение, чтобы сетевому фильтру было сложнее его распознать и заблокировать. Если первый способ недоступен, клиент пробует следующий.')
 					<div.guide-note>
 						<outpost-icon name="arrows-clockwise">
 						<p>
-							<strong> 'После изменений '
-							<span> 'клиент должен обновить подписку. Обычно это происходит автоматически, но обновление можно запустить и вручную.'
+							<strong> t('После изменений ')
+							<span> t('клиент должен обновить подписку. Обычно это происходит автоматически, но обновление можно запустить и вручную.')
 
 	css self
 		d:block bd:1px solid var(--outpost-line) rd:13px bgc:white of:hidden
@@ -463,8 +463,8 @@ tag outpost-protocols
 				format: 'YAML'
 				config: store.data.engineConfigs.hysteria
 				facts: [
-					{label: 'Протокол', value: 'Hysteria 2'}
-					{label: 'Аутентификация', value: 'пароль'}
+					{label: t('Протокол'), value: 'Hysteria 2'}
+					{label: t('Аутентификация'), value: t('пароль')}
 					{label: 'Obfs', value: 'Salamander'}
 				]
 			}
@@ -476,10 +476,10 @@ tag outpost-protocols
 				format: 'JSON'
 				config: store.data.engineConfigs.xray
 				facts: [
-					{label: 'Протокол', value: 'VLESS'}
-					{label: 'Транспорт', value: 'XHTTP'}
-					{label: 'Защита', value: 'TLS'}
-					{label: 'Фрагментация', value: 'ClientHello'}
+					{label: t('Протокол'), value: 'VLESS'}
+					{label: t('Транспорт'), value: 'XHTTP'}
+					{label: t('Защита'), value: 'TLS'}
+					{label: t('Фрагментация'), value: 'ClientHello'}
 				]
 			}
 		}
@@ -585,23 +585,23 @@ tag outpost-protocols
 
 	<self>
 		<header.proxy-head>
-			<span.eyebrow> 'ПРОТОКОЛЫ'
+			<span.eyebrow> t('ПРОТОКОЛЫ')
 			<outpost-header title=t('engines.title') subtitle=t('engines.subtitle')>
 		if notice
 			<div.proxy-notice role="status"> notice
 		<section.order-panel>
 			<header.order-head>
 				<div>
-					<h2> 'Порядок подключения'
-					<p> 'Клиенты пробуют способы сверху вниз'
+					<h2> t('Порядок подключения')
+					<p> t('Клиенты пробуют способы сверху вниз')
 				if state != 'idle'
 					<div.save-state .pending=(state == 'saving') .error=(state == 'error') [o@off:0 y@off:-6px ease:180ms] ease aria-live="polite">
 						<outpost-icon name=(state == 'error' ? 'warning-circle' : state == 'saving' ? 'spinner-gap' : 'check-circle')>
-						<span> state == 'error' ? 'Не удалось сохранить' : state == 'saving' ? 'Сохраняем порядок…' : 'Порядок сохранён'
+						<span> state == 'error' ? t('Не удалось сохранить') : state == 'saving' ? t('Сохраняем порядок…') : t('Порядок сохранён')
 			<div.engine-list>
 				for engine in engines
 					<article.engine-row key=engine.id .failed=!working(engine) .dragging=(drag == engine.id) .over=(over == engine.id and drag != engine.id) data-id=engine.id>
-						<button.handle type="button" @touch.moved(5px,'y')=touch(engine,e) @keydown=(do(e) key(engine,e)) aria-label="Перетащить {engine.name}. Стрелки вверх и вниз меняют приоритет">
+						<button.handle type="button" @touch.moved(5px,'y')=touch(engine,e) @keydown=(do(e) key(engine,e)) aria-label=t('Перетащить {engine}. Стрелки вверх и вниз меняют приоритет', {engine: engine.name})>
 							<outpost-icon name="dots-six-vertical">
 						<span.rank> engine.rank
 						<div.engine-identity>
@@ -610,10 +610,10 @@ tag outpost-protocols
 								<div.engine-title>
 									<h3> engine.name
 								<p.engine-version>
-									<span> "Версия {engine.installed}"
+									<span> t('Версия {version}', {version: engine.installed})
 									if engine.desired and engine.desired != engine.installed
 										<span.bullet> '·'
-										<button type="button" @click=update(engine) title="Обновить до {engine.desired}">
+										<button type="button" @click=update(engine) title=t('Обновить до {version}', {version: engine.desired})>
 											<outpost-icon name="download-simple">
 											<span> engine.desired
 						<div.engine-connection>
@@ -622,14 +622,14 @@ tag outpost-protocols
 								<span.dot> '·'
 								<span> fact.value
 						<div.engine-actions>
-							<button.configure type="button" @click=edit(engine) aria-label="Настроить {engine.name} — {engine.format}" title="Настроить {engine.name}">
+							<button.configure type="button" @click=edit(engine) aria-label=t('Настроить {engine} — {format}', {engine: engine.name, format: engine.format}) title=t('Настроить {engine}', {engine: engine.name})>
 								<outpost-icon name="gear-six">
 								<span> engine.format
-							<button.toggle type="button" .stop=working(engine) .start=!working(engine) @click=toggle(engine) aria-label=(working(engine) ? "Остановить {engine.name}" : "Запустить {engine.name}") title=(working(engine) ? "Остановить {engine.name}" : "Запустить {engine.name}")>
+							<button.toggle type="button" .stop=working(engine) .start=!working(engine) @click=toggle(engine) aria-label=(working(engine) ? t('Остановить {engine}', {engine: engine.name}) : t('Запустить {engine}', {engine: engine.name})) title=(working(engine) ? t('Остановить {engine}', {engine: engine.name}) : t('Запустить {engine}', {engine: engine.name}))>
 								<outpost-icon name=(working(engine) ? 'pause' : 'play')>
 			<footer.order-note>
 				<outpost-icon name="info">
-				<span> 'Новый порядок появится при следующем обновлении подписки'
+				<span> t('Новый порядок появится при следующем обновлении подписки')
 		<outpost-connection-guide>
 
 	css self

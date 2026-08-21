@@ -7,7 +7,7 @@ traffic by connection without storing browsing history. Every connection has
 one credential generation and one link that may be shared by any number of
 people and physical devices.
 
-> **Status:** `0.1.0-rc.11` pre-release. Local tests and production builds pass;
+> **Status:** `0.1.0-rc.12` pre-release. Local tests and production builds pass;
 > the signed release passes a clean Ubuntu VPS installation, with the remaining
 > end-to-end field gate tracked in [STATUS.md](STATUS.md).
 
@@ -71,16 +71,20 @@ Minisign signature, installs only the required packages, starts Outpost, and
 obtains a short-lived trusted Let's Encrypt certificate for the server's IP
 address. It does not perform a full Ubuntu upgrade or reboot the server.
 
-When the installation finishes, it prints a one-time HTTPS setup URL. Open the
-URL in a browser, choose a free hostname or your own domain, and follow the setup
-flow. Outpost shows the required DNS `A` record, waits for DNS propagation,
-issues the final domain certificate, and then lets you configure owner access
-with a passkey.
+When the installation finishes, it prints `https://<IP>/`. Open that fixed
+address in a browser, choose a free hostname or your own domain, and follow the
+setup flow. Outpost shows the required DNS `A` record, waits for DNS propagation,
+issues the final domain certificate, and then hands the same browser over to the
+permanent domain to configure owner access with a passkey.
+
+The installer is intentionally limited to a clean VPS. If TCP 80, TCP 443, or
+UDP 443 is already occupied, it stops before changing the server. Installing
+beside existing services or selecting alternative public ports is not supported.
 
 To install a specific release candidate instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.11 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.12 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,
@@ -100,7 +104,7 @@ bun run dev
 
 The panel starts with demo data at <http://localhost:8181/admin/>. The interactive
 pre-launch preview is available at
-<http://localhost:8181/admin/setup?bootstrap=preview>.
+<http://localhost:8181/admin/?preview=setup>.
 
 ## Repository structure
 

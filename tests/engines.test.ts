@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import YAML from "yaml";
 import {
   defaultHysteriaTemplate,
   defaultXrayTemplate,
@@ -31,9 +34,22 @@ describe("protected engine templates", () => {
     const hysteria = renderHysteria(defaultHysteriaTemplate);
     const xray = renderXray(defaultXrayTemplate, [credential]);
     expect(hysteria).not.toContain("{{OUTPOST");
-    const inbounds = JSON.parse(xray).inbounds;
+    expect(YAML.parse(hysteria).acl.inline).toEqual(["reject(all, udp/443)"]);
+    const xrayConfig = JSON.parse(xray);
+    const inbounds = xrayConfig.inbounds;
     expect(inbounds.map((inbound: { tag: string }) => inbound.tag)).toEqual(["vless-xhttp", "vless-grpc"]);
     expect(inbounds.every((inbound: { settings: { clients: Array<{ email: string }> } }) => inbound.settings.clients[0]?.email === credential.xray.email)).toBeTrue();
+    expect(xrayConfig.outbounds.at(-1)).toMatchObject({ protocol: "blackhole", tag: "block" });
+    expect(xrayConfig.routing.rules).toContainEqual({ type: "field", network: "udp", port: 443, outboundTag: "block" });
+  });
+
+  test("installation templates reject tunneled QUIC on both server engines", () => {
+    const hysteria = YAML.parse(readFileSync(resolve(import.meta.dir, "../infra/config/hysteria.yaml.template"), "utf8"));
+    const xray = JSON.parse(readFileSync(resolve(import.meta.dir, "../infra/config/xray.json.template"), "utf8"));
+
+    expect(hysteria.acl.inline).toEqual(["reject(all, udp/443)"]);
+    expect(xray.outbounds.at(-1)).toMatchObject({ protocol: "blackhole", tag: "block" });
+    expect(xray.routing.rules).toContainEqual({ type: "field", network: "udp", port: 443, outboundTag: "block" });
   });
 
   test("renders a complete inbound for the Xray hot-add API", () => {

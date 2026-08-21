@@ -18,10 +18,18 @@ snapshot="/var/lib/outpost/update-snapshots/$(date -u +%Y%m%dT%H%M%SZ).sqlite"
 previous=$(readlink -f /opt/outpost/current)
 env_file=/etc/outpost/outpost.env
 env_previous="$update_tmp/outpost.env.previous"
+hysteria_previous="$update_tmp/hysteria.yaml.previous"
+xray_previous="$update_tmp/xray.json.previous"
+hysteria_was_active=0
+xray_was_active=0
 next=""
 trap 'rm -rf "$update_tmp"' EXIT
 test -f "$env_file" || { echo "Outpost environment not found" >&2; exit 1; }
 cp "$env_file" "$env_previous"
+cp /etc/outpost/engines/hysteria.yaml "$hysteria_previous"
+cp /etc/outpost/engines/xray.json "$xray_previous"
+if systemctl is-active --quiet hysteria-server; then hysteria_was_active=1; fi
+if systemctl is-active --quiet xray; then xray_was_active=1; fi
 
 tar -xzf "$archive" -C "$update_tmp"
 source_dir=$(find "$update_tmp" -mindepth 1 -maxdepth 1 -type d | head -1)
@@ -44,8 +52,13 @@ rollback() {
   ln -sfn "$previous" /opt/outpost/current
   install -o outpost -g outpost -m 0600 "$snapshot" /var/lib/outpost/outpost.sqlite
   install -o root -g outpost -m 0640 "$env_previous" "$env_file"
+  install -o root -g outpost -m 0640 "$hysteria_previous" /etc/outpost/engines/hysteria.yaml
+  install -o root -g outpost -m 0640 "$xray_previous" /etc/outpost/engines/xray.json
   systemctl daemon-reload
-  systemctl restart outpost-agent outpost
+  systemctl restart outpost-agent
+  if test "$hysteria_was_active" = 1; then systemctl restart hysteria-server || true; fi
+  if test "$xray_was_active" = 1; then systemctl restart xray || true; fi
+  systemctl restart outpost
   echo "Update failed and was rolled back to $previous" >&2
 }
 trap 'rollback' ERR
@@ -57,6 +70,8 @@ install -m 0644 "$next"/infra/systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl restart outpost-agent
 systemctl is-active --quiet outpost-agent
+OUTPOST_RESTART_HYSTERIA="$hysteria_was_active" OUTPOST_RESTART_XRAY="$xray_was_active" \
+  /opt/outpost/current/infra/scripts/outpostctl reconcile-engine-presets
 systemctl start outpost
 
 for _ in {1..30}; do

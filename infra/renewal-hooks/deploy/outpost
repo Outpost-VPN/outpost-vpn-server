@@ -2,4 +2,13 @@
 set -euo pipefail
 
 systemctl reload nginx
-systemctl try-restart hysteria-server
+
+env_file=/etc/outpost/outpost.env
+if test -f "$env_file"; then
+  domain=$(sed -n 's/^OUTPOST_DOMAIN=//p' "$env_file")
+  setup_mode=$(sed -n 's/^OUTPOST_SETUP=//p' "$env_file")
+  renewed_name=$(basename "${RENEWED_LINEAGE:-/}")
+  if test "$setup_mode" = "0" && test -n "$domain" && test "$renewed_name" = "$domain"; then
+    systemctl try-restart hysteria-server
+  fi
+fi

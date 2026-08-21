@@ -208,11 +208,7 @@ for _ in {1..30}; do
   sleep 1
 done
 curl -fsS http://127.0.0.1:8181/readyz >/dev/null
-setup_url=$(journalctl -u outpost -n 80 --no-pager -o cat | sed -n 's/^Одноразовая ссылка (действует 1 час): //p' | tail -1)
-test -n "$setup_url" || { echo "Outpost started, but the setup URL was not found in the service log" >&2; exit 1; }
 rollback_armed=0
 
 echo
-echo "Outpost $version установлена."
-echo "Откройте первоначальную настройку в браузере:"
-echo "$setup_url"
+echo "https://$public_ip/"

@@ -9,6 +9,16 @@ import { now } from "../db/database";
 import { callAgent } from "../services/operations";
 import { ServiceError } from "../services/connections";
 import { JournalService } from "../services/journal";
+import {
+  currentEnginePresetVersions,
+  defaultHysteriaTemplate,
+  defaultXrayTemplate,
+  mergeEnginePreset,
+  parseEngineTemplate,
+  type EngineName,
+} from "./engine-presets";
+
+export { defaultHysteriaTemplate, defaultXrayTemplate } from "./engine-presets";
 
 export interface EngineContext {
   credentials: ConnectionCredential[];
@@ -43,64 +53,38 @@ const protectedBlocks = {
 } as const;
 
 export function validateTemplate(engine: keyof typeof protectedBlocks, template: string) {
-  const missing = protectedBlocks[engine].filter((block) => count(template, block) !== 1);
+  const errors = protectedBlocks[engine]
+    .filter((block) => count(template, block) !== 1)
+    .map((block) => `Защищённый блок ${block} должен встречаться ровно один раз`);
+  try {
+    const parsed = parseEngineTemplate(engine, template);
+    if (engine === "hysteria") {
+      const rules = nestedArray(parsed, "acl", "inline");
+      if (!rules.includes("reject(all, udp/443)")) {
+        errors.push("Системное правило reject(all, udp/443) нельзя удалить");
+      }
+    } else {
+      const outbounds = nestedArray(parsed, "outbounds");
+      const rules = nestedArray(parsed, "routing", "rules");
+      if (!outbounds.some((item) => matches(item, { protocol: "blackhole", tag: "block" }))) {
+        errors.push("Системный outbound block нельзя удалить или изменить");
+      }
+      if (!rules.some((item) => matches(item, { type: "field", network: "udp", port: 443, outboundTag: "block" }))) {
+        errors.push("Системное правило блокировки UDP/443 нельзя удалить или изменить");
+      }
+    }
+  } catch (error) {
+    errors.push(`Не удалось разобрать шаблон: ${error instanceof Error ? error.message : String(error)}`);
+  }
   return {
-    valid: missing.length === 0,
-    errors: missing.map((block) => `Защищённый блок ${block} должен встречаться ровно один раз`),
+    valid: errors.length === 0,
+    errors,
   };
 }
 
 export function renderedHash(rendered: string) {
   return createHash("sha256").update(rendered).digest("hex");
 }
-
-export const defaultHysteriaTemplate = `
-listen: :443
-tls:
-  cert: {{OUTPOST_TLS_CERT}}
-  key: {{OUTPOST_TLS_KEY}}
-auth:
-  type: http
-  http:
-    url: {{OUTPOST_AUTH_URL}}
-trafficStats:
-  listen: {{OUTPOST_STATS_LISTEN}}
-  secret: {{OUTPOST_STATS_SECRET}}
-masquerade:
-  type: proxy
-  proxy:
-    url: https://news.ycombinator.com/
-    rewriteHost: true
-`.trim();
-
-export const defaultXrayTemplate = JSON.stringify({
-  log: { loglevel: "warning" },
-  stats: "{{OUTPOST_STATS}}",
-  policy: {
-    levels: { "0": { statsUserUplink: true, statsUserDownlink: true } },
-    system: { statsInboundUplink: true, statsInboundDownlink: true },
-  },
-  api: "{{OUTPOST_API}}",
-  inbounds: [
-    {
-      tag: "vless-xhttp",
-      listen: "127.0.0.1",
-      port: 10000,
-      protocol: "vless",
-      settings: { clients: "{{OUTPOST_XHTTP_USERS}}", decryption: "none" },
-      streamSettings: { network: "xhttp", xhttpSettings: { path: "{{OUTPOST_XHTTP_PATH}}", mode: "auto" } },
-    },
-    {
-      tag: "vless-grpc",
-      listen: "127.0.0.1",
-      port: 10001,
-      protocol: "vless",
-      settings: { clients: "{{OUTPOST_GRPC_USERS}}", decryption: "none" },
-      streamSettings: { network: "grpc", grpcSettings: { serviceName: "{{OUTPOST_GRPC_SERVICE}}" } },
-    },
-  ],
-  outbounds: [{ protocol: "freedom", tag: "direct" }],
-}, null, 2);
 
 export function renderHysteria(template: string) {
   assertTemplate("hysteria", template);
@@ -159,12 +143,14 @@ export class EngineConfigService {
   }
 
   async apply(
-    engine: "hysteria" | "xray",
+    engine: EngineName,
     template: string,
     credentials: ConnectionCredential[],
     actor = "owner",
     eventType: "engine.config_applied" | "engine.config_rolled_back" = "engine.config_applied",
     targetVersion?: number,
+    presetVersion = currentEnginePresetVersions[engine],
+    restart = true,
   ) {
     const preview = this.preview(engine, template, credentials);
     if (!preview.valid || !preview.rendered || !preview.hash) {
@@ -182,20 +168,20 @@ export class EngineConfigService {
     const target = join(config.configDir, "engines", engine === "xray" ? "xray.json" : "hysteria.yaml");
     const result = config.demo
       ? { ok: true, demo: true }
-      : await callAgent({ action: "config.apply", payload: { source, target, engine } });
+      : await callAgent({ action: "config.apply", payload: { source, target, engine, restart } });
     this.db.raw.transaction(() => {
       this.db.raw.query("UPDATE engine_configs SET active = 0 WHERE engine = ?").run(engine);
       this.db.raw.query(`
         INSERT INTO engine_configs (id, engine, version, preset_version, template, rendered_hash, active, created_at)
-        VALUES (?, ?, ?, 1, ?, ?, 1, ?)
-      `).run(id, engine, version, template, preview.hash, timestamp);
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+      `).run(id, engine, version, presetVersion, template, preview.hash, timestamp);
     })();
     const auditId = this.db.audit({
       actor,
       action: eventType === "engine.config_rolled_back" ? "engines.config.rollback" : "engines.config.apply",
       resource: "engine_config",
       resourceId: id,
-      after: { engine, version, targetVersion, hash: preview.hash },
+      after: { engine, version, presetVersion, targetVersion, hash: preview.hash },
     });
     this.journal.record(eventType, {
       actor,
@@ -203,17 +189,85 @@ export class EngineConfigService {
       source: engine,
       subjectType: "engine_config",
       subjectId: id,
-      data: { engine, version, targetVersion },
+      data: { engine, version, presetVersion, targetVersion },
     });
     return { ...this.engineState(engine), result };
   }
 
   async rollback(engine: "hysteria" | "xray", version: number, credentials: ConnectionCredential[], actor = "owner") {
-    const row = this.db.raw.query<{ template: string }, [string, number]>(
-      "SELECT template FROM engine_configs WHERE engine = ? AND version = ?",
+    const row = this.db.raw.query<{ template: string; preset_version: number }, [string, number]>(
+      "SELECT template, preset_version FROM engine_configs WHERE engine = ? AND version = ?",
     ).get(engine, version);
     if (!row) throw new ServiceError(404, "Ревизия конфигурации не найдена");
-    return this.apply(engine, row.template, credentials, actor, "engine.config_rolled_back", version);
+    const upgrade = mergeEnginePreset(engine, row.template, row.preset_version);
+    if (upgrade.errors.length || upgrade.conflicts.length) {
+      throw new ServiceError(409, "Ревизию нельзя безопасно совместить с текущим системным пресетом", {
+        errors: upgrade.errors,
+        conflicts: upgrade.conflicts,
+      });
+    }
+    return this.apply(
+      engine,
+      upgrade.template,
+      credentials,
+      actor,
+      "engine.config_rolled_back",
+      version,
+      upgrade.toVersion,
+    );
+  }
+
+  async reconcilePresets(
+    credentials: ConnectionCredential[],
+    actor = "system:update",
+    restart: Record<EngineName, boolean> = { hysteria: true, xray: true },
+  ) {
+    const results: Record<EngineName, unknown> = {} as Record<EngineName, unknown>;
+    for (const engine of ["hysteria", "xray"] as const) {
+      const active = this.active(engine);
+      const currentVersion = currentEnginePresetVersions[engine];
+      if (active && active.preset_version >= currentVersion) {
+        results[engine] = { status: "current", presetVersion: active.preset_version, currentVersion };
+        continue;
+      }
+      const upgrade = active
+        ? mergeEnginePreset(engine, active.template, active.preset_version)
+        : {
+            template: engine === "hysteria" ? defaultHysteriaTemplate : defaultXrayTemplate,
+            fromVersion: 0,
+            toVersion: currentVersion,
+            conflicts: [],
+            errors: [],
+          };
+      const check = validateTemplate(engine, upgrade.template);
+      if (upgrade.errors.length || upgrade.conflicts.length || !check.valid) {
+        results[engine] = {
+          status: upgrade.conflicts.length ? "conflict" : "invalid",
+          fromVersion: upgrade.fromVersion,
+          currentVersion,
+          conflicts: upgrade.conflicts,
+          errors: [...upgrade.errors, ...check.errors],
+        };
+        continue;
+      }
+      const applied = await this.apply(
+        engine,
+        upgrade.template,
+        credentials,
+        actor,
+        "engine.config_applied",
+        undefined,
+        currentVersion,
+        restart[engine],
+      );
+      results[engine] = {
+        status: "applied",
+        fromVersion: upgrade.fromVersion,
+        currentVersion,
+        activeVersion: applied.activeVersion,
+      };
+    }
+    return { ok: true, engines: results };
   }
 
   private engineState(engine: "hysteria" | "xray") {
@@ -228,8 +282,27 @@ export class EngineConfigService {
       engine,
       activeVersion: active?.version ?? 0,
       template: active?.template ?? (engine === "xray" ? defaultXrayTemplate : defaultHysteriaTemplate),
-      presetVersion: active?.preset_version ?? 1,
+      presetVersion: active?.preset_version ?? currentEnginePresetVersions[engine],
+      preset: this.presetState(engine, active),
       revisions,
+    };
+  }
+
+  private presetState(engine: EngineName, active: ReturnType<EngineConfigService["active"]>) {
+    const currentVersion = currentEnginePresetVersions[engine];
+    if (!active || active.preset_version === currentVersion) return { status: "current", currentVersion };
+    if (active.preset_version > currentVersion) {
+      return { status: "newer", currentVersion, errors: ["Конфигурация создана более новой версией Outpost"] };
+    }
+    const upgrade = mergeEnginePreset(engine, active.template, active.preset_version);
+    const check = validateTemplate(engine, upgrade.template);
+    return {
+      status: upgrade.conflicts.length ? "conflict" : upgrade.errors.length || !check.valid ? "invalid" : "available",
+      currentVersion,
+      fromVersion: active.preset_version,
+      template: upgrade.template,
+      conflicts: upgrade.conflicts,
+      errors: [...upgrade.errors, ...check.errors],
     };
   }
 
@@ -267,4 +340,18 @@ function assertTemplate(engine: keyof typeof protectedBlocks, template: string) 
 
 function count(text: string, needle: string) {
   return text.split(needle).length - 1;
+}
+
+function nestedArray(value: unknown, ...path: string[]): unknown[] {
+  let current = value;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return [];
+    current = (current as Record<string, unknown>)[key];
+  }
+  return Array.isArray(current) ? current : [];
+}
+
+function matches(value: unknown, expected: Record<string, unknown>) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+    && Object.entries(expected).every(([key, entry]) => (value as Record<string, unknown>)[key] === entry);
 }

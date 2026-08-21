@@ -1,5 +1,5 @@
 import {avatarUrl} from './avatar-picker.imba'
-import {t} from './i18n.imba'
+import {intl, t} from './i18n.imba'
 import YAML from 'yaml'
 
 export const routeActions = [
@@ -9,7 +9,7 @@ export const routeActions = [
 ]
 export const routeMatchers = [
 	{id: 'DOMAIN', label: 'Точный домен', hint: 'Только один хост', placeholder: 'example.com'}
-	{id: 'SUFFIX', label: 'Доменный суффикс', hint: 'Домен и поддомены', placeholder: '.example.com'}
+	{id: 'SUFFIX', label: 'Доменный суффикс', hint: 'Домен, TLD и поддомены', placeholder: 'example.com или ru'}
 	{id: 'IP_CIDR', label: 'IP / CIDR', hint: 'Адрес или подсеть', placeholder: '192.0.2.0/24'}
 	{id: 'GEOSITE', label: 'Geosite', hint: 'Группа доменов', placeholder: 'google'}
 	{id: 'GEOIP', label: 'GeoIP', hint: 'Страна или регион', placeholder: 'cn'}
@@ -53,7 +53,7 @@ export const fmt = {
 		return t('routes.proxy') if action == 'PROXY'
 		t('routes.block')
 	matcher: do(matcher)
-		const labels = {DOMAIN: 'Точный домен', SUFFIX: 'Доменный суффикс', IP_CIDR: 'IP / CIDR', GEOSITE: 'Geosite', GEOIP: 'GeoIP'}
+		const labels = {DOMAIN: t('Точный домен'), SUFFIX: t('Доменный суффикс'), IP_CIDR: 'IP / CIDR', GEOSITE: 'Geosite', GEOIP: 'GeoIP'}
 		labels[matcher]
 	serviceName: do(name)
 		const names = {'outpost': 'Outpost', nginx: 'Nginx', 'hysteria-server': 'Hysteria 2', xray: 'Xray'}
@@ -65,20 +65,20 @@ export const fmt = {
 		'circles-three-plus'
 	bytes: do(value)
 		const amount = Number(value or 0)
-		return '0 Б' if !amount
-		const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ']
+		return t('0 Б') if !amount
+		const units = [t('Б'), t('КБ'), t('МБ'), t('ГБ'), t('ТБ')]
 		const index = Math.max(0, Math.min(Math.floor(Math.log(amount) / Math.log(1024)), units.length - 1))
-		"{(amount / Math.pow(1024, index)).toFixed(index > 2 ? 1 : 0)} {units[index]}"
+		"{new Intl.NumberFormat(intl!, {maximumFractionDigits: index > 2 ? 1 : 0}).format(amount / Math.pow(1024, index))} {units[index]}"
 	rate: do(value)
 		const amount = Number(value or 0) * 8
-		return '0 бит/с' unless amount
-		const units = ['бит/с', 'Кбит/с', 'Мбит/с', 'Гбит/с']
+		return t('0 бит/с') unless amount
+		const units = [t('бит/с'), t('Кбит/с'), t('Мбит/с'), t('Гбит/с')]
 		const index = Math.min(Math.floor(Math.log(amount) / Math.log(1000)), units.length - 1)
 		const scaled = amount / Math.pow(1000, index)
-		"{scaled.toFixed(scaled < 10 and index ? 1 : 0).replace('.', ',')} {units[index]}"
+		"{new Intl.NumberFormat(intl!, {maximumFractionDigits: scaled < 10 and index ? 1 : 0}).format(scaled)} {units[index]}"
 	percent: do(value, total)
 		return '0%' if !total
-		"{Math.round(value / total * 100)}%"
+		new Intl.NumberFormat(intl!, {style: 'percent', maximumFractionDigits: 0}).format(value / total)
 	connectionTrafficRow: do(connection, traffic)
 		traffic.connections.find do(item) item.connection_id == connection.id
 	connectionTraffic: do(connection, traffic)
@@ -87,28 +87,28 @@ export const fmt = {
 	connectionOnline: do(connection)
 		connection.presence == 'online'
 	connectionPresence: do(connection)
-		return 'Онлайн' if fmt.connectionOnline(connection)
-		return 'Готовим' if connection.status == 'provisioning'
-		return 'Перевыпускаем' if connection.status == 'rotating'
-		return 'Архивируем' if connection.status == 'archiving'
-		return 'Статус неизвестен' if connection.presence == 'unknown'
-		'Не в сети'
+		return t('Онлайн') if fmt.connectionOnline(connection)
+		return t('Готовим') if connection.status == 'provisioning'
+		return t('Перевыпускаем') if connection.status == 'rotating'
+		return t('Архивируем') if connection.status == 'archiving'
+		return t('Статус неизвестен') if connection.presence == 'unknown'
+		t('Не в сети')
 	seen: do(connection)
-		return 'В сети' if fmt.connectionOnline(connection)
-		return 'Не использовалось' unless connection.last_seen_at
+		return t('В сети') if fmt.connectionOnline(connection)
+		return t('Не использовалось') unless connection.last_seen_at
 		const value = new Date(connection.last_seen_at)
 		const today = new Date
 		const start = new Date(today.getFullYear!, today.getMonth!, today.getDate!).getTime!
 		const day = new Date(value.getFullYear!, value.getMonth!, value.getDate!).getTime!
-		return "Был сегодня, {fmt.time(value)}" if day == start
-		return "Был вчера, {fmt.time(value)}" if day == start - 86400000
-		"Был {fmt.day(value)}, {fmt.time(value)}"
+		return t('Был сегодня, {time}', {time: fmt.time(value)}) if day == start
+		return t('Был вчера, {time}', {time: fmt.time(value)}) if day == start - 86400000
+		t('Был {day}, {time}', {day: fmt.day(value), time: fmt.time(value)})
 	checked: do(value)
-		return 'Проверка ещё не выполнялась' unless value
+		return t('Проверка ещё не выполнялась') unless value
 		const minutes = Math.max(0, Math.floor((Date.now! - new Date(value).getTime!) / 60000))
-		return 'Проверено только что' if minutes < 1
-		return "Проверено {minutes} мин назад" if minutes < 60
-		"Проверено в {fmt.time(value)}"
+		return t('Проверено только что') if minutes < 1
+		return t('Проверено {minutes} мин назад', {minutes: new Intl.NumberFormat(intl!).format(minutes)}) if minutes < 60
+		t('Проверено в {time}', {time: fmt.time(value)})
 	spark: do(connection, traffic)
 		const row = fmt.connectionTrafficRow(connection, traffic)
 		return [] unless row and row.series
@@ -121,30 +121,28 @@ export const fmt = {
 		const max = Math.max(...series.map(do(item) item.upload + item.download), 1)
 		Math.max(2, Math.round((point.upload + point.download) / max * 100))
 	date: do(value = new Date)
-		new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'}).format(value).replace(/\s*г\.$/, '')
+		new Intl.DateTimeFormat(intl!, {day: 'numeric', month: 'long', year: 'numeric'}).format(value)
 	day: do(value)
-		new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'short'}).format(value).replace('.', '')
+		new Intl.DateTimeFormat(intl!, {day: 'numeric', month: 'short'}).format(value)
 	time: do(value)
-		new Intl.DateTimeFormat('ru-RU', {hour: '2-digit', minute: '2-digit'}).format(new Date(value))
+		new Intl.DateTimeFormat(intl!, {hour: '2-digit', minute: '2-digit'}).format(new Date(value))
 	zone: do(zone)
-		const parts = new Intl.DateTimeFormat('ru-RU', {timeZone: zone, timeZoneName: 'longOffset', hour: '2-digit'}).formatToParts(new Date)
+		const parts = new Intl.DateTimeFormat(intl!, {timeZone: zone, timeZoneName: 'longOffset', hour: '2-digit'}).formatToParts(new Date)
 		const offset = parts.find(do(part) part.type == 'timeZoneName')..value or 'GMT'
 		"{offset.replace('GMT', 'UTC')} — {zone}"
 	period: do(value)
-		trafficPeriods.find(do(item) item.id == value) or trafficPeriods[5]
+		const item = trafficPeriods.find(do(option) option.id == value) or trafficPeriods[5]
+		{...item, label: t(item.label), short: t(item.short)}
 	time: do(value)
 		return '' unless value
-		new Intl.DateTimeFormat('ru-RU', {hour: '2-digit', minute: '2-digit'}).format(new Date(value))
+		new Intl.DateTimeFormat(intl!, {hour: '2-digit', minute: '2-digit'}).format(new Date(value))
 	stamp: do(value)
 		return '' unless value
-		new Intl.DateTimeFormat('ru-RU', {dateStyle: 'medium', timeStyle: 'short'}).format(new Date(value))
+		new Intl.DateTimeFormat(intl!, {dateStyle: 'medium', timeStyle: 'short'}).format(new Date(value))
 	uptime: do(value)
 		const days = Math.floor(Number(value or 0) / 86400)
-		return 'Работает меньше дня' unless days
-		const mod10 = days % 10
-		const mod100 = days % 100
-		const word = mod100 >= 11 and mod100 <= 14 ? 'дней' : mod10 == 1 ? 'день' : mod10 >= 2 and mod10 <= 4 ? 'дня' : 'дней'
-		"Работает {days} {word}"
+		return t('Работает меньше дня') unless days
+		t('Работает {days} дней', {days: new Intl.NumberFormat(intl!).format(days)})
 }
 
 export const webauthn = {

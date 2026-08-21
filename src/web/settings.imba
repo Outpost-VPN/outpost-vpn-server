@@ -1,8 +1,5 @@
 import {trafficPeriods} from './context.imba'
-
-const languages = [
-	{id: 'ru', label: 'Русский'}
-]
+import {intl, language as currentLanguage, languages, setLanguage, t} from './i18n.imba'
 
 const clock = {
 	offset: do(name)
@@ -27,6 +24,7 @@ tag outpost-settings-select
 	searchable = false
 	disabled = false
 	open = false
+	above = false
 	query = ''
 	placeholder = 'Найти'
 
@@ -36,16 +34,30 @@ tag outpost-settings-select
 	get visible
 		const term = query.trim!.toLowerCase!
 		return items unless term
-		items.filter do(item) "{item.label} {item.id}".toLowerCase!.includes(term)
+		items.filter do(item) "{t(item.label)} {item.id}".toLowerCase!.includes(term)
 
 	def toggle
 		return if disabled
 		open = !open
 		query = ''
-		if open and searchable
+		if open
+			above = false
+			imba.commit!
 			window.requestAnimationFrame do
-				const input = self.querySelector('.search input')
-				input.focus! if input
+				align!
+				if searchable
+					const input = self.querySelector('.search input')
+					input.focus! if input
+
+	def align
+		return unless open
+		const trigger = self.querySelector('.trigger')
+		const menu = self.querySelector('.menu')
+		return unless trigger and menu
+		const rect = trigger.getBoundingClientRect!
+		const room = window.innerHeight - rect.bottom
+		above = room < menu.offsetHeight + 12 and rect.top > room
+		imba.commit!
 
 	def close
 		open = false
@@ -57,31 +69,33 @@ tag outpost-settings-select
 
 	def search
 		imba.commit!
+		window.requestAnimationFrame do align!
 
-	<self .open=open>
+	<self .open=open .above=above>
 		if open
-			<global @click.outside=close @keydown.esc=close>
+			<global @click.outside=close @keydown.esc=close @resize=align>
 		<button.trigger type="button" disabled=disabled @click.stop=toggle aria-haspopup="listbox" aria-expanded=open>
-			<span> selected.label
+			<span dir=(selected.ltr ? 'ltr' : null)> t(selected.label)
 			<outpost-icon name="caret-down">
 		if open
 			<div.menu role="listbox" ease>
 				if searchable
 					<label.search>
 						<outpost-icon name="magnifying-glass">
-						<input type="search" bind=query @input=search placeholder=placeholder aria-label=placeholder @click.stop>
+						<input type="search" bind=query @input=search dir="auto" placeholder=t(placeholder) aria-label=t(placeholder) @click.stop>
 				<div.options>
 					if visible.length
 						for item in visible
 							<button.option type="button" role="option" aria-selected=(item.id == value) .active=(item.id == value) @click.stop=(do choose(item))>
-								<span> item.label
+								<span dir=(item.ltr ? 'ltr' : null)> t(item.label)
 								if item.id == value
 									<outpost-icon name="check">
 					else
-						<p.empty> 'Ничего не найдено'
+						<p.empty> t('Ничего не найдено')
 
 	css self
 		d:block pos:relative miw:0
+		&.open zi:90
 		.trigger w:100% h:42px d:grid gtc:minmax(0, 1fr) 14px ai:center g:8px p:0 12px bd:1px solid var(--outpost-line) rd:9px bgc:var(--outpost-white) c:var(--outpost-text) ta:left fs:13px fw:550 cur:pointer tween:border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease
 		.trigger bc@hover:var(--outpost-brand) bgc@hover:var(--outpost-soft)
 		.trigger@disabled cur:default o:.62
@@ -91,6 +105,7 @@ tag outpost-settings-select
 		&.open .trigger bc:var(--outpost-brand) bxs:0 0 0 2px var(--outpost-auth-start)
 		&.open .trigger > outpost-icon transform:rotate(180deg)
 		.menu pos:absolute t:calc(100% + 6px) l:0 zi:80 w:100% miw:250px p:6px bd:1px solid var(--outpost-line) rd:11px bgc:var(--outpost-white) bxs:0 16px 36px black/15 ease:180ms cubic-bezier(.22,1,.36,1) o@off:0 y@off:-6px scale@off:.98 transform-origin:top left box-sizing:border-box
+		&.above .menu t:auto b:calc(100% + 6px) y@off:6px transform-origin:bottom left
 		.search h:38px d:grid gtc:18px minmax(0,1fr) ai:center g:7px px:9px mb:5px bd:1px solid var(--outpost-line) rd:8px bgc:var(--outpost-white) c:var(--outpost-muted)
 		.search outpost-icon fs:15px
 		.search input w:100% miw:0 p:0 bd:0 ol:none bgc:transparent c:var(--outpost-text) fs:12px
@@ -106,19 +121,19 @@ tag outpost-settings
 	store = null
 	busy = null
 	zones = []
-	draft = {period: '30d', language: 'ru', timezone: 'UTC'}
+	draft = {period: '30d', language: 'en', timezone: 'UTC'}
 
 	def mount
 		draft = {
 			period: store.trafficPeriod
-			language: settings.interface.language or 'ru'
+			language: owner.language or 'en'
 			timezone: owner.timezone or 'UTC'
 		}
 		const supported = Intl['supportedValuesOf'] ? Intl['supportedValuesOf']('timeZone') : ['UTC']
 		const values = [draft.timezone]
 		for value in supported when value != draft.timezone
 			values.push(value)
-		zones = values.map do(value) {id: value, label: clock.label(value)}
+		zones = values.map do(value) {id: value, label: clock.label(value), ltr: true}
 		imba.commit!
 
 	get owner do store.data.auth.owner
@@ -127,8 +142,8 @@ tag outpost-settings
 	get tls do store.data.system.tls
 
 	def expiry
-		return tls.error or 'Не удалось проверить сертификат' unless tls.expiresAt
-		"До {new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'}).format(new Date(tls.expiresAt)).replace(/\s*г\.$/, '')}"
+		return tls.error or t('Не удалось проверить сертификат') unless tls.expiresAt
+		t('settings.certificate.until', {date: new Intl.DateTimeFormat(intl!, {day: 'numeric', month: 'long', year: 'numeric'}).format(new Date(tls.expiresAt))})
 
 	def upgrade
 		return unless update.available
@@ -154,11 +169,17 @@ tag outpost-settings
 			imba.commit!
 
 	def language value
+		const previous = currentLanguage!
 		draft.language = value
+		setLanguage(value)
+		store.title!
 		busy = 'language'
 		try
-			const next = {...settings.interface, language: value}
-			await store.mutate('PATCH', '/api/v1/settings', {interface: next})
+			await store.mutate('PATCH', '/api/v1/me', {language: value})
+		catch issue
+			setLanguage(previous)
+			draft.language = previous
+			throw issue
 		finally
 			busy = null
 			imba.commit!
@@ -174,72 +195,72 @@ tag outpost-settings
 
 	<self>
 		<header.settings-header>
-			<small> 'Параметры'
-			<h1> 'Настройки панели'
-			<p> 'Подключение, интерфейс и обслуживание'
+			<small> t('Параметры')
+			<h1> t('Настройки панели')
+			<p> t('Подключение, интерфейс и обслуживание')
 		<div.settings-layout>
 			<section.outpost-card.system-strip>
 				<div.system-item.certificate .warning=(tls.status != 'valid')>
 					<span.system-mark><outpost-icon name=(tls.status == 'valid' ? 'shield-check' : 'shield-warning')>
 					<div.system-copy>
-						<small> 'TLS-сертификат'
-						<strong> tls.status == 'valid' ? 'Действителен' : 'Требуется внимание'
+						<small> t('TLS-сертификат')
+						<strong> tls.status == 'valid' ? t('Действителен') : t('Требуется внимание')
 						<span> expiry!
 				<div.system-item.address>
 					<span.system-mark><outpost-icon name="globe-simple">
 					<div.system-copy>
-						<small> 'Адрес панели'
+						<small> t('Адрес панели')
 						<div.system-value>
 							<strong title=store.data.system.domain> store.data.system.domain
 						<span> "IPv4 {store.data.system.address or '—'} · HTTPS · TCP 443"
 				<div.system-item.version>
 					<span.system-mark><outpost-icon name="squares-four">
 					<div.system-copy>
-						<small> 'Версия панели'
+						<small> t('Версия панели')
 						<div.system-value>
 							<strong> store.data.system.version
 							if update.available
-								<button.system-action type="button" @click=upgrade aria-label="Обновить до {update.latest}" title="Обновить до {update.latest}"> 'Обновить'
-						<span> update.available ? "Доступна версия {update.latest}" : 'Установлена актуальная версия'
+								<button.system-action type="button" @click=upgrade aria-label=t('Обновить до {version}', {version: update.latest}) title=t('Обновить до {version}', {version: update.latest})> t('Обновить')
+						<span> update.available ? t('Доступна версия {version}', {version: update.latest}) : t('Установлена актуальная версия')
 			<div.content-grid>
 				<section.outpost-card.settings-card>
-					<h2> 'Параметры интерфейса'
+					<h2> t('Параметры интерфейса')
 					<div.setting-row>
 						<span.setting-mark><outpost-icon name="chart-line-up">
 						<div.setting-copy>
-							<strong> 'Период по умолчанию'
-							<small> 'Используется при открытии данных о трафике'
+							<strong> t('Период по умолчанию')
+							<small> t('Используется при открытии данных о трафике')
 						<outpost-settings-select value=draft.period items=trafficPeriods disabled=busy change=(do(value) period(value))>
 					<div.setting-row>
 						<span.setting-mark><outpost-icon name="translate">
 						<div.setting-copy>
-							<strong> 'Язык интерфейса'
-							<small> 'Язык панели управления'
+							<strong> t('Язык интерфейса')
+							<small> t('Язык панели управления')
 						<outpost-settings-select value=draft.language items=languages disabled=busy change=(do(value) language(value))>
 					<div.setting-row>
 						<span.setting-mark><outpost-icon name="clock">
 						<div.setting-copy>
-							<strong> 'Часовой пояс'
-							<small> 'Время в журнале и календарных периодах'
-						<outpost-settings-select value=draft.timezone items=zones searchable=true disabled=busy placeholder="Найти город или UTC" change=(do(value) timezone(value))>
+							<strong> t('Часовой пояс')
+							<small> t('Время в журнале и календарных периодах')
+						<outpost-settings-select value=draft.timezone items=zones searchable=true disabled=busy placeholder=t('Найти город или UTC') change=(do(value) timezone(value))>
 					<p.autosave>
 						<outpost-icon name="check-circle">
-						<span> 'Изменения сохраняются автоматически'
+						<span> t('Изменения сохраняются автоматически')
 				<section.outpost-card.transfer-card>
 					<header>
 						<span.transfer-mark><outpost-icon name="cloud-arrow-up">
-						<h2> 'Перенос данных'
-					<p> 'Выгрузите резервную копию или восстановите панель из сохранённых данных.'
+						<h2> t('Перенос данных')
+					<p> t('Выгрузите резервную копию или восстановите панель из сохранённых данных.')
 					<div.transfer-actions>
 						<button.outpost-button.secondary.small type="button" @click=backup>
 							<outpost-icon name="download-simple">
-							<span> 'Выгрузить данные'
+							<span> t('Выгрузить данные')
 						<button.outpost-button.secondary.small type="button" @click=restore>
 							<outpost-icon name="upload-simple">
-							<span> 'Загрузить данные'
+							<span> t('Загрузить данные')
 					<p.transfer-note>
 						<outpost-icon name="info">
-						<span> 'Рекомендуется регулярное резервное копирование.'
+						<span> t('Рекомендуется регулярное резервное копирование.')
 
 	css self
 		maw:1100px mx:auto c:var(--outpost-text)
@@ -267,7 +288,7 @@ tag outpost-settings
 		.system-action fl:0 0 auto p:1px 0 bd:0 bgc:transparent c:var(--outpost-brand) fs:11px fw:650 lh:1.2 white-space:nowrap
 		.system-action c@hover:var(--outpost-brand-dark) td@hover:underline
 		.content-grid d:grid gtc:minmax(0,2.15fr) minmax(260px,.85fr) ai:stretch g:18px
-		.settings-card px:24px of:hidden
+		.settings-card px:24px
 		.settings-card > h2 pt:22px pb:14px c:var(--outpost-navy) fs:17px fw:750
 		.setting-row mih:88px d:grid gtc:44px minmax(0,1fr) minmax(230px,300px) ai:center g:16px border-top:1px solid var(--outpost-line)
 		.setting-mark s:42px d:grid ja:center rd:11px bgc:var(--outpost-auth-start) c:var(--outpost-brand) fs:20px

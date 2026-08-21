@@ -18,9 +18,7 @@ export class OutpostApi {
     const text = await response.text();
     const payload = text ? safeJson(text) : null;
     if (!response.ok) {
-      const message = payload && typeof payload === "object" && "error" in payload
-        ? String((payload as { error?: { message?: string } }).error?.message ?? response.statusText)
-        : text || response.statusText;
+      const message = errorMessage(payload, text, response.statusText);
       throw new Error(`Outpost API ${response.status}: ${message}`);
     }
     return payload as T;
@@ -44,4 +42,13 @@ function ensureSlash(value: string) {
 
 function safeJson(value: string): unknown {
   try { return JSON.parse(value); } catch { return value; }
+}
+
+function errorMessage(payload: unknown, text: string, statusText: string) {
+  if (payload && typeof payload === "object") {
+    const error = payload as { message?: unknown; error?: { message?: unknown } };
+    if (typeof error.message === "string" && error.message) return error.message;
+    if (typeof error.error?.message === "string" && error.error.message) return error.error.message;
+  }
+  return text || statusText;
 }

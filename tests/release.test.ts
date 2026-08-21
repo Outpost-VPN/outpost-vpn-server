@@ -22,6 +22,28 @@ describe("release trust chain", () => {
     expect(installer).toContain("--preferred-profile shortlived");
   });
 
+  test("prints the fixed IP root without creating or reading an install-time setup link", async () => {
+    const installer = await Bun.file(resolve(root, "infra/scripts/install")).text();
+    const entry = await Bun.file(resolve(root, "src/server/index.ts")).text();
+    expect(installer).toContain('echo "https://$public_ip/"');
+    expect(installer).not.toContain("Откройте первоначальную настройку");
+    expect(installer).not.toContain("setup_url=");
+    expect(installer).not.toContain("journalctl -u outpost");
+    expect(entry).not.toContain("ensureBootstrap");
+    expect(entry).not.toContain("Одноразовая ссылка");
+  });
+
+  test("rejects a non-clean VPS before making changes when TCP 80, TCP 443, or UDP 443 is occupied", async () => {
+    const installer = await Bun.file(resolve(root, "infra/scripts/install")).text();
+    const ports = installer.indexOf("ss -Hlnptu");
+    const mutation = installer.indexOf("apt-get update");
+    expect(ports).toBeGreaterThan(0);
+    expect(ports).toBeLessThan(mutation);
+    expect(installer.slice(ports, mutation)).toContain("(80|443)");
+    expect(installer.slice(ports, mutation)).toContain("clean Ubuntu install is required");
+    expect(installer).not.toContain("OUTPOST_EXTERNAL_PORT");
+  });
+
   test("serves ACME challenges from an nginx-readable webroot before certificate issuance", async () => {
     const installer = await Bun.file(resolve(root, "infra/scripts/install")).text();
     const nginxFiles = [
@@ -64,11 +86,55 @@ describe("release trust chain", () => {
     expect(installer).toContain("snap wait system seed.loaded");
   });
 
-  test("keeps WebAuthn unreachable on the temporary IP edge", async () => {
+  test("serves setup at the IP root without legacy setup routes", async () => {
     const nginx = await Bun.file(resolve(root, "infra/nginx/outpost-setup.conf.template")).text();
-    expect(nginx).toContain("location ^~ /api/v1/setup");
+    expect(nginx).toContain("location = / {");
+    expect(nginx).toContain("proxy_set_header X-Outpost-Surface setup;");
+    expect(nginx).toContain("location = /api/v1/setup {");
+    expect(nginx).toContain("location = /api/v1/setup/domain {");
     expect(nginx).not.toContain("/api/v1/auth");
+    expect(nginx).not.toContain("/admin/setup");
+    expect(nginx).not.toContain("location ^~ /setup");
     expect(nginx).toContain("location / {\n        return 404;");
+  });
+
+  test("retains a restricted permanent IP edge after domain finalization", async () => {
+    const nginx = await Bun.file(resolve(root, "infra/nginx/outpost.conf.template")).text();
+    const ipStart = nginx.indexOf("server_name __PUBLIC_IP__ _;");
+    const domainStart = nginx.indexOf("listen 443 ssl http2;", ipStart);
+    const ipEdge = nginx.slice(ipStart, domainStart);
+    const finalizer = await Bun.file(resolve(root, "infra/scripts/finalize-domain")).text();
+
+    expect(ipEdge).toContain("/etc/letsencrypt/live/__PUBLIC_IP__/fullchain.pem");
+    expect(ipEdge).toContain("location = / {");
+    expect(ipEdge).toContain("location = /api/v1/setup {");
+    expect(ipEdge).toContain("if ($request_method != GET) { return 421; }");
+    expect(ipEdge).toContain("proxy_set_header X-Outpost-Surface setup;");
+    expect(ipEdge).not.toContain("/api/v1/setup/domain");
+    expect(ipEdge).not.toContain("/api/v1/auth");
+    expect(ipEdge).not.toContain("/admin");
+    expect(ipEdge).not.toContain("/s/");
+    expect(ipEdge).toContain("return 421;");
+    expect(nginx).toContain("proxy_set_header X-Outpost-Surface app;");
+    expect(nginx).toContain("location = /api/v1/setup/domain {\n        return 404;");
+    expect(finalizer).toContain('s|__PUBLIC_IP__|$public_ip|g');
+    expect(finalizer).not.toContain('cert-name "$public_ip"');
+  });
+
+  test("keeps domain finalization rollback armed until the application restart is scheduled", async () => {
+    const finalizer = await Bun.file(resolve(root, "infra/scripts/finalize-domain")).text();
+    const schedule = finalizer.indexOf("systemd-run --on-active=2s");
+    const disarm = finalizer.indexOf("armed=0", schedule);
+    expect(schedule).toBeGreaterThan(0);
+    expect(disarm).toBeGreaterThan(schedule);
+  });
+
+  test("reloads Nginx for every renewed certificate and restarts Hysteria only for the permanent domain", async () => {
+    const hook = await Bun.file(resolve(root, "infra/renewal-hooks/deploy/outpost")).text();
+    expect(hook).toContain("systemctl reload nginx");
+    expect(hook).toContain('test "$setup_mode" = "0"');
+    expect(hook).toContain('test "$renewed_name" = "$domain"');
+    expect(hook).toContain("systemctl try-restart hysteria-server");
   });
 
   test("proxies every edge response to Bun over HTTP/1.1", async () => {
@@ -80,6 +146,28 @@ describe("release trust chain", () => {
       expect(securityHeaders).toBeGreaterThan(tlsServer);
       expect(nginx.slice(tlsServer, securityHeaders)).toContain("proxy_http_version 1.1;");
     }
+  });
+
+  test("disables SSE buffering and compresses application assets", async () => {
+    const nginx = await Bun.file(resolve(root, "infra/nginx/outpost.conf.template")).text();
+    const setup = await Bun.file(resolve(root, "infra/nginx/outpost-setup.conf.template")).text();
+    const server = await Bun.file(resolve(root, "src/server/http.ts")).text();
+    const entry = await Bun.file(resolve(root, "src/server/index.ts")).text();
+    const html = await Bun.file(resolve(root, "public/index.html")).text();
+    const location = nginx.slice(nginx.indexOf("location = /api/v1/dashboard/events"));
+
+    for (const source of [nginx, setup]) {
+      expect(source).toContain("gzip on;");
+      expect(source).toContain("gzip_types application/javascript text/javascript application/json text/css;");
+    }
+    expect(location.slice(0, location.indexOf("\n    }"))).toContain("proxy_buffering off;");
+    expect(location.slice(0, location.indexOf("\n    }"))).toContain("proxy_cache off;");
+    expect(location.slice(0, location.indexOf("\n    }"))).toContain("proxy_read_timeout 1h;");
+    expect(server).toContain('"public, max-age=31536000, immutable"');
+    expect(server).toContain('"cache-control": "no-cache"');
+    expect(entry).toContain("idleTimeout: 30");
+    expect(html).toContain("app.js?v=__OUTPOST_VERSION__");
+    expect(html).toContain("style.css?v=__OUTPOST_VERSION__");
   });
 
   test("keeps subscription and both secret Xray transports out of access logs", async () => {
@@ -111,7 +199,21 @@ describe("release trust chain", () => {
   test("activates the new root-agent binary and restores it on update rollback", async () => {
     const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
     expect(updater).toContain("systemctl restart outpost-agent\nsystemctl is-active --quiet outpost-agent");
-    expect(updater).toContain("systemctl restart outpost-agent outpost");
+    expect(updater).toContain("systemctl restart outpost-agent");
+    expect(updater).toContain('if test "$hysteria_was_active" = 1; then systemctl restart hysteria-server || true; fi');
+    expect(updater).toContain('if test "$xray_was_active" = 1; then systemctl restart xray || true; fi');
+  });
+
+  test("reconciles versioned engine presets before the updated app becomes ready", async () => {
+    const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
+    const agent = updater.indexOf("systemctl is-active --quiet outpost-agent");
+    const presets = updater.indexOf("reconcile-engine-presets");
+    const app = updater.indexOf("systemctl start outpost", presets);
+    expect(presets).toBeGreaterThan(agent);
+    expect(app).toBeGreaterThan(presets);
+    expect(updater).toContain('install -o root -g outpost -m 0640 "$hysteria_previous" /etc/outpost/engines/hysteria.yaml');
+    expect(updater).toContain('install -o root -g outpost -m 0640 "$xray_previous" /etc/outpost/engines/xray.json');
+    expect(updater).toContain('OUTPOST_RESTART_HYSTERIA="$hysteria_was_active" OUTPOST_RESTART_XRAY="$xray_was_active"');
   });
 
   test("includes the release manifest in the signed checksum set", async () => {

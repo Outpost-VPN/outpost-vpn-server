@@ -8,16 +8,20 @@
 - доступ к web-консоли VPS или SSH для одной стартовой команды;
 - бесплатный hostname в поддерживаемом DNS-сервисе либо собственный домен, DNS которого можно изменить.
 
+Установка рядом с существующими сервисами не поддерживается. Если занят хотя бы
+один из портов TCP 80, TCP 443 или UDP 443, installer завершится до любых
+изменений и попросит чистый Ubuntu VPS. Альтернативного внешнего порта нет.
+
 ## Первая установка
 
 1. Владелец вставляет одну команду в web-консоль хостера. Локальный `outpostctl` не требуется.
 2. Installer проверяет Ubuntu и порты, верифицирует подписанный release, ставит control plane и получает короткоживущий Let's Encrypt certificate для public IP.
-3. В консоль выводится одноразовая `https://<ip>/admin/setup?...` ссылка, действующая 1 час.
+3. В консоль выводится фиксированный адрес `https://<ip>/`; setup открывается прямо в его корне.
 4. Pre-launch UI предлагает получить бесплатный hostname через DuckDNS, FreeMyIP или dynv6 либо подключить собственный домен. Затем показывает точную A-запись и опрашивает DNS.
-5. После подтверждения DNS сервер получает обычный certificate для домена, атомарно применяет Nginx/Hysteria/Xray configs и перенаправляет браузер на `https://<domain>/admin/onboarding?...`.
-6. Владелец и passkey создаются только на конечном HTTPS origin/RP ID. После этого IP-bootstrap отключается.
+5. После подтверждения DNS сервер получает обычный certificate для домена, атомарно применяет Nginx/Hysteria/Xray configs, создаёт внутренний одноразовый claim и перенаправляет браузер на `https://<domain>/admin/onboarding?claim=...`.
+6. Владелец и passkey создаются только на конечном HTTPS origin/RP ID. Claim хранится только как hash, действует 1 час и уничтожается после регистрации владельца.
 
-Временный IP certificate не используется как WebAuthn RP ID и не попадает в клиентские профили. Он защищает только pre-launch сессию. Внешний DNS-сервис выдаёт только hostname: certificate выпускает сама Outpost, а credentials или tokens этого сервиса панель в v1 не хранит.
+IP certificate не используется как WebAuthn RP ID и не попадает в клиентские профили. После настройки он сохраняется и продлевается для безопасного предупреждения на `https://<ip>/`; через этот vhost не доступны WebAuthn, dashboard, мутации, подписки и transports. Внешний DNS-сервис выдаёт только hostname: certificate выпускает сама Outpost, а credentials или tokens этого сервиса панель в v1 не хранит.
 
 Запустите в web-консоли VPS:
 
@@ -28,18 +32,24 @@ curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/o
 Для field test конкретного pre-release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.11 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.12 bash /tmp/outpost-install
 ```
 
 Bootstrap устанавливает `curl`, CA certificates и Minisign, определяет release, скачивает archive и signature с GitHub и проверяет встроенным public key до запуска release installer. Release installer повторно проверяет подпись, затем ставит Nginx, UFW, SQLite/age, pinned tunnel engines и актуальный Certbot из официального snap. Ubuntu 24.04 содержит Certbot 2.9, а IP certificates требуют Certbot 5.4+; поэтому apt-версия Certbot не используется.
 
 `apt-get update` обновляет только индекс пакетов, а `apt-get install` добавляет зависимости Outpost. Installer не выполняет `full-upgrade`, не меняет kernel и не перезагружает VPS.
 
-Если одноразовая ссылка истекла, получите новую server-local командой:
+Если browser handoff первоначальной настройки был потерян или существующий
+владелец потерял доступ к passkey, запустите server-local команду:
 
 ```bash
 sudo outpostctl bootstrap-reset
 ```
+
+До создания владельца команда аннулирует прежний initial claim и выдаёт новый
+URL на уже подключённом постоянном домене. Для существующего владельца она
+завершает активные сессии и выдаёт ограниченный recovery URL для регистрации
+нового passkey, не открывая повторную настройку домена.
 
 ## Developer deploy
 
@@ -79,7 +89,7 @@ OUTPOST_REQUIRE_SIGNATURE=1 bun run release:linux
 
 Updater сначала проверяет detached Minisign signature ключом из уже доверенной установленной версии и только затем распаковывает archive и сверяет внутренний `SHA256SUMS`, включая `manifest.json`. Он оставляет минимум две предыдущие версии. После неуспешного readiness автоматически восстанавливаются code symlink и предмиграционный SQLite snapshot.
 
-GitHub workflow `Signed release` запускается только вручную из ветки `main` для уже существующего `v*` tag и делает checkout по точному `refs/tags/<tag>`. Tag обязан точно совпадать с версией в `package.json`. Build/test выполняются без ключа; отдельный job в environment `release`, ограниченном веткой `main`, получает private key, подписывает archive, повторно проверяет подпись и публикует immutable GitHub Release. Версии с дефисом, например `v0.1.0-rc.11`, помечаются как pre-release и не выбираются bootstrap-командой без явного `OUTPOST_VERSION`.
+GitHub workflow `Signed release` запускается только вручную из ветки `main` для уже существующего `v*` tag и делает checkout по точному `refs/tags/<tag>`. Tag обязан точно совпадать с версией в `package.json`. Build/test выполняются без ключа; отдельный job в environment `release`, ограниченном веткой `main`, получает private key, подписывает archive, повторно проверяет подпись и публикует immutable GitHub Release. Версии с дефисом, например `v0.1.0-rc.12`, помечаются как pre-release и не выбираются bootstrap-командой без явного `OUTPOST_VERSION`.
 
 Workflow `Signed rule-set bundle` работает отдельно от application releases. Он ежедневно получает официальные SagerNet SRS, закрепляет upstream commits, включает source/license metadata, подписывает `rulesets.json` и обновляет стабильный release `rulesets`. Установленный сервер проверяет manifest раз в сутки, хранит активную и две предыдущие версии; ручное обновление доступно через owner API `POST /api/v1/rulesets/refresh`.
 
@@ -111,4 +121,4 @@ export OUTPOST_TOKEN=...
 ./dist/outpostctl-darwin-arm64 mcp
 ```
 
-Публичный MCP-порт не используется. Деструктивные действия требуют `operation_preview`, затем `operation_confirm` с неизменившимися action и payload.
+Публичный MCP-порт не используется. Повторное получение секретной ссылки подключения требует scope `connections:secret`. Перевыпуск credentials требует `connections:rotate` и выполняется только через `operation_preview`/`connection_rotate`, затем `operation_confirm` с неизменившимися action и payload.

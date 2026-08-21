@@ -3,6 +3,8 @@ import { accessSync, constants } from "node:fs";
 import { resolve } from "node:path";
 import { OutpostDatabase } from "../server/db/database";
 import { AuthService } from "../server/auth/webauthn";
+import { EngineConfigService } from "../server/adapters/engines";
+import { ConnectionService } from "../server/services/connections";
 import { OutpostApi, apiFromEnvironment } from "./api";
 import { runMcp } from "./mcp";
 
@@ -33,6 +35,9 @@ try {
       break;
     case "migrate":
       migrate(args);
+      break;
+    case "reconcile-engine-presets":
+      await reconcileEnginePresets(args);
       break;
     case "help":
     case "--help":
@@ -119,6 +124,21 @@ function migrate(args: string[]) {
   try { console.log(`Миграции применены: ${path}`); } finally { db.close(); }
 }
 
+async function reconcileEnginePresets(args: string[]) {
+  const path = option(args, "--database") ?? process.env.OUTPOST_DATABASE ?? "/var/lib/outpost/outpost.sqlite";
+  const db = new OutpostDatabase(path);
+  try {
+    const credentials = new ConnectionService(db).activeCredentials();
+    const result = await new EngineConfigService(db).reconcilePresets(credentials, "system:update", {
+      hysteria: process.env.OUTPOST_RESTART_HYSTERIA !== "0",
+      xray: process.env.OUTPOST_RESTART_XRAY !== "0",
+    });
+    console.log(JSON.stringify(result, null, 2));
+  } finally {
+    db.close();
+  }
+}
+
 async function run(argv: string[]) {
   const process = Bun.spawn(argv, { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
   const code = await process.exited;
@@ -140,6 +160,7 @@ outpostctl backup export backup.age
 outpostctl restore backup.age
 outpostctl bootstrap-reset [--database /var/lib/outpost/outpost.sqlite]
 outpostctl migrate [--database /var/lib/outpost/outpost.sqlite]
+outpostctl reconcile-engine-presets [--database /var/lib/outpost/outpost.sqlite]
 outpostctl mcp
 
 MCP/API: OUTPOST_URL and OUTPOST_TOKEN.

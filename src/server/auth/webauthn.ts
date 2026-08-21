@@ -12,20 +12,31 @@ import { config } from "../config";
 import type { OutpostDatabase } from "../db/database";
 import { addHours, now } from "../db/database";
 import { createToken, hashToken, tokensEqual } from "../security";
+import { locales, type Locale } from "../../shared/i18n";
 import { ServiceError } from "../services/connections";
 import { JournalService, parseUserAgent } from "../services/journal";
 
 const registrationContext = z.object({
   timezone: z.string().trim().min(1).max(80),
-  bootstrapToken: z.string().optional(),
+  language: z.enum(locales).optional(),
+  claimToken: z.string().optional(),
+  recoveryToken: z.string().optional(),
 });
 
-const registrationChallengeContext = registrationContext.omit({ bootstrapToken: true }).extend({
+const registrationChallengeContext = registrationContext.omit({ claimToken: true, recoveryToken: true }).extend({
+  language: z.enum(locales),
   ownerId: z.string().uuid(),
-  bootstrapHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  authority: z.enum(["claim", "recovery", "session"]),
+  tokenHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
 });
+type RegistrationChallengeContext = z.infer<typeof registrationChallengeContext>;
 
 const challengeLimitPerKind = 100;
+const grantKeys = { claim: "setup_claim", recovery: "owner_recovery" } as const;
+
+type GrantKind = keyof typeof grantKeys;
+type Grant = { hash: string; expiresAt: string };
+type RegistrationVerifier = typeof verifyRegistrationResponse;
 
 type PasskeyRow = {
   id: string;
@@ -36,41 +47,40 @@ type PasskeyRow = {
 };
 
 export class AuthService {
-  private bootstrapToken?: string;
   private journal: JournalService;
 
-  constructor(private db: OutpostDatabase, journal?: JournalService) {
+  constructor(
+    private db: OutpostDatabase,
+    journal: JournalService | undefined = undefined,
+    private registrationVerifier: RegistrationVerifier = verifyRegistrationResponse,
+  ) {
     this.journal = journal ?? new JournalService(db);
   }
 
-  ensureBootstrap() {
-    if (this.owner()) return null;
-    const existing = this.db.setting<{ hash: string; expiresAt: string } | null>("bootstrap", null);
-    if (existing && existing.expiresAt > now()) return null;
-    const token = createToken();
-    this.bootstrapToken = token;
-    this.db.setSetting("bootstrap", { hash: hashToken(token), expiresAt: addHours(1) });
-    return this.bootstrapUrl(token);
+  issueClaim() {
+    if (this.owner()) throw new ServiceError(409, "Первоначальная настройка домена уже завершена");
+    this.db.setSetting("bootstrap", null);
+    return this.issueGrant("claim");
   }
 
   resetBootstrap() {
     const owner = this.owner();
-    if (owner) {
-      this.db.raw.query("DELETE FROM sessions WHERE owner_id = ?").run(owner.id);
+    if (!owner) {
+      const claim = this.issueClaim();
+      return `${config.origin}${config.adminPath}/onboarding?claim=${encodeURIComponent(claim.token)}`;
     }
-    const token = createToken();
-    this.bootstrapToken = token;
-    this.db.setSetting("bootstrap", { hash: hashToken(token), expiresAt: addHours(1) });
+    this.db.raw.query("DELETE FROM sessions WHERE owner_id = ?").run(owner.id);
+    const recovery = this.issueGrant("recovery");
     const auditId = this.db.audit({ actor: "root-cli", action: "auth.bootstrap.reset", resource: "owner", resourceId: owner?.id });
     this.journal.record("bootstrap.reset", { actor: "root-cli", auditId, subjectType: "owner", subjectId: owner?.id });
-    return this.bootstrapUrl(token);
+    return `${config.origin}${config.adminPath}/onboarding?recovery=${encodeURIComponent(recovery.token)}`;
   }
 
   state() {
     const owner = this.owner();
     return {
       initialized: Boolean(owner),
-      owner: owner ? { id: owner.id, timezone: owner.timezone } : null,
+      owner,
       demo: config.demo,
     };
   }
@@ -79,12 +89,13 @@ export class AuthService {
     const owner = this.owner();
     if (!owner) throw new ServiceError(404, "Владелец ещё не создан");
     const data = z.object({
-      timezone: z.string().trim().min(1).max(80),
-    }).strict().parse(input);
+      timezone: z.string().trim().min(1).max(80).optional(),
+      language: z.enum(locales).optional(),
+    }).strict().refine((value) => value.timezone !== undefined || value.language !== undefined).parse(input);
     const timestamp = now();
-    const updated = { ...owner, timezone: data.timezone };
-    this.db.raw.query("UPDATE owners SET timezone = ?, updated_at = ? WHERE id = ?")
-      .run(updated.timezone, timestamp, owner.id);
+    const updated = { ...owner, ...data };
+    this.db.raw.query("UPDATE owners SET timezone = ?, language = ?, updated_at = ? WHERE id = ?")
+      .run(updated.timezone, updated.language, timestamp, owner.id);
     this.db.audit({ actor, action: "owner.update", resource: "owner", resourceId: owner.id, before: owner, after: updated });
     return updated;
   }
@@ -93,9 +104,19 @@ export class AuthService {
     if (config.setup) throw new ServiceError(409, "Сначала подключите постоянный домен");
     const context = registrationContext.parse(input);
     const owner = this.owner();
-    if (owner && authenticatedOwnerId !== owner.id) throw new ServiceError(401, "Нужна действующая сессия владельца");
-    const bootstrap = owner ? null : this.verifyBootstrap(context.bootstrapToken);
+    let authority: "claim" | "recovery" | "session";
+    let grant: Grant | null = null;
+    if (!owner) {
+      authority = "claim";
+      grant = this.verifyGrant("claim", context.claimToken);
+    } else if (authenticatedOwnerId === owner.id) {
+      authority = "session";
+    } else {
+      authority = "recovery";
+      grant = this.verifyGrant("recovery", context.recoveryToken);
+    }
     const ownerId = owner?.id ?? crypto.randomUUID();
+    const language = context.language ?? owner?.language ?? "en";
     const passkeys = owner
       ? this.db.raw.query<{ id: string; transports_json: string }, string>("SELECT id, transports_json FROM passkeys WHERE owner_id = ?").all(owner.id)
       : [];
@@ -104,7 +125,7 @@ export class AuthService {
       rpID: config.rpID,
       userID: new TextEncoder().encode(ownerId),
       userName: "owner",
-      userDisplayName: "Владелец",
+      userDisplayName: language === "ru" ? "Владелец" : language === "zh-CN" ? "所有者" : language === "fa" ? "مالک" : "Owner",
       attestationType: "none",
       excludeCredentials: passkeys.map((key) => ({ id: key.id, transports: JSON.parse(key.transports_json) })),
       authenticatorSelection: {
@@ -114,8 +135,10 @@ export class AuthService {
     });
     const challengeId = this.storeChallenge("registration", options.challenge, {
       timezone: context.timezone,
+      language,
       ownerId,
-      bootstrapHash: bootstrap?.hash,
+      authority,
+      tokenHash: grant?.hash,
     });
     return { challengeId, options };
   }
@@ -123,8 +146,8 @@ export class AuthService {
   async finishRegistration(challengeId: string, response: RegistrationResponseJSON, userAgent?: string) {
     const challenge = this.challenge(challengeId, "registration");
     const context = registrationChallengeContext.parse(challenge.context);
-    if (!this.owner()) this.verifyBootstrapHash(context.bootstrapHash);
-    const verification = await verifyRegistrationResponse({
+    this.verifyRegistrationAuthority(context);
+    const verification = await this.registrationVerifier({
       response,
       expectedChallenge: challenge.challenge,
       expectedOrigin: config.origin,
@@ -135,9 +158,12 @@ export class AuthService {
     const info = verification.registrationInfo;
     const timestamp = now();
     this.db.raw.transaction(() => {
-      if (!this.owner()) {
-        this.db.raw.query("INSERT INTO owners (id, timezone, created_at, updated_at) VALUES (?, ?, ?, ?)")
-          .run(context.ownerId, context.timezone, timestamp, timestamp);
+      // Re-check after the asynchronous authenticator verification so two
+      // browsers cannot both consume the same first-claim or recovery grant.
+      this.verifyRegistrationAuthority(context);
+      if (context.authority === "claim") {
+        this.db.raw.query("INSERT INTO owners (id, timezone, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+          .run(context.ownerId, context.timezone, context.language, timestamp, timestamp);
       }
       this.db.raw.query(`
         INSERT INTO passkeys (id, owner_id, public_key, counter, transports_json, device_type, backed_up, created_at)
@@ -153,7 +179,8 @@ export class AuthService {
         timestamp,
       );
       this.consumeChallenge(challengeId);
-      this.db.setSetting("bootstrap", null);
+      if (context.authority === "claim") this.db.setSetting(grantKeys.claim, null);
+      if (context.authority === "recovery") this.db.setSetting(grantKeys.recovery, null);
     })();
     const auditId = this.db.audit({ actor: context.ownerId, action: "auth.passkey.register", resource: "passkey", resourceId: info.credential.id });
     this.journal.record("passkey.registered", {
@@ -225,7 +252,7 @@ export class AuthService {
       `).get(hashToken(token));
       if (api && (!api.expires_at || api.expires_at > now())) {
         this.db.raw.query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").run(now(), api.id);
-        return { id: `token:${api.id}`, timezone: "UTC", scopes: JSON.parse(api.scopes_json) as string[] };
+        return { id: `token:${api.id}`, timezone: "UTC", language: "en" as Locale, scopes: JSON.parse(api.scopes_json) as string[] };
       }
     }
     const row = this.db.raw.query<{ id: string; owner_id: string; expires_at: string }, string>(`
@@ -313,7 +340,7 @@ export class AuthService {
     const cleanName = name.trim();
     if (!cleanName || cleanName.length > 80) throw new ServiceError(400, "Укажите имя токена до 80 символов");
     const allowed = new Set([
-      "status:read", "traffic:read", "connections:read", "connections:write", "routes:read", "routes:write",
+      "status:read", "traffic:read", "connections:read", "connections:write", "connections:secret", "connections:rotate", "routes:read", "routes:write",
       "operations:read", "operations:write", "settings:read", "settings:write", "engines:read", "engines:write",
       "system:read", "backups:read",
     ]);
@@ -346,10 +373,6 @@ export class AuthService {
     this.journal.record("token.revoked", { actor, auditId, subjectType: "api_token", subjectId: id, data: { name: token?.name ?? "API" } });
   }
 
-  verifyBootstrapToken(token?: string) {
-    return this.verifyBootstrap(token);
-  }
-
   private createSession(ownerId: string, userAgent?: string) {
     const token = createToken();
     const session = { id: crypto.randomUUID(), token, expiresAt: addHours(config.sessionHours) };
@@ -361,37 +384,54 @@ export class AuthService {
   }
 
   private owner() {
-    return this.db.raw.query<{ id: string; timezone: string }, []>("SELECT id, timezone FROM owners LIMIT 1").get() ?? null;
+    return this.db.raw.query<{ id: string; timezone: string; language: Locale }, []>("SELECT id, timezone, language FROM owners LIMIT 1").get() ?? null;
   }
 
   private demoOwner() {
     let owner = this.owner();
     if (owner) return owner;
     const timestamp = now();
-    owner = { id: crypto.randomUUID(), timezone: "UTC" };
-    this.db.raw.query("INSERT INTO owners (id, timezone, created_at, updated_at) VALUES (?, ?, ?, ?)")
-      .run(owner.id, owner.timezone, timestamp, timestamp);
+    owner = { id: crypto.randomUUID(), timezone: "UTC", language: "en" };
+    this.db.raw.query("INSERT INTO owners (id, timezone, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+      .run(owner.id, owner.timezone, owner.language, timestamp, timestamp);
     return owner;
   }
 
-  private verifyBootstrap(token?: string) {
-    const bootstrap = this.db.setting<{ hash: string; expiresAt: string } | null>("bootstrap", null);
-    if (!token || !bootstrap || bootstrap.expiresAt <= now() || !tokensEqual(token, bootstrap.hash)) {
-      throw new ServiceError(401, "Bootstrap-ссылка недействительна или истекла");
-    }
-    return bootstrap;
+  private issueGrant(kind: GrantKind) {
+    const token = createToken();
+    const grant = { hash: hashToken(token), expiresAt: addHours(1) };
+    this.db.setSetting(grantKeys[kind], grant);
+    return { token, expiresAt: grant.expiresAt };
   }
 
-  private bootstrapUrl(token: string) {
-    const page = config.setup ? "setup" : "onboarding";
-    return `${config.origin}${config.adminPath}/${page}?bootstrap=${token}`;
+  private verifyGrant(kind: GrantKind, token?: string) {
+    const grant = this.db.setting<Grant | null>(grantKeys[kind], null);
+    if (!token || !grant || grant.expiresAt <= now() || !tokensEqual(token, grant.hash)) {
+      throw new ServiceError(401, kind === "claim"
+        ? "Продолжение первоначальной настройки недействительно или истекло"
+        : "Ссылка восстановления недействительна или истекла");
+    }
+    return grant;
   }
 
-  private verifyBootstrapHash(hash?: string) {
-    const bootstrap = this.db.setting<{ hash: string; expiresAt: string } | null>("bootstrap", null);
-    if (!hash || !bootstrap || bootstrap.expiresAt <= now() || bootstrap.hash !== hash) {
-      throw new ServiceError(401, "Bootstrap-ссылка недействительна или истекла");
+  private verifyGrantHash(kind: GrantKind, hash?: string) {
+    const grant = this.db.setting<Grant | null>(grantKeys[kind], null);
+    if (!hash || !grant || grant.expiresAt <= now() || grant.hash !== hash) {
+      throw new ServiceError(401, kind === "claim"
+        ? "Продолжение первоначальной настройки недействительно или истекло"
+        : "Ссылка восстановления недействительна или истекла");
     }
+  }
+
+  private verifyRegistrationAuthority(context: RegistrationChallengeContext) {
+    const owner = this.owner();
+    if (context.authority === "claim") {
+      if (owner) throw new ServiceError(409, "Первоначальная настройка домена уже завершена");
+      this.verifyGrantHash("claim", context.tokenHash);
+      return;
+    }
+    if (!owner || owner.id !== context.ownerId) throw new ServiceError(401, "Нужна действующая сессия владельца");
+    if (context.authority === "recovery") this.verifyGrantHash("recovery", context.tokenHash);
   }
 
   private storeChallenge(kind: string, challenge: string, context: unknown) {

@@ -72,6 +72,76 @@ describe("route revisions", () => {
     expect(() => routes.update(draft.find((rule) => rule.value === "example.com")!.id, { matcher: "SUFFIX", value: "*" })).toThrow("уже существует");
   });
 
+  test("accepts a top-level domain as a suffix and stores it canonically", () => {
+    routes.add({ action: "DIRECT", matcher: "SUFFIX", value: ".RU" }, "test");
+    expect(routes.draft().find((rule) => rule.matcher === "SUFFIX" && rule.value !== "*")).toMatchObject({
+      action: "DIRECT",
+      value: "ru",
+    });
+    expect(() => routes.publish("ru direct", "test")).not.toThrow();
+  });
+
+  test("accepts individual IP addresses and stores host prefixes", () => {
+    routes.add({ action: "DIRECT", matcher: "IP_CIDR", value: "192.0.2.17" }, "test");
+    routes.add({ action: "DIRECT", matcher: "IP_CIDR", value: "2001:DB8::17" }, "test");
+    expect(routes.draft().filter((rule) => rule.source === "user").map((rule) => rule.value).sort()).toEqual([
+      "192.0.2.17/32",
+      "2001:db8::17/128",
+    ]);
+  });
+
+  test("rejects normalized duplicates on create, update and publish", () => {
+    routes.add({ action: "DIRECT", matcher: "DOMAIN", value: " Example.COM " }, "test");
+    expect(() => routes.add({ action: "BLOCK", matcher: "DOMAIN", value: "example.com" }, "test"))
+      .toThrow("таким условием уже существует");
+
+    routes.add({ action: "DIRECT", matcher: "DOMAIN", value: "second.example" }, "test");
+    const second = routes.draft().find((rule) => rule.value === "second.example")!;
+    expect(() => routes.update(second.id, { value: "EXAMPLE.COM" }, "test"))
+      .toThrow("таким условием уже существует");
+    expect(routes.draft().find((rule) => rule.id === second.id)?.value).toBe("second.example");
+
+    fixture.db.raw.query("UPDATE route_drafts SET value = 'example.com' WHERE id = ?").run(second.id);
+    expect(() => routes.publish("legacy duplicate", "test")).toThrow("таким условием уже существует");
+  });
+
+  test("rejects invalid geo rules while saving and in legacy drafts", () => {
+    const before = routes.draft();
+    expect(() => routes.add({ action: "DIRECT", matcher: "GEOSITE", value: "domain: ru" }, "test"))
+      .toThrow("без префикса");
+    expect(routes.draft()).toEqual(before);
+
+    fixture.db.raw.query("UPDATE route_drafts SET matcher = 'GEOSITE', value = 'domain: ru' WHERE value = '10.0.0.0/8'").run();
+    expect(() => routes.publish("invalid legacy draft", "test")).toThrow("без префикса");
+  });
+
+  test("removes an invalid legacy user rule without validating it", () => {
+    routes.add({ action: "DIRECT", matcher: "DOMAIN", value: "example.com" }, "test");
+    const id = routes.draft().find((rule) => rule.value === "example.com")!.id;
+    fixture.db.raw.query("UPDATE route_drafts SET matcher = 'GEOSITE', value = 'domain: ru' WHERE id = ?").run(id);
+
+    expect(() => routes.remove(id, "test")).not.toThrow();
+    expect(routes.draft().some((rule) => rule.id === id)).toBeFalse();
+  });
+
+  test("rejects malformed domain and CIDR matchers while saving", () => {
+    expect(() => routes.add({ action: "DIRECT", matcher: "DOMAIN", value: "*" }, "test"))
+      .toThrow("полный домен");
+    expect(() => routes.add({ action: "DIRECT", matcher: "IP_CIDR", value: "999.0.0.1/99" }, "test"))
+      .toThrow("IP-адрес или CIDR");
+  });
+
+  test("checks ruleset availability before persisting a geo rule", () => {
+    const guarded = new RouteService(fixture.db, undefined, {
+      assert: () => { throw new Error("Такого GeoSite-кода нет"); },
+      version: () => null,
+    });
+    const before = guarded.draft();
+    expect(() => guarded.add({ action: "DIRECT", matcher: "GEOSITE", value: "google" }, "test"))
+      .toThrow("Такого GeoSite-кода нет");
+    expect(guarded.draft()).toEqual(before);
+  });
+
   test("publishes a typed route revision event", () => {
     routes.publish("defaults", "test");
     expect(new JournalService(fixture.db).latest(1)[0]).toMatchObject({
