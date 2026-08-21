@@ -44,7 +44,7 @@
 ## Проверено локально и на VPS
 
 - TypeScript typecheck и Imba production build;
-- 104 unit/integration tests, включая единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract, WebAuthn, journal, presence и monitoring;
+- 111 unit/integration tests, включая единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract, WebAuthn, journal, presence и pre-launch monitoring;
 - сгенерированные Mihomo, sing-box и Xray JSON профили приняты нативными `mihomo 1.19.30`, `sing-box 1.13.19` и `xray 26.7.28`;
 - Go policy tests и статический linux/amd64 agent build;
 - standalone Linux server/CLI и macOS CLI builds;
@@ -67,20 +67,25 @@
 - после установки Outpost пережил следующий цикл мониторинга без warning/error и рестартов; IP certificate проверен с `verify_ip`, а `/etc/outpost/outpost.env` имеет mode `0640` и владельца `root:outpost`.
 - security pre-release [`v0.1.0-rc.9`](https://github.com/Outpost-VPN/outpost-vpn-server/releases/tag/v0.1.0-rc.9) обновил runtime `golang.org/x/crypto` до `0.52.0` и Go toolchain до 1.25; `govulncheck` не нашёл достигаемых уязвимостей, а число открытых Dependabot alerts стало нулевым;
 - HostKey обновлён с `rc.8` на `rc.9` встроенным signed updater без потери setup state; running root-agent исполняется из release `rc.9`, его SHA-256 совпадает с signed archive, после monitoring interval у Outpost и agent ноль рестартов и warning/error.
+- полевая попытка точного `rc.9` на заново переустановленном HostKey воспроизвела race пакетного default Nginx: локальный ACME preflight получил `404` до certificate order, rollback оставил Outpost paths, services и порты чистыми;
+- [`v0.1.0-rc.10`](https://github.com/Outpost-VPN/outpost-vpn-server/releases/tag/v0.1.0-rc.10) запускает Nginx только после подготовки setup vhost и probe; точная публичная one-line установка прошла на полностью чистой Ubuntu 24.04 amd64, production IP certificate получен без rollback;
+- browser setup завершён на `outpost.semenova.icu`: DNS указывает на HostKey, trusted Let's Encrypt domain certificate действует до 2026-11-19, владелец и passkey созданы, Hysteria/Xray включены;
+- полевая установка обнаружила ложные pre-launch incidents для намеренно выключенных engines/transports/telemetry и штатного 160-часового IP certificate; [`v0.1.0-rc.11`](https://github.com/Outpost-VPN/outpost-vpn-server/releases/tag/v0.1.0-rc.11) подавляет эти probes до domain setup и использует renewal-aware TLS thresholds `warning < 3 дней`, `critical < 1 дня`;
+- `rc.11` опубликован из точного зелёного `main`, анонимно проверен по Minisign, внешнему SHA-256 `9e8b3880bba6721ef1dd8e965d2005025ff04c71b242cc83f1a4ff1b27975f24`, внутреннему `SHA256SUMS` и manifest; signed updater перевёл HostKey без повторного ACME order или rollback;
+- Nginx, Outpost, root-agent, Hysteria и Xray active/enabled с нулём рестартов и warning/error; все services, transports, telemetry, disk и TLS остаются healthy/available после нескольких monitoring intervals. Running root-agent SHA-256 совпадает с анонимно скачанным signed archive.
 
 ## Оставшийся полевой gate
 
-Универсальные подключения реализованы и проверены локально, а чистая signed-установка на новом HostKey завершена. Дальше нужен browser setup и оставшийся end-to-end gate:
+Универсальные подключения реализованы и проверены локально; чистая signed-установка, signed update и browser setup на HostKey завершены. Остался клиентский и отказоустойчивый end-to-end gate:
 
-1. выбор конечного hostname/домена, DNS/certificate switch и создание владельца/passkey без legacy data;
-2. прямой импорт минимум в один Mihomo-, sing-box- и Xray-клиент без обязательного browser step;
-3. Hysteria UDP/443, XHTTP и gRPC через общий TCP/443 и автоматическое переключение при недоступном UDP;
-4. добавление и отзыв одного UUID одновременно в обоих Xray inbounds, включая частичный сбой hot update;
-5. маршруты с GeoIP/Geosite, загрузка SRS, суточное обновление и сохранение рабочей версии при сломанной подписи/checksum;
-6. немедленная инвалидация прежней ссылки при ротации и архивировании, включая незавершённый provisioning;
-7. проверка Nginx, application и audit logs на отсутствие subscription token, XHTTP path и gRPC service name;
-8. traffic/presence обоих движков, остановка/восстановление служб и конкретные health/journal incidents;
-9. намеренно сломанный application update с автоматическим rollback и age export/restore;
-10. WebAuthn e2e на final domain.
+1. прямой импорт минимум в один Mihomo-, sing-box- и Xray-клиент без обязательного browser step;
+2. Hysteria UDP/443, XHTTP и gRPC через общий TCP/443 и автоматическое переключение при недоступном UDP;
+3. добавление и отзыв одного UUID одновременно в обоих Xray inbounds, включая частичный сбой hot update;
+4. маршруты с GeoIP/Geosite, загрузка SRS, суточное обновление и сохранение рабочей версии при сломанной подписи/checksum;
+5. немедленная инвалидация прежней ссылки при ротации и архивировании, включая незавершённый provisioning;
+6. проверка Nginx, application и audit logs на отсутствие subscription token, XHTTP path и gRPC service name;
+7. traffic/presence обоих движков, остановка/восстановление служб и конкретные health/journal incidents;
+8. намеренно сломанный application update с автоматическим rollback и age export/restore;
+9. WebAuthn e2e на final domain.
 
 До прохождения gate проект следует считать pre-release, а не production-ready.
