@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import YAML from "yaml";
 import { HttpApplication } from "../src/server/http";
 import { createToken, hashToken } from "../src/server/security";
 import { database } from "./helpers";
@@ -355,6 +356,32 @@ describe("HTTP API", () => {
     const missingQr = await app.fetch(new Request(`${url}/qr/not-real.svg`));
     expect(missingApp.status).toBe(404);
     expect(missingQr.status).toBe(404);
+  });
+
+  test("universal link returns Mihomo YAML to Everywhere and the catalog to browsers", async () => {
+    const connection = app.connections.create({ name: "Федор" });
+    const ready = await app.connectionSync.activate(connection.id);
+    const url = ready.subscription!.url.replace("localhost:8181", "localhost");
+
+    const browser = await app.fetch(new Request(url, {
+      headers: {
+        accept: "text/html,application/xhtml+xml",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      },
+    }));
+    expect(browser.headers.get("content-type")).toContain("text/html");
+    expect(await browser.text()).toContain("data-platform-panel");
+    expect(app.connections.get(connection.id).last_fetched_at).toBeNull();
+
+    const everywhere = await app.fetch(new Request(url, {
+      headers: { "user-agent": "Everywhere/1.0 Clash/1.11.0" },
+    }));
+    expect(everywhere.headers.get("content-type")).toContain("text/yaml");
+    expect(YAML.parse(await everywhere.text())).toMatchObject({
+      "mixed-port": 7890,
+      proxies: [{ type: "hysteria2" }, { type: "vless" }, { type: "vless" }],
+    });
+    expect(app.connections.get(connection.id).last_fetched_at).not.toBeNull();
   });
 
   test("connection appearance and owner timezone remain editable", async () => {

@@ -48,7 +48,7 @@
 ## Проверено локально и на VPS
 
 - TypeScript typecheck и Imba production build;
-- 164 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
+- 165 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
 - сгенерированные Mihomo, sing-box и Xray JSON профили приняты нативными `mihomo 1.19.30`, `sing-box 1.13.19` и `xray 26.7.28`;
 - Go policy tests и статический linux/amd64 agent build;
 - standalone Linux server/CLI и macOS CLI builds;
@@ -77,10 +77,12 @@
 - полевая установка обнаружила ложные pre-launch incidents для намеренно выключенных engines/transports/telemetry и штатного 160-часового IP certificate; [`v0.1.0-rc.11`](https://github.com/Outpost-VPN/outpost-vpn-server/releases/tag/v0.1.0-rc.11) подавляет эти probes до domain setup и использует renewal-aware TLS thresholds `warning < 3 дней`, `critical < 1 дня`;
 - `rc.11` опубликован из точного зелёного `main`, анонимно проверен по Minisign, внешнему SHA-256 `9e8b3880bba6721ef1dd8e965d2005025ff04c71b242cc83f1a4ff1b27975f24`, внутреннему `SHA256SUMS` и manifest; signed updater перевёл HostKey без повторного ACME order или rollback;
 - Nginx, Outpost, root-agent, Hysteria и Xray active/enabled с нулём рестартов и warning/error; все services, transports, telemetry, disk и TLS остаются healthy/available после нескольких monitoring intervals. Running root-agent SHA-256 совпадает с анонимно скачанным signed archive.
+- точный signed `rc.12` установлен на заново переустановленный HostKey одной публичной post-install командой; все release-файлы совпали с проверенным архивом, browser setup завершён на `outpost.semenova.icu`, а services, transports, telemetry, disk, TLS и SQLite прошли полевую проверку без рестартов и incidents;
+- первый прямой импорт универсального `/s/:token` в Everywhere 1.5 выявил регрессию `rc.12`: корневой URL всегда отдавал HTML-каталог, поэтому Mihomo завершался с `yaml: line 5: found character that cannot start any token`. Исправление `rc.13` вернуло User-Agent negotiation для `Everywhere/1.0 Clash/1.11.0`, сохранило HTML для браузера и explicit `/apps/:appId`; профильные тесты, полный `bun run check` и native subscription validation зелёные. HostKey намеренно остаётся на `rc.12` до ручного обновления через веб-панель.
 
 ## Оставшийся полевой gate
 
-Универсальные подключения реализованы и проверены локально; чистая signed-установка, signed update и browser setup на HostKey завершены. Остался клиентский и отказоустойчивый end-to-end gate:
+Чистая signed-установка `rc.12` и browser setup на HostKey завершены. Первый прямой импорт нашёл и закрыл в `rc.13` ошибку content negotiation универсальной ссылки; для продолжения клиентского gate нужно вручную обновить HostKey через веб-панель. После его развёртывания остаются:
 
 1. прямой импорт минимум в один Mihomo-, sing-box- и Xray-клиент без обязательного browser step;
 2. Hysteria UDP/443, XHTTP и gRPC через общий TCP/443 и автоматическое переключение при недоступном UDP;
@@ -94,21 +96,22 @@
 
 До прохождения gate проект следует считать pre-release, а не production-ready.
 
-## Кандидат 0.1.0-rc.12
+## Кандидат 0.1.0-rc.13
 
-В кандидат собраны завершённый многоязычный интерфейс и стабилизация control
-plane: единый каталог приложений, SSE-dashboard, локализованный журнал и API,
-строгие route validators, versioned engine presets с three-way merge и
-безопасный first-claim setup по фиксированному IP-корню.
+Кандидат основан на полном составе `rc.12` и точечно исправляет полевую
+регрессию универсальной ссылки: клиентский User-Agent снова выбирает нужный
+renderer, а обычный браузер по тому же URL продолжает получать каталог
+приложений. Legacy `?format=...` не возвращён; явные app/advanced URLs остаются
+каноническими.
 
 Перед публикацией закрыты отказные сценарии первоначального claim handoff,
 кэширования secret subscription responses, dashboard reconnect после restart,
 rollback domain finalization и нового CLI/MCP error envelope. Полный локальный
-gate проходит: `bun run check` (164 теста), Go tests/vet/static build,
+gate проходит: `bun run check` (165 тестов), Go tests/vet/static build,
 ShellCheck, native Mihomo/sing-box/Xray validation, XHTTP/gRPC/Mihomo transport
 integration, Linux server/CLI и macOS CLI builds, dependency audit и release
 archive verification.
 
-HostKey на `rc.12` ещё не переустанавливался. Следующий checkpoint после
-публикации signed pre-release — чистая установка точной версии на HostKey и
-повторное прохождение browser setup и полевого gate.
+Точный `rc.12` прошёл чистую установку и browser setup на HostKey. Следующий
+checkpoint после публикации signed `rc.13` — ручное обновление HostKey через
+веб-панель и повторный импорт той же универсальной ссылки в Everywhere.
