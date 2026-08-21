@@ -23,8 +23,11 @@ export interface SubscriptionRenderer {
 }
 
 const MIHOMO_QUIC_REJECT_RULE = "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT";
+const MIHOMO_IPV6_REJECT_RULE = "IP-CIDR6,::/0,REJECT,no-resolve";
 const SING_BOX_QUIC_REJECT_RULE = { network: "udp", port: 443, action: "reject" } as const;
+const SING_BOX_IPV6_REJECT_RULE = { ip_version: 6, action: "reject" } as const;
 const XRAY_QUIC_REJECT_RULE = { type: "field", network: "udp", port: 443, outboundTag: "block" } as const;
+const XRAY_IPV6_REJECT_RULE = { type: "field", ip: ["::/0"], outboundTag: "block" } as const;
 
 export function endpoints(context: SubscriptionContext) {
   const label = encodeURIComponent(context.connection.name);
@@ -130,10 +133,22 @@ export const mihomoRenderer: SubscriptionRenderer = {
         nameserver: ["https://1.1.1.1/dns-query#PROXY", "https://8.8.8.8/dns-query#PROXY"],
         "direct-nameserver": ["system", "77.88.8.8"],
       },
+      sniffer: {
+        enable: true,
+        "force-dns-mapping": true,
+        "parse-pure-ip": true,
+        "override-destination": true,
+        sniff: {
+          HTTP: { ports: [80, "8080-8880"], "override-destination": true },
+          TLS: { ports: [443, 8443] },
+          QUIC: { ports: [443, 8443] },
+        },
+      },
       proxies,
       "proxy-groups": [{ name: "PROXY", type: "fallback", url: "http://1.1.1.1", interval: 300, proxies: names }],
       rules: [
         ...rules.filter((rule) => !isCatchAll(rule)).map(mihomoRule),
+        MIHOMO_IPV6_REJECT_RULE,
         MIHOMO_QUIC_REJECT_RULE,
         ...rules.filter(isCatchAll).map(mihomoRule),
       ],
@@ -193,7 +208,11 @@ export const singBoxRenderer: SubscriptionRenderer = {
         auto_detect_interface: true,
         default_domain_resolver: "local",
         rule_set: sets,
-        rules: [...rules.filter((rule) => !isCatchAll(rule)).map(singBoxRule), SING_BOX_QUIC_REJECT_RULE],
+        rules: [
+          ...rules.filter((rule) => !isCatchAll(rule)).map(singBoxRule),
+          SING_BOX_IPV6_REJECT_RULE,
+          SING_BOX_QUIC_REJECT_RULE,
+        ],
         final: catchAll(rules),
       },
     };
@@ -226,6 +245,7 @@ export const xrayJsonRenderer: SubscriptionRenderer = {
         balancers: [{ tag: "proxy", selector: ["proxy-"], strategy: { type: "leastPing" } }],
         rules: [
           ...rules.filter((rule) => !isCatchAll(rule)).map(xrayRule),
+          XRAY_IPV6_REJECT_RULE,
           XRAY_QUIC_REJECT_RULE,
           ...rules.filter(isCatchAll).map(xrayRule),
         ],
@@ -311,7 +331,7 @@ function incyRoutingProfile(rules: RouteRule[]) {
     ProxySites: groups.PROXY.sites,
     ProxyIp: groups.PROXY.ips,
     BlockSites: groups.BLOCK.sites,
-    BlockIp: groups.BLOCK.ips,
+    BlockIp: [...groups.BLOCK.ips, "::/0"],
     DomainStrategy: "IPIfNonMatch",
     FakeDNS: "false",
     useChunkFiles: true,
