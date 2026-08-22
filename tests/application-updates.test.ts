@@ -45,6 +45,8 @@ describe("signed application update preparation", () => {
       latest: "0.1.0-rc.14",
       notes: ["Make updates reliable"],
     });
+    expect(await service.refresh()).toMatchObject({ status: "available", latest: "0.1.0-rc.14" });
+    expect(calls).toEqual([index]);
     const prepared = await service.prepare();
 
     expect(prepared).toMatchObject({ status: "ready", available: true, ready: true, latest: "0.1.0-rc.14", notes: ["Make updates reliable"] });
@@ -70,6 +72,29 @@ describe("signed application update preparation", () => {
     });
 
     expect(await service.check()).toMatchObject({ status: "current", channel: "stable", available: false, latest: "0.1.0" });
+  });
+
+  test("checks automatically only after the six hour interval has elapsed", async () => {
+    let calls = 0;
+    const service = new ApplicationUpdateService(fixture.db, {
+      current: "0.1.0-rc.13",
+      fetch: (async () => {
+        calls++;
+        return Response.json([]);
+      }) as unknown as typeof globalThis.fetch,
+      verify: async () => undefined,
+    });
+
+    expect(await service.refresh()).toMatchObject({ status: "current", available: false });
+    expect(await service.refresh()).toMatchObject({ status: "current", available: false });
+    expect(calls).toBe(1);
+
+    fixture.db.setSetting("application_update", {
+      ...service.state(),
+      checkedAt: new Date(Date.now() - 7 * 60 * 60 * 1_000).toISOString(),
+    });
+    await service.refresh();
+    expect(calls).toBe(2);
   });
 
   test("rejects release metadata that points outside the fixed GitHub download path", async () => {

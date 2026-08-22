@@ -43,13 +43,13 @@
 - персистентный connection-sync outbox завершает activation/rotate/archive в БД только после синхронизации Xray, повторяет interrupted/failed jobs и сразу инвалидирует старую ссылку при ротации или архивировании;
 - Nginx hardening: default Host/SNI servers, fixed-domain redirect, rate/body limits, HSTS и fixed upstream Host;
 - actions pinned по commit SHA, release workflow запускается вручную из `main`, checkout делает только точный `refs/tags/<tag>`, затем workflow подписывает Minisign и публикует GitHub Release через environment secret;
-- release manifest входит в `SHA256SUMS`, installer/updater проверяют detached signature до распаковки;
+- release manifest входит в `SHA256SUMS`, installer/updater проверяют detached signature до распаковки; release builder записывает tar entries как numeric `0:0`, распаковка не наследует UID сборочного runner, а установленное дерево релиза явно нормализуется до `root:root`;
 - dependency override перевёл Imba toolchain на `esbuild 0.25.0`, `bun audit` чист.
 
 ## Проверено локально и на VPS
 
 - TypeScript typecheck и Imba production build;
-- 175 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, signed application update discovery/staging/release notes/channel/version binding/transient-unit restart recovery/persistent stages/bounded proxy timeout, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
+- 183 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, signed application update discovery/staging/release notes/channel/version binding/transient-unit restart recovery/persistent stages/bounded proxy timeout/периодический discovery, нормализацию ownership release, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
 - сгенерированные Mihomo, sing-box и Xray JSON профили приняты нативными `mihomo 1.19.30`, `sing-box 1.13.19` и `xray 26.7.28`;
 - Go policy tests и статический linux/amd64 agent build;
 - standalone Linux server/CLI и macOS CLI builds;
@@ -85,14 +85,15 @@
 - первый запуск `rc.14 → rc.16` из web-панели успешно проверил подпись, распаковал release, мигрировал данные и переключил symlink/environment, но завис после `systemctl restart outpost-agent`: updater был дочерним процессом самого agent service, поэтому systemd уничтожил его вместе с cgroup до запуска Outpost и фиксации результата. На HostKey точечно выполнены оставшиеся штатные шаги; сейчас `rc.16`, Outpost, root-agent, Nginx, Hysteria и Xray active, внутренние/внешние health/ready зелёные, SQLite `quick_check=ok`, incoming очищен, зависшая операция закрыта как completed. У пяти application units ноль warning/error; kernel warning — только штатные `UFW BLOCK` внешних сканов и IPv6 multicast;
 - post-`rc.16` исправление запускает `apply-update` в отдельном transient-unit systemd без привязанного pipe, сохраняет реальные этапы в SQLite и показывает их в модальном окне и Настройках после reload. Confirmation теперь подтверждает установку конкретной версии, показывает очищенные release notes из GitHub Release и не выносит Minisign в пользовательское решение; HTML-ответ 502 больше не маскируется ошибкой JSON parser. Полный локальный gate: 175 Bun tests/3657 assertions, TypeScript, production Imba build, Go tests, Bash syntax и ShellCheck.
 - signed `rc.17` установлен на HostKey; переход из `rc.16` ожидаемо потребовал ручного завершения после self-termination старого agent. Recovery сохранил данные, закрыл operation/audit, очистил incoming/temp и оставил все application services и monitoring зелёными на `rc.17`.
+- полные web-переходы `rc.17 → rc.18 → rc.19` завершены transient updater без rollback и потери данных; running binaries совпадают с подписанным `rc.19`, все services и monitoring зелёные, SQLite и 279 внутренних checksum проходят;
+- HostKey запрещает парольный SSH-вход для `root`, сохраняя доступ по public key. Уже установленные `rc.17`–`rc.19` нормализованы до `root:root`; чистая установка и будущие updates закрепляют это через `tar --no-same-owner` и финальный `chown`.
 
 ## Оставшийся полевой gate
 
-Чистая signed-установка, browser setup и восстановленный переход до `rc.17` на
-HostKey завершены. Полевые тесты закрыли content negotiation, IPv6/Secure DNS и
-bootstrap-ограничение старого updater. Следующий checkpoint — впервые пройти
-полный transient-unit и UI lifecycle обновлением `rc.17 → rc.18` без ручных
-шагов. После этого остаются:
+Чистая signed-установка, browser setup и полные web-переходы до `rc.19` на
+HostKey завершены. Полевые тесты закрыли content negotiation, IPv6/Secure DNS,
+bootstrap-ограничение старого updater и полный transient-unit/UI lifecycle.
+Остаются:
 
 1. прямой импорт минимум в один Mihomo-, sing-box- и Xray-клиент без обязательного browser step;
 2. Hysteria UDP/443, XHTTP и gRPC через общий TCP/443 и автоматическое переключение при недоступном UDP;
@@ -220,3 +221,24 @@ passkey, домен, XHTTP/gRPC secrets и native Xray config. Окружени�
 256 МБ и корректно показывает локализованные ошибки даже при HTML 413 от
 Nginx. Полный локальный gate проходит: 181 Bun test/3670 assertions,
 TypeScript, production Imba build, Go tests/vet/linux build, Bash и ShellCheck.
+
+## Кандидат 0.1.0-rc.20
+
+Кандидат завершает интерфейс обновлений: панель сама проверяет GitHub Releases
+раз в шесть часов, публикует изменение через dashboard SSE и показывает
+индикатор на Настройках. Карточка версии разделяет проверку и установку,
+показывает целевую версию, а после успешного update перезагружает страницу уже
+с assets нового release. Уточнены тексты состояния версии и DNS A-записи при
+переносе сервера во всех четырёх локалях.
+
+Release hardening устраняет наследование UID GitHub Actions runner: tarball
+собирается с numeric owner `0:0`, CI проверяет ownership всех entries, а
+bootstrap, installer и updater дополнительно извлекают без сохранения владельца
+и нормализуют `/opt/outpost/releases` до `root:root`. Поэтому исправление
+действует уже на переходе `rc.19 → rc.20`, хотя его запускает updater из
+предыдущей версии.
+
+Полный локальный gate проходит: 183 Bun tests/3691 assertions, TypeScript,
+production Imba build, Go tests/vet/linux build, Bash/ShellCheck, actionlint,
+native Mihomo/Xray validation, реальный XHTTP+gRPC transport integration,
+dependency audit и gitleaks.

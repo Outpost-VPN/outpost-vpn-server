@@ -101,6 +101,13 @@ export class ApplicationUpdateService {
     return this.checking;
   }
 
+  async refresh(actor = "update-checker") {
+    const current = this.state();
+    if (this.demo || this.preparing || current.status === "preparing" || current.ready) return current;
+    if (current.checkedAt && Date.now() - Date.parse(current.checkedAt) < config.updateCheckHours * 60 * 60 * 1_000) return current;
+    return this.check(actor);
+  }
+
   async prepare(actor = "owner") {
     if (this.demo) return demoPrepared(this.current, this.channel());
     if (this.preparing) return this.preparing;

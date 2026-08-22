@@ -113,6 +113,13 @@ export class HttpApplication {
     return after;
   }
 
+  async checkUpdates() {
+    const before = JSON.stringify(this.system.updates.state());
+    const after = await this.system.updates.refresh();
+    if (JSON.stringify(after) !== before) this.dashboardEvents.publish("updates");
+    return after;
+  }
+
   async fetch(request: Request) {
     const url = new URL(request.url);
     const requestId = crypto.randomUUID();

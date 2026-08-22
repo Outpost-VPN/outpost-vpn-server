@@ -53,7 +53,7 @@ cp /etc/outpost/engines/xray.json "$xray_previous"
 if systemctl is-active --quiet hysteria-server; then hysteria_was_active=1; fi
 if systemctl is-active --quiet xray; then xray_was_active=1; fi
 
-tar -xzf "$archive" -C "$update_tmp"
+tar --no-same-owner -xzf "$archive" -C "$update_tmp"
 source_dir=$(find "$update_tmp" -mindepth 1 -maxdepth 1 -type d | head -1)
 version=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$source_dir/manifest.json")
 [[ "$version" =~ ^[0-9][0-9A-Za-z.-]{0,39}$ ]] || { echo "Invalid release manifest" >&2; exit 1; }
@@ -66,6 +66,7 @@ grep -qxF "OUTPOST_VERSION=$version" "$update_tmp/outpost.env.next"
 next="/opt/outpost/releases/$version"
 test ! -e "$next" || { echo "Release $version is already installed" >&2; exit 1; }
 cp -a "$source_dir" "$next"
+chown -R -h root:root -- /opt/outpost/releases
 install -d -o outpost -g outpost -m 0700 /var/lib/outpost/update-snapshots
 
 systemctl stop outpost

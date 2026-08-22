@@ -211,9 +211,26 @@ describe("release trust chain", () => {
   test("verifies detached signatures before update extraction", async () => {
     const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
     const verify = updater.indexOf("minisign -Vm");
-    const extract = updater.indexOf("tar -xzf");
+    const extract = updater.indexOf("tar --no-same-owner -xzf");
     expect(verify).toBeGreaterThan(0);
     expect(extract).toBeGreaterThan(verify);
+  });
+
+  test("normalizes release ownership during installation and updates", async () => {
+    const bootstrap = await Bun.file(resolve(root, "infra/scripts/bootstrap")).text();
+    const installer = await Bun.file(resolve(root, "infra/scripts/install")).text();
+    const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
+    const builder = await Bun.file(resolve(root, "scripts/release.ts")).text();
+    const workflow = await Bun.file(resolve(root, ".github/workflows/release.yml")).text();
+
+    for (const script of [bootstrap, installer, updater]) {
+      expect(script).toContain("tar --no-same-owner -xzf");
+    }
+    expect(installer).toContain("chown -R -h root:root -- /opt/outpost/releases");
+    expect(updater).toContain("chown -R -h root:root -- /opt/outpost/releases");
+    expect(builder).toContain('["tar", "--owner=0", "--group=0", "--numeric-owner", "-czf"');
+    expect(workflow).toContain("tar --numeric-owner -tvzf");
+    expect(workflow).toContain('$2 != "0/0"');
   });
 
   test("updates and rolls back the installed application version metadata", async () => {

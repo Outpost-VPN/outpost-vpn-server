@@ -38,7 +38,7 @@ curl -fL --retry 3 -o "$archive" "$base/$(basename "$archive")"
 curl -fL --retry 3 -o "$signature" "$base/$(basename "$signature")"
 minisign -Vm "$archive" -x "$signature" -P "$release_public_key"
 
-tar -xzf "$archive" -C "$work"
+tar --no-same-owner -xzf "$archive" -C "$work"
 release_dir="$work/outpost-$version"
 test -x "$release_dir/infra/scripts/install" || { echo "Release installer is missing" >&2; exit 1; }
 (cd "$release_dir" && sha256sum -c SHA256SUMS)

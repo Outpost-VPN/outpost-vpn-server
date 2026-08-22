@@ -47,6 +47,9 @@ jobs:
         run: |
           version="${RELEASE_TAG#v}"
           OUTPOST_VERSION="$version" bun run release:linux
+          archive="$(find release -maxdepth 1 -name '*.tar.gz' -type f -print -quit)"
+          test -n "$archive"
+          tar --numeric-owner -tvzf "$archive" | awk '$2 != "0/0" { print; invalid=1 } END { exit invalid }'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unsigned-release

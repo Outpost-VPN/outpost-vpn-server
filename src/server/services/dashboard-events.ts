@@ -1,4 +1,4 @@
-export type DashboardReason = "traffic" | "monitoring" | "mutation" | "connections" | "operations" | "rulesets";
+export type DashboardReason = "traffic" | "monitoring" | "mutation" | "connections" | "operations" | "rulesets" | "updates";
 
 export type DashboardSnapshotEvent = {
   revision: number;
