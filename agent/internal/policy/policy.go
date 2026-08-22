@@ -102,6 +102,30 @@ func Validate(request Request) error {
 			}
 		}
 		return nil
+	case "backup.restore":
+		if err := requirePath(request.Payload, "archive", "/var/lib/outpost/incoming"); err != nil {
+			return err
+		}
+		restoreID, ok := request.Payload["restoreId"].(string)
+		if !ok || !validOperationID(restoreID) {
+			return errors.New("valid restore id is required")
+		}
+		archive := request.Payload["archive"].(string)
+		encrypted := archive == filepath.Join("/var/lib/outpost/incoming", "restore-"+restoreID+".age")
+		plain := archive == filepath.Join("/var/lib/outpost/incoming", "restore-"+restoreID+".tar")
+		if !encrypted && !plain {
+			return errors.New("backup archive does not match restore id")
+		}
+		passphrase, hasPassphrase := request.Payload["passphrase"]
+		if encrypted {
+			value, valid := passphrase.(string)
+			if !hasPassphrase || !valid || len(value) < 12 || len(value) > 200 {
+				return errors.New("passphrase must contain 12 to 200 characters")
+			}
+		} else if hasPassphrase {
+			return errors.New("plain backup must not include a passphrase")
+		}
+		return nil
 	case "config.apply":
 		if err := requirePath(request.Payload, "source", "/var/lib/outpost"); err != nil {
 			return err

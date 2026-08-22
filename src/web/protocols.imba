@@ -665,7 +665,7 @@ tag outpost-protocols
 		.engine-title h3 c:var(--outpost-navy) fs:16px fw:750 lh:1.25
 		.engine-version d:flex ai:center g:7px mt:4px c:#657491 fs:12px lh:1.3
 		.engine-version button d:inline-flex ai:center g:5px p:0 bd:0 bg:transparent c:var(--outpost-brand) fs:12px fw:650
-		.engine-version button@hover text-decoration:underline
+		.engine-version button@hover span td:underline
 		.engine-version button outpost-icon fs:15px
 		.engine-version .bullet c:#8A99B3
 		.engine-connection d:flex ai:center g:7px min-width:0 c:#47618D fs:13px lh:1.4 flex-wrap:wrap

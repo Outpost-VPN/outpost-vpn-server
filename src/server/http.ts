@@ -1,5 +1,7 @@
 import { ZodError } from "zod";
 import QRCode from "qrcode";
+import { chmod, mkdir, unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { config } from "./config";
 import type { OutpostDatabase } from "./db/database";
 import { AuthService } from "./auth/webauthn";
@@ -154,6 +156,7 @@ export class HttpApplication {
     this.get("/api/v1/auth/state", true, () => json(this.auth.state()));
     this.get("/api/v1/setup", true, () => json(this.setup.state()));
     this.post("/api/v1/setup/domain", true, async (ctx) => json(await this.setup.finalize(await ctx.json())));
+    this.post("/api/v1/setup/restore", true, async (ctx) => this.restoreBackup(ctx.request));
     this.post("/api/v1/auth/register/options", true, async (ctx) => {
       const body = await ctx.json();
       return json(await this.auth.registrationOptions(body, ctx.owner?.id));
@@ -523,6 +526,44 @@ export class HttpApplication {
         "cache-control": "private, no-store",
       },
     });
+  }
+
+  private async restoreBackup(request: Request) {
+    const limit = 256 * 1024 * 1024;
+    const length = Number(request.headers.get("content-length") ?? "0");
+    if (length > limit) throw new ServiceError(413, "Резервная копия слишком большая");
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      throw new ServiceError(400, "Не удалось прочитать резервную копию");
+    }
+    const archive = form.get("archive");
+    const claimToken = form.get("claimToken");
+    const passphrase = form.get("passphrase");
+    if (!(archive instanceof File) || !archive.size) throw new ServiceError(400, "Выберите резервную копию Outpost");
+    if (archive.size > limit) throw new ServiceError(413, "Резервная копия слишком большая");
+    if (typeof claimToken !== "string" || !claimToken) throw new ServiceError(401, "Продолжение первоначальной настройки недействительно или истекло");
+    const extension = archive.name.toLowerCase().endsWith(".age") ? "age"
+      : archive.name.toLowerCase().endsWith(".tar") ? "tar" : null;
+    if (!extension) throw new ServiceError(400, "Выберите файл Outpost в формате .age или .tar");
+    const password = typeof passphrase === "string" && passphrase ? passphrase : undefined;
+    if (extension === "age" && (!password || password.length < 12 || password.length > 200)) {
+      throw new ServiceError(400, "Введите пароль резервной копии");
+    }
+    const restoreId = crypto.randomUUID();
+    const directory = join(config.dataDir, "incoming");
+    const path = join(directory, `restore-${restoreId}.${extension}`);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await Bun.write(path, archive);
+    await chmod(path, 0o600);
+    try {
+      const result = await this.setup.restore({ claimToken, archive: path, restoreId, passphrase: password });
+      return json(result, 202);
+    } catch (error) {
+      await unlink(path).catch(() => undefined);
+      throw error;
+    }
   }
 
   private async staticResponse(request: Request, url: URL, language: Locale) {

@@ -560,13 +560,26 @@ tag outpost-onboarding
 	store = null
 	step = 0
 	direction = 1
+	intent = ''
+	archive = null
+	password = ''
 	timezone = Intl.DateTimeFormat!.resolvedOptions!.timeZone or 'UTC'
 	busy = false
+	restarting = false
 	message = null
 	preview = false
 
 	def setup
-		preview = new URLSearchParams(window.location.search).get('preview') == 'setup'
+		const mode = new URLSearchParams(window.location.search).get('preview')
+		preview = mode == 'setup' or mode == 'restore'
+		if mode == 'restore'
+			intent = 'restore'
+			step = 1
+
+	get encrypted? do archive and archive.name.toLowerCase!.endsWith('.age')
+	get oversized? do archive and archive.size > 256 * 1024 * 1024
+	get ready? do archive and !oversized? and (!encrypted? or (password.length >= 12 and password.length <= 200))
+	get detail do archive ? fmt.bytes(archive.size) : t('restore.file_hint')
 
 	def move next, vector
 		direction = vector
@@ -575,6 +588,60 @@ tag outpost-onboarding
 
 	def advance
 		move step + 1, 1
+
+	def select value
+		intent = value
+		move 1, 1
+
+	def choose e
+		archive = e.target.files[0] or null
+		password = '' unless encrypted?
+		message = null
+		message = t('restore.too_large') if oversized?
+
+	def restore
+		return unless ready?
+		busy = true
+		message = null
+		try
+			if preview
+				await new Promise do(resolve) window.setTimeout(resolve, 700)
+				restarting = true
+				await new Promise do(resolve) window.setTimeout(resolve, 900)
+				move 2, 1
+				return
+			const params = new URLSearchParams(window.location.search)
+			const body = new window.FormData
+			body.append('archive', archive)
+			body.append('claimToken', params.get('claim') or '')
+			body.append('passphrase', password) if encrypted?
+			const response = await window.fetch('/api/v1/setup/restore', {method: 'POST', body: body})
+			unless response.ok
+				let failure = t('restore.failed')
+				try
+					const payload = await response.json!
+					failure = payload.message or failure
+				catch
+					failure = t('restore.too_large') if response.status == 413
+				throw new Error(failure)
+			restarting = true
+			imba.commit!
+			for attempt in [0 .. 89]
+				await new Promise do(resolve) window.setTimeout(resolve, 1000)
+				try
+					const state = await window.fetch('/api/v1/auth/state', {cache: 'no-store'})
+					if state.ok and (await state.json!).initialized
+						window.location.assign('/admin/login')
+						return
+				catch
+					null
+			throw new Error(t('restore.timeout'))
+		catch issue
+			message = issue.message
+			restarting = false
+		finally
+			busy = false
+			imba.commit!
 
 	def back
 		move Math.max(0, step - 1), -1
@@ -608,27 +675,63 @@ tag outpost-onboarding
 				if step == 0
 					<div.step [o@off:0 ease:340ms] ease>
 						<span.panel-badge> t('onboarding.badge')
-						<h1> t('onboarding.welcome.title')
-						<p> t('onboarding.welcome.subtitle')
-						<ul.setup-points>
-							<li>
-								<outpost-icon name="check">
+						<h1> t('onboarding.start.title')
+						<p> t('onboarding.start.subtitle')
+						<div.start-grid>
+							<button.start-card type="button" @click=(do select('new'))>
+								<span.start-icon><outpost-icon name="sparkle">
+								<div.start-copy>
+									<strong> t('onboarding.start.new')
+									<small> t('onboarding.start.new_hint')
+								<outpost-icon.arrow name="arrow-right">
+							<button.start-card.restore type="button" @click=(do select('restore'))>
+								<span.start-icon><outpost-icon name="cloud-arrow-down">
+								<div.start-copy>
+									<strong> t('onboarding.start.restore')
+									<small> t('onboarding.start.restore_hint')
+								<outpost-icon.arrow name="arrow-right">
+				elif step == 1 and intent == 'restore'
+					<form.step [o@off:0 ease:340ms] ease @submit.prevent=restore>
+						<div.progress>
+							<span> t('restore.progress')
+							<div.dots>
+								<i.active>
+								<i.active>
+						<button.back type="button" @click=(do move(0, -1))>
+							<outpost-icon name="arrow-left">
+							<span> t('onboarding.back')
+						<h1> t('restore.title')
+						<p> t('restore.subtitle')
+						<div.restore-domain>
+							<outpost-icon name="link-simple">
+							<div>
+								<strong> t('restore.domain')
+								<span> t('restore.domain_hint')
+						<label.restore-file .selected=!!archive>
+							<input type="file" accept=".age,.tar,application/octet-stream,application/x-tar" @change=choose>
+							<span.file-icon><outpost-icon name=(archive ? 'file-check' : 'upload-simple')>
+							<span.file-copy>
+								<strong> archive ? archive.name : t('restore.file')
+								<small> detail
+							<span.file-action> t('restore.choose')
+						if encrypted?
+							<label.outpost-field.restore-password>
+								<span> t('restore.password')
+								<input type="password" bind=password autocomplete="current-password" placeholder=t('restore.password_hint')>
+						if message
+							<div.outpost-error> message
+						if restarting
+							<div.restore-status role="status">
+								<outpost-icon name="spinner-gap">
 								<div>
-									<strong> t('onboarding.welcome.profile')
-									<span> t('onboarding.welcome.profile_hint')
-							<li>
-								<outpost-icon name="check">
-								<div>
-									<strong> t('onboarding.welcome.passkey')
-									<span> t('onboarding.welcome.passkey_hint')
-							<li>
-								<outpost-icon name="check">
-								<div>
-									<strong> t('onboarding.welcome.control')
-									<span> t('onboarding.welcome.control_hint')
-						<button.outpost-button @click=advance>
-							<span> t('onboarding.access.create')
-							<outpost-icon name="arrow-right">
+									<strong> t('restore.working')
+									<span> t('restore.restarting')
+						<button.outpost-button type="submit" disabled=(busy or !ready?)>
+							<outpost-icon name=(busy ? 'spinner-gap' : 'cloud-arrow-down')>
+							<span> busy ? t('restore.working') : t('restore.action')
+						<small.bootstrap>
+							<outpost-icon name="shield-check">
+							<span> t('restore.login')
 				elif step == 1
 					<div.step [o@off:0 ease:340ms] ease>
 						<div.progress>
@@ -636,7 +739,7 @@ tag outpost-onboarding
 							<div.dots>
 								<i.active>
 								<i.active>
-						<button.back type="button" @click=back>
+						<button.back type="button" @click=(do move(0, -1))>
 							<outpost-icon name="arrow-left">
 							<span> t('onboarding.back')
 						<h1> t('onboarding.passkey.title')
@@ -657,8 +760,8 @@ tag outpost-onboarding
 				else
 					<div.step [o@off:0 ease:340ms] ease>
 						<span.panel-badge> t('Предпросмотр')
-						<h1> t('Настройка доступа завершена')
-						<p> t('В preview-режиме passkey не создавался, а данные владельца не записывались.')
+						<h1> intent == 'restore' ? t('restore.title') : t('Настройка доступа завершена')
+						<p> intent == 'restore' ? t('restore.restarting') : t('В preview-режиме passkey не создавался, а данные владельца не записывались.')
 						<button.outpost-button @click=(do move(0, -1))>
 							<outpost-icon name="arrow-counter-clockwise">
 							<span> t('Начать сначала')
@@ -673,6 +776,36 @@ tag outpost-onboarding
 		.step > .panel-badge d:block mb:24px c:var(--outpost-brand) fs:12px fw:750 ls:.08em tt:uppercase
 		h1 c:var(--outpost-navy) fs:36px lh:1.15 ls:-.025em
 		.step > p mt:14px c:var(--outpost-muted) fs:16px lh:1.6
+		.start-grid d:grid g:12px mt:28px
+		.start-card pos:relative w:100% d:grid gtc:48px minmax(0,1fr) 20px ai:center g:14px p:17px bd:1px solid var(--outpost-line) rd:14px bgc:white ta:left tween:border-color 160ms ease, background-color 160ms ease, transform 160ms ease
+		.start-card@hover border-color:#B8D0F9 bgc:var(--outpost-soft); transform:translateY(-1px)
+		.start-card .start-icon s:46px d:grid ja:center rd:12px bgc:var(--outpost-auth-start) c:var(--outpost-brand) fs:22px
+		.start-card.restore .start-icon bgc:var(--outpost-success-soft) c:var(--outpost-success)
+		.start-copy miw:0
+		.start-card strong, .start-card small d:block
+		.start-card strong c:var(--outpost-text) fs:15px
+		.start-card small mt:5px c:var(--outpost-muted) fs:12px lh:1.4
+		.start-card .arrow c:var(--outpost-brand) fs:17px
+		.restore-domain d:grid gtc:36px minmax(0,1fr) ai:start g:11px mt:24px p:13px rd:11px bgc:var(--outpost-success-soft)
+		.restore-domain > outpost-icon s:36px d:grid ja:center rd:10px bgc:white c:var(--outpost-success) fs:18px
+		.restore-domain strong, .restore-domain span d:block
+		.restore-domain strong c:var(--outpost-text) fs:13px
+		.restore-domain span mt:4px c:var(--outpost-muted) fs:11px lh:1.45
+		.restore-file pos:relative d:grid gtc:42px minmax(0,1fr) auto ai:center g:12px mt:17px p:14px bd:1px dashed var(--outpost-line) rd:12px bgc:white cursor:pointer tween:border-color 160ms ease, background-color 160ms ease
+		.restore-file@hover, .restore-file.selected border-color:#9DBDF0 bgc:var(--outpost-soft)
+		.restore-file input pos:absolute o:0 pe:none
+		.file-icon s:42px d:grid ja:center rd:10px bgc:var(--outpost-auth-start) c:var(--outpost-brand) fs:20px
+		.file-copy miw:0
+		.file-copy strong, .file-copy small d:block of:hidden text-overflow:ellipsis white-space:nowrap
+		.file-copy strong c:var(--outpost-text) fs:13px
+		.file-copy small mt:4px c:var(--outpost-muted) fs:11px
+		.file-action p:7px 9px rd:8px bgc:var(--outpost-auth-start) c:var(--outpost-brand) fs:10px fw:700 white-space:nowrap
+		.restore-password mt:15px
+		.restore-status d:grid gtc:28px minmax(0,1fr) ai:start g:10px mt:16px p:12px rd:10px bgc:var(--outpost-soft)
+		.restore-status > outpost-icon mt:2px c:var(--outpost-brand) fs:20px animation:spin 1s linear infinite
+		.restore-status strong, .restore-status span d:block
+		.restore-status strong fs:12px
+		.restore-status span mt:4px c:var(--outpost-muted) fs:11px lh:1.4
 		.setup-points d:grid g:17px mt:27px p:0 list-style:none
 		.setup-points li d:grid gtc:30px 1fr ai:start g:12px
 		.setup-points outpost-icon s:30px d:grid ja:center rd:full bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:16px

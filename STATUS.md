@@ -197,3 +197,26 @@ reload Настройки читают тот же persistent stage. Следу�
 с `Everything is working normally` до `Everything works`. Он предназначен для
 первой полной полевой проверки нового updater и persistent progress переходом
 `rc.17 → rc.18`; HostKey до ручного запуска из панели остаётся на `rc.17`.
+
+## Кандидат 0.1.0-rc.19
+
+Кандидат добавляет перенос на чистый сервер через браузер. После подключения
+того же постоянного домена first-claim onboarding предлагает либо создать
+новую панель, либо загрузить созданный Outpost архив `.age`/`.tar`. Пароль
+зашифрованной копии передаётся root-agent через Unix socket и не попадает в
+argv, SQLite или access log. После принятия архива интерфейс ждёт возвращения
+восстановленного владельца и переводит пользователя на вход с прежним passkey.
+
+Root restore принимает только точный format-1 layout без ссылок, devices,
+дубликатов и неожиданных путей; проверяет master key, SQLite, владельца,
+passkey, домен, XHTTP/gRPC secrets и native Xray config. Окружение собирается
+из allowlist с текущими IP и версией сервера, Nginx пересобирается из доверенного
+шаблона. Перед заменой данных создаётся rollback-снимок; после неё выполняются
+миграции, проверка Nginx, пяти служб и `/readyz`. Fixed lock и API guard не дают
+двум restore пересечься, а first-claim сохраняется при отказе для повторной
+попытки.
+
+Карточка переноса и onboarding переведены на четыре локали; upload ограничен
+256 МБ и корректно показывает локализованные ошибки даже при HTML 413 от
+Nginx. Полный локальный gate проходит: 181 Bun test/3670 assertions,
+TypeScript, production Imba build, Go tests/vet/linux build, Bash и ShellCheck.

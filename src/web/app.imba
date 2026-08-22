@@ -59,8 +59,6 @@ tag App
 				<outpost-engine-history store=store>
 			elif store.dialog == 'backup'
 				<outpost-backup-modal store=store>
-			elif store.dialog == 'restore'
-				<outpost-restore-modal store=store>
 			elif store.dialog == 'domain'
 				<outpost-domain-modal store=store>
 			elif store.dialog == 'token'

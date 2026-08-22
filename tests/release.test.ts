@@ -133,6 +133,26 @@ describe("release trust chain", () => {
     expect(disarm).toBeGreaterThan(schedule);
   });
 
+  test("restores browser uploads only after domain setup and keeps the new server identity", async () => {
+    const nginx = await Bun.file(resolve(root, "infra/nginx/outpost.conf.template")).text();
+    const restore = await Bun.file(resolve(root, "infra/scripts/restore-backup")).text();
+
+    expect(nginx).toContain("location = /api/v1/setup/restore {");
+    expect(nginx).toContain("client_max_body_size 256m;");
+    expect(restore).toContain('test "$backup_domain" = "$current_domain"');
+    expect(restore).toContain("OUTPOST_PUBLIC_IP=$current_public_ip");
+    expect(restore).toContain("OUTPOST_RELEASE_PUBLIC_KEY=/opt/outpost/current/infra/release/minisign.pub");
+    expect(restore).toContain("infra/nginx/outpost.conf.template");
+    expect(restore).toContain("flock -n 9");
+    expect(restore).toContain("Unexpected backup entry");
+    expect(restore).toContain("Backup contains links or special files");
+    expect(restore).toContain('[[ "$xhttp_path" =~ ^/[a-zA-Z0-9._~-]{8,128}$ ]]');
+    expect(restore.match(/rm -f -- \/var\/lib\/outpost\/outpost\.sqlite-wal/g)).toHaveLength(2);
+    expect(restore).toContain('install -o outpost -g outpost -m 0600 "$restore_tmp/current.sqlite"');
+    expect(restore).not.toContain('install -o root -g root -m 0644 "$restore_tmp/nginx.conf"');
+    expect(restore).not.toContain('cp -a "$restore_tmp/config/." /etc/outpost/');
+  });
+
   test("reloads Nginx for every renewed certificate and restarts Hysteria only for the permanent domain", async () => {
     const hook = await Bun.file(resolve(root, "infra/renewal-hooks/deploy/outpost")).text();
     expect(hook).toContain("systemctl reload nginx");

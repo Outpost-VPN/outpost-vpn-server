@@ -63,6 +63,11 @@ export class AuthService {
     return this.issueGrant("claim");
   }
 
+  authorizeClaim(token?: string) {
+    if (this.owner()) throw new ServiceError(409, "Владелец уже создан — восстановление доступно только на чистой установке");
+    this.verifyGrant("claim", token);
+  }
+
   resetBootstrap() {
     const owner = this.owner();
     if (!owner) {

@@ -204,9 +204,6 @@ tag outpost-settings
 	def backup
 		store.open('backup')
 
-	def restore
-		store.open('restore')
-
 	def period value
 		draft.period = value
 		busy = 'period'
@@ -320,18 +317,37 @@ tag outpost-settings
 				<section.outpost-card.transfer-card>
 					<header>
 						<span.transfer-mark><outpost-icon name="cloud-arrow-up">
-						<h2> t('Перенос данных')
-					<p> t('Выгрузите резервную копию или восстановите панель из сохранённых данных.')
-					<div.transfer-actions>
-						<button.outpost-button.secondary.small type="button" @click=backup>
-							<outpost-icon name="download-simple">
-							<span> t('Выгрузить данные')
-						<button.outpost-button.secondary.small type="button" @click=restore>
-							<outpost-icon name="upload-simple">
-							<span> t('Загрузить данные')
-					<p.transfer-note>
-						<outpost-icon name="info">
-						<span> t('Рекомендуется регулярное резервное копирование.')
+						<div.transfer-copy>
+							<h2> t('Перенос данных')
+							<small> t('backup.card.subtitle')
+					<button.outpost-button.small type="button" @click=backup>
+						<outpost-icon name="download-simple">
+						<span> t('backup.action')
+					<section.transfer-guide>
+						<h3> t('transfer.title')
+						<ol.transfer-steps>
+							<li>
+								<span> '1'
+								<div.step-copy>
+									<strong> t('transfer.step.install')
+									<small> t('transfer.step.install_hint')
+							<li>
+								<span> '2'
+								<div.step-copy>
+									<strong.domain-line>
+										<span> t('transfer.step.domain')
+										<button.panel-address type="button" aria-label=t('transfer.address_value', {domain: store.data.system.domain})>
+											<span> t('transfer.address')
+											<span.address-tooltip.technical role="tooltip"> store.data.system.domain
+									<small> t('transfer.step.domain_hint')
+							<li>
+								<span> '3'
+								<div.step-copy>
+									<strong> t('transfer.step.restore')
+									<small> t('transfer.step.restore_hint')
+						<div.transfer-result>
+							<outpost-icon name="check-circle">
+							<span> t('transfer.links')
 
 	css self
 		maw:1100px mx:auto c:var(--outpost-text)
@@ -357,7 +373,8 @@ tag outpost-settings
 		.system-value strong miw:0 of:hidden text-overflow:ellipsis white-space:nowrap c:var(--outpost-navy) fs:15px fw:700
 		.address .system-value strong c:var(--outpost-brand)
 		.system-action fl:0 0 auto d:inline-flex ai:center g:5px p:1px 0 bd:0 bgc:transparent c:var(--outpost-brand) fs:11px fw:650 lh:1.2 white-space:nowrap
-		.system-action c@hover:var(--outpost-brand-dark) td@hover:underline
+		.system-action c@hover:var(--outpost-brand-dark)
+		.system-action@hover span td:underline
 		.system-action outpost-icon fs:12px
 		.system-action outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
 		.update-progress d:block w:100% h:4px mt:7px accent-color:var(--outpost-brand)
@@ -372,14 +389,29 @@ tag outpost-settings
 		.autosave d:flex ai:center g:7px mih:46px border-top:1px solid var(--outpost-line) c:var(--outpost-muted) fs:11px
 		.autosave outpost-icon c:var(--outpost-success) fs:15px
 		.transfer-card d:flex fld:column p:24px bgc:color-mix(in srgb, var(--outpost-success) 3%, var(--outpost-white))
-		.transfer-card header d:grid gtc:42px minmax(0,1fr) ai:center g:13px
+		.transfer-card header d:grid gtc:42px minmax(0,1fr) ai:start g:13px
 		.transfer-card h2 c:var(--outpost-navy) fs:17px fw:750
 		.transfer-mark s:42px d:grid ja:center rd:10px bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:20px
-		.transfer-card > p mt:22px c:var(--outpost-muted) fs:12px lh:1.55
-		.transfer-actions d:grid g:10px mt:24px
-		.transfer-actions .outpost-button w:100% h:40px px:12px fs:12px
-		.transfer-note d:grid gtc:16px minmax(0,1fr) ai:start g:8px mt:auto pt:24px c:var(--outpost-muted) fs:10px lh:1.45
-		.transfer-note outpost-icon mt:1px fs:14px
+		.transfer-copy small d:block mt:4px c:var(--outpost-muted) fs:10px lh:1.4
+		.transfer-card > .outpost-button w:100% h:40px mt:16px px:12px fs:12px
+		.transfer-guide fl:1 d:flex fld:column mt:18px pt:16px border-top:1px solid var(--outpost-line)
+		.transfer-guide h3 c:var(--outpost-navy) fs:13px fw:750 lh:1.4
+		.transfer-steps d:grid g:0 mt:7px p:0 list-style:none
+		.transfer-steps li d:grid gtc:26px minmax(0,1fr) ai:start g:9px py:8px border-bottom:1px solid var(--outpost-line)
+		.transfer-steps li@last-child border-bottom:0
+		.transfer-steps li > span s:26px d:grid ja:center rd:full bgc:var(--outpost-auth-start) c:var(--outpost-brand) fs:10px fw:750
+		.step-copy miw:0 pt:1px
+		.step-copy > strong, .step-copy > small d:block
+		.step-copy > strong c:var(--outpost-text) fs:11px fw:700 lh:1.35
+		.step-copy > small mt:3px c:var(--outpost-muted) fs:9px fw:500 lh:1.4
+		.domain-line d:flex flw:nowrap ai:baseline white-space:nowrap
+		.panel-address pos:relative d:inline-flex ml:4px p:0 bd:0 border-bottom:1px dotted var(--outpost-brand) bgc:transparent c:var(--outpost-brand) ff:inherit fs:inherit fw:inherit lh:inherit cur:help
+		.panel-address@hover c:var(--outpost-brand-dark)
+		.panel-address@focus-visible ol:2px solid var(--outpost-brand-soft) olo:2px rd:3px
+		.address-tooltip pos:absolute b:calc(100% + 7px) l:0 zi:10 w:max-content maw:220px p:6px 8px rd:6px bgc:var(--outpost-navy) c:white fs:9px fw:600 lh:1.3 white-space:normal overflow-wrap:anywhere o:0 pe:none transform:translateY(3px) tween:opacity 140ms ease, transform 140ms ease
+		.panel-address@hover .address-tooltip, .panel-address@focus-visible .address-tooltip o:1 transform:translateY(0)
+		.transfer-result d:grid gtc:24px minmax(0,1fr) ai:center g:8px mt:auto p:10px rd:9px bgc:var(--outpost-success-soft) c:var(--outpost-text) fs:10px fw:650 lh:1.4
+		.transfer-result outpost-icon s:24px d:grid ja:center rd:full bgc:white c:var(--outpost-success) fs:15px
 		@media(max-width: 1280px)
 			.system-strip gtc:1fr px:18px
 			.system-item px:0

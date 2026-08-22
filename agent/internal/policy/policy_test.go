@@ -79,6 +79,40 @@ func TestBackupPassphraseAndPath(t *testing.T) {
 	}
 }
 
+func TestBackupRestoreBindsArchiveToClaimedOperation(t *testing.T) {
+	restoreID := "12345678-1234-4234-8234-123456789abc"
+	good := Request{Action: "backup.restore", Payload: map[string]any{
+		"archive":    "/var/lib/outpost/incoming/restore-" + restoreID + ".age",
+		"restoreId":  restoreID,
+		"passphrase": "correct horse battery staple",
+	}}
+	if err := Validate(good); err != nil {
+		t.Fatalf("valid restore rejected: %v", err)
+	}
+	wrongPath := Request{Action: "backup.restore", Payload: map[string]any{
+		"archive":    "/var/lib/outpost/incoming/other.age",
+		"restoreId":  restoreID,
+		"passphrase": "correct horse battery staple",
+	}}
+	if err := Validate(wrongPath); err == nil {
+		t.Fatal("restore archive not bound to id")
+	}
+	missingPassword := Request{Action: "backup.restore", Payload: map[string]any{
+		"archive":   "/var/lib/outpost/incoming/restore-" + restoreID + ".age",
+		"restoreId": restoreID,
+	}}
+	if err := Validate(missingPassword); err == nil {
+		t.Fatal("encrypted restore without passphrase accepted")
+	}
+	plain := Request{Action: "backup.restore", Payload: map[string]any{
+		"archive":   "/var/lib/outpost/incoming/restore-" + restoreID + ".tar",
+		"restoreId": restoreID,
+	}}
+	if err := Validate(plain); err != nil {
+		t.Fatalf("plain restore rejected: %v", err)
+	}
+}
+
 func TestEngineUpdatePinsStructuredValues(t *testing.T) {
 	good := Request{Action: "engine.update", Payload: map[string]any{
 		"engine": "xray", "version": "26.4.1", "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
