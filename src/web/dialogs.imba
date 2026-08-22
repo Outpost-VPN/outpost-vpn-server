@@ -709,6 +709,7 @@ tag outpost-confirm-modal
 	saving = false
 	error = null
 	stage = null
+	progress = 0
 
 	get payload
 		return store.selected.payload if store.selected and store.selected.payload
@@ -717,19 +718,22 @@ tag outpost-confirm-modal
 	get updating?
 		store.confirmation and store.confirmation.action == 'update.apply'
 
+	get notes
+		return store.selected.notes if store.selected and store.selected.notes
+		[]
+
 	def confirm
 		const updating = updating?
 		saving = true
 		error = null
 		if updating
-			stage = t('settings.update.installing', {version: payload.version})
+			stage = t('operation.update_verifying')
+			progress = 15
 			store.hold = true
 		try
 			const action = store.confirmation.action
 			const operation = await store.api('POST', '/api/v1/operations/confirm', {confirmationId: store.confirmation.confirmationId, action: action, payload: payload})
 			if updating
-				stage = t('settings.update.restarting', {version: payload.version})
-				imba.commit!
 				let completed = false
 				for attempt in [0 ... 180]
 					await new Promise(do(resolve) setTimeout(resolve, 750))
@@ -737,6 +741,10 @@ tag outpost-confirm-modal
 					try
 						const state = await store.api('GET', '/api/v1/operations')
 						const current = state.operations.find do(item) item.id == operation.id
+						if current
+							stage = t(current.message) if current.message
+							progress = current.progress if current.progress != undefined
+							imba.commit!
 						failure = current.error or t('Операция завершилась ошибкой') if current and current.status == 'failed'
 					catch issue
 						# The control plane is expected to disappear briefly during the switch.
@@ -782,16 +790,27 @@ tag outpost-confirm-modal
 				<span.outpost-modal-mark><outpost-icon name="check-circle">
 				<div>
 					<h2> store.confirmation.preview.title
-					<p> t('Подтвердите выполнение операции.')
+					<p> updating? ? t('settings.update.confirm') : t('Подтвердите выполнение операции.')
 				<button.outpost-modal-close type="button" disabled=saving @click=store.close aria-label=t('action.close')><outpost-icon name="x">
 			<div.outpost-modal-body>
-				<p> store.confirmation.preview.changes[0]
+				if updating? and !saving
+					<section.update-release-notes>
+						<strong> t('settings.update.whats_new', {version: payload.version})
+						if notes.length
+							<ul>
+								for note in notes
+									<li> note
+						else
+							<p> t('settings.update.notes_fallback')
+					<p.update-interruption> store.confirmation.preview.changes[0]
+				elif !updating?
+					<p> store.confirmation.preview.changes[0]
 				if updating? and saving
 					<div.update-work role="status" aria-live="polite">
 						<div>
 							<outpost-icon name="spinner-gap">
 							<span> stage
-						<progress aria-label=stage>
+						<progress value=progress max="100" aria-label=stage>
 				if error
 					<div.outpost-error [mt:16px]> error
 			<footer.outpost-modal-footer>
@@ -799,9 +818,14 @@ tag outpost-confirm-modal
 					<button.outpost-button.quiet type="button" disabled=saving @click=store.close> t('action.cancel')
 					<button.outpost-button type="button" disabled=saving @click=confirm>
 						<outpost-icon name=(saving ? 'spinner-gap' : 'check')>
-						<span> saving and updating? ? t('settings.update.working') : t('action.confirm')
+						<span> saving and updating? ? t('settings.update.working') : updating? ? t('settings.update.upgrade') : t('action.confirm')
 
 	css self
+		.update-release-notes d:grid g:12px
+		.update-release-notes strong fs:13px c:var(--outpost-text)
+		.update-release-notes ul d:grid g:8px m:0 pl:20px c:var(--outpost-text) fs:13px lh:1.45
+		.update-release-notes p m:0 c:var(--outpost-muted) fs:13px lh:1.45
+		.update-interruption mt:18px c:var(--outpost-muted) fs:12px lh:1.45
 		.update-work d:grid g:10px mt:18px p:14px rd:10px bgc:var(--outpost-soft) c:var(--outpost-text)
 		.update-work > div d:flex ai:center g:9px fs:12px fw:650 lh:1.4
 		.update-work outpost-icon.ph-spinner-gap c:var(--outpost-brand) fs:17px animation:spin 1s linear infinite

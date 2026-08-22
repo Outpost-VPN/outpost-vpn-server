@@ -54,7 +54,11 @@ describe("confirmed operations", () => {
     const operations = new OperationService(fixture.db);
     const bundle = "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz";
     const payload = { version: "0.1.1", bundle, signature: `${bundle}.minisig` };
-    expect(operations.preview("update.apply", payload).preview).toMatchObject({ title: "Обновить Outpost" });
+    expect(operations.preview("update.apply", payload).preview).toMatchObject({
+      title: "Обновить Outpost до 0.1.1",
+      changes: ["Во время перезапуска панель ненадолго станет недоступна"],
+    });
+    expect(JSON.stringify(operations.preview("update.apply", payload).preview)).not.toContain("Minisign");
     expect(() => operations.preview("update.apply", { version: "0.1.1", bundle }))
       .toThrow("Подпись должна соответствовать");
     expect(() => operations.preview("update.apply", { ...payload, signature: "/tmp/release.minisig" }))

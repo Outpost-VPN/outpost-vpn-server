@@ -110,9 +110,9 @@ export class Store
 				self.expire!
 				return
 			unless response.ok
-				const failure = await response.json!
+				const failure = await responseJson(response)
 				throw new Error(self.problem(failure))
-			const snapshot = await response.json!
+			const snapshot = await responseJson(response)
 			data = snapshot
 			setLanguage(snapshot.auth.owner.language) if snapshot.auth.owner and snapshot.auth.owner.language
 			title!
@@ -148,11 +148,17 @@ export class Store
 		const options = {method: method, headers: {'content-type': 'application/json', 'X-Outpost-Language': language!}}
 		options.body = JSON.stringify(body) if body != undefined
 		const response = await window.fetch(url, options)
-		const payload = response.status == 204 ? null : await response.json!
+		const payload = response.status == 204 ? null : await responseJson(response)
 		self.expire! if response.status == 401
 		if !response.ok
 			throw new Error(problem(payload))
 		return payload
+
+	def responseJson response
+		try
+			return await response.json!
+		catch
+			throw new Error(t('error.http', {status: response.status}))
 
 	def problem payload
 		return payload.message if payload and payload.message

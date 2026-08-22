@@ -87,6 +87,7 @@ describe("admin navigation", () => {
     expect(settings).toContain("status: 'failed', ready: false, error: issue.message");
     expect(dialogs).toContain("store.hold = true");
     expect(dialogs).toContain("item.id == operation.id");
-    expect(dialogs).toContain("<progress aria-label=stage>");
+    expect(dialogs).toContain('<progress value=progress max="100" aria-label=stage>');
+    expect(dialogs).toContain("stage = t(current.message) if current.message");
   });
 });

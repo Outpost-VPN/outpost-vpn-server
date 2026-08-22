@@ -27,7 +27,7 @@ describe("signed application update preparation", () => {
   test("discovers the newest candidate and atomically prepares its exact signed assets", async () => {
     const archive = new TextEncoder().encode("signed archive");
     const signature = new TextEncoder().encode("trusted signature");
-    const release = githubRelease("0.1.0-rc.14", true, archive.length, signature.length);
+    const release = githubRelease("0.1.0-rc.14", true, archive.length, signature.length, "## What's Changed\n* Make updates reliable by @HeapVoid in https://github.com/Outpost-VPN/outpost-vpn-server/pull/14");
     const calls: string[] = [];
     const service = new ApplicationUpdateService(fixture.db, {
       current: "0.1.0-rc.13",
@@ -39,10 +39,15 @@ describe("signed application update preparation", () => {
       },
     });
 
-    expect(await service.check()).toMatchObject({ status: "available", channel: "candidate", latest: "0.1.0-rc.14" });
+    expect(await service.check()).toMatchObject({
+      status: "available",
+      channel: "candidate",
+      latest: "0.1.0-rc.14",
+      notes: ["Make updates reliable"],
+    });
     const prepared = await service.prepare();
 
-    expect(prepared).toMatchObject({ status: "ready", available: true, ready: true, latest: "0.1.0-rc.14" });
+    expect(prepared).toMatchObject({ status: "ready", available: true, ready: true, latest: "0.1.0-rc.14", notes: ["Make updates reliable"] });
     expect(prepared.payload).toEqual({
       version: "0.1.0-rc.14",
       bundle: join(fixture.directory, "incoming", "outpost-0.1.0-rc.14-linux-amd64.tar.gz"),
@@ -98,7 +103,7 @@ describe("signed application update preparation", () => {
   });
 });
 
-function githubRelease(version: string, prerelease: boolean, archiveSize: number, signatureSize: number) {
+function githubRelease(version: string, prerelease: boolean, archiveSize: number, signatureSize: number, body: string | null = null) {
   const tag = `v${version}`;
   const archive = `outpost-${version}-linux-amd64.tar.gz`;
   return {
@@ -106,6 +111,7 @@ function githubRelease(version: string, prerelease: boolean, archiveSize: number
     draft: false,
     prerelease,
     published_at: "2026-08-22T00:00:00Z",
+    body,
     assets: [
       { name: archive, size: archiveSize, browser_download_url: `${root}/${tag}/${archive}` },
       { name: `${archive}.minisig`, size: signatureSize, browser_download_url: `${root}/${tag}/${archive}.minisig` },

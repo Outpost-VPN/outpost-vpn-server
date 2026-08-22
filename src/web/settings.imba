@@ -155,6 +155,7 @@ tag outpost-settings
 	get working? do preparing? or applying?
 
 	get summary
+		return t(operation.message) if applying? and operation.message and operation.message.startsWith('operation.update_')
 		return t('settings.update.installing', {version: update.latest}) if applying?
 		return t('settings.update.preparing') if preparing?
 		return t('settings.update.checking') if busy == 'check'
@@ -183,7 +184,7 @@ tag outpost-settings
 		try
 			const prepared = await store.api('POST', '/api/v1/updates/prepare')
 			store.data.system.updates = prepared
-			store.selected = {payload: prepared.payload}
+			store.selected = {payload: prepared.payload, notes: prepared.notes or []}
 			store.confirmation = await store.api('POST', '/api/v1/operations/preview', {action: 'update.apply', payload: prepared.payload})
 			store.open('confirm')
 		catch issue
