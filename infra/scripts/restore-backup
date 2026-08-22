@@ -2,31 +2,188 @@
 set -euo pipefail
 
 archive=${1:-}
+mode=${2:-}
 test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
 test -f "$archive" || { echo "Backup archive not found" >&2; exit 1; }
+test -z "$mode" -o "$mode" = "--check" -o "$mode" = "--consume" || { echo "Unsupported restore mode" >&2; exit 1; }
+
+install -d -o root -g root -m 0755 /run/outpost
+exec 9>/run/outpost/restore.lock
+flock -n 9 || { echo "Another restore is already running" >&2; exit 1; }
+
 if test -s /var/lib/outpost/outpost.sqlite; then
   current_owners=$(sqlite3 /var/lib/outpost/outpost.sqlite 'SELECT COUNT(*) FROM owners;' 2>/dev/null || echo 1)
   test "$current_owners" = 0 || { echo "Restore is allowed only on an installation without an owner" >&2; exit 1; }
 fi
 
-restore_tmp=$(mktemp -d /var/lib/outpost/restore.XXXXXX)
-trap 'rm -rf "$restore_tmp"' EXIT
-if tar -tf "$archive" >/dev/null 2>&1; then
-  tar -xf "$archive" -C "$restore_tmp"
-else
-  age -d "$archive" | tar -xf - -C "$restore_tmp"
-fi
-test -f "$restore_tmp/manifest.json" -a -f "$restore_tmp/outpost.sqlite" -a -f "$restore_tmp/master.key" -a -f "$restore_tmp/nginx.conf"
-test "$(wc -c <"$restore_tmp/master.key")" -eq 32 || { echo "Invalid master key" >&2; exit 1; }
-sqlite3 "$restore_tmp/outpost.sqlite" 'PRAGMA integrity_check;' | grep -qx ok
+env_value() {
+  local file=$1 key=$2 count
+  count=$(grep -c "^${key}=" "$file" || true)
+  test "$count" -eq 1 || { echo "Environment key $key is missing or duplicated" >&2; return 1; }
+  sed -n "s/^${key}=//p" "$file"
+}
 
-systemctl stop outpost hysteria-server xray nginx 2>/dev/null || true
+valid_ipv4() {
+  local address=$1 first second third fourth
+  [[ "$address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  IFS=. read -r first second third fourth <<<"$address"
+  test "$first" -le 255 -a "$second" -le 255 -a "$third" -le 255 -a "$fourth" -le 255
+}
+
+current_env=/etc/outpost/outpost.env
+test -f "$current_env" || { echo "Current Outpost environment not found" >&2; exit 1; }
+current_domain=$(env_value "$current_env" OUTPOST_DOMAIN)
+current_public_ip=$(env_value "$current_env" OUTPOST_PUBLIC_IP)
+current_version=$(env_value "$current_env" OUTPOST_VERSION)
+current_admin_path=$(env_value "$current_env" OUTPOST_ADMIN_PATH)
+[[ "$current_domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]] || { echo "Current domain is invalid" >&2; exit 1; }
+valid_ipv4 "$current_public_ip" || { echo "Current public IPv4 is invalid" >&2; exit 1; }
+[[ "$current_version" =~ ^[0-9][0-9A-Za-z.-]{0,39}$ ]] || { echo "Current Outpost version is invalid" >&2; exit 1; }
+[[ "$current_admin_path" =~ ^/[a-zA-Z0-9._~-]{1,64}$ ]] || { echo "Current admin path is invalid" >&2; exit 1; }
+
+restore_tmp=$(mktemp -d /var/lib/outpost/restore.XXXXXX)
+armed=0
+cleanup() {
+  local status=$?
+  set +e
+  if test "$armed" -eq 1; then
+    systemctl stop outpost hysteria-server xray nginx >/dev/null 2>&1 || true
+    rm -f -- /var/lib/outpost/outpost.sqlite-wal /var/lib/outpost/outpost.sqlite-shm
+    install -o outpost -g outpost -m 0600 "$restore_tmp/current.sqlite" /var/lib/outpost/outpost.sqlite
+    install -o outpost -g outpost -m 0600 "$restore_tmp/current.master.key" /var/lib/outpost/master.key
+    install -o root -g outpost -m 0640 "$restore_tmp/current.outpost.env" /etc/outpost/outpost.env
+    install -o root -g outpost -m 0640 "$restore_tmp/current.hysteria.yaml" /etc/outpost/engines/hysteria.yaml
+    install -o root -g outpost -m 0640 "$restore_tmp/current.xray.json" /etc/outpost/engines/xray.json
+    install -o root -g root -m 0644 "$restore_tmp/current.nginx.conf" /etc/nginx/sites-available/outpost
+    nginx -t >/dev/null 2>&1 || true
+    test "$nginx_was_active" -eq 0 || systemctl start nginx >/dev/null 2>&1 || true
+    test "$outpost_was_active" -eq 0 || systemctl start outpost >/dev/null 2>&1 || true
+    test "$xray_was_active" -eq 0 || systemctl start xray >/dev/null 2>&1 || true
+    test "$hysteria_was_active" -eq 0 || systemctl start hysteria-server >/dev/null 2>&1 || true
+  fi
+  rm -rf "$restore_tmp"
+  test "$mode" != "--consume" || rm -f "$archive"
+  exit "$status"
+}
+trap cleanup EXIT
+
+plain_archive="$restore_tmp/archive.tar"
+if tar -tf "$archive" >/dev/null 2>&1; then
+  cp "$archive" "$plain_archive"
+else
+  age -d "$archive" >"$plain_archive"
+fi
+
+# Format 1 has a deliberately small, exact file set. Reject links, devices,
+# duplicate entries and paths outside that set before extracting as root.
+members="$restore_tmp/members.txt"
+tar -tf "$plain_archive" >"$members"
+while IFS= read -r member; do
+  case "$member" in
+    manifest.json|outpost.sqlite|master.key|nginx.conf|config/|config/outpost.env|config/engines/|config/engines/hysteria.yaml|config/engines/xray.json) ;;
+    *) echo "Unexpected backup entry: $member" >&2; exit 1 ;;
+  esac
+done <"$members"
+test -z "$(sort "$members" | uniq -d)" || { echo "Backup contains duplicate entries" >&2; exit 1; }
+tar -tvf "$plain_archive" | awk 'substr($1, 1, 1) != "-" && substr($1, 1, 1) != "d" { exit 1 }' || {
+  echo "Backup contains links or special files" >&2
+  exit 1
+}
+tar --extract --file "$plain_archive" --directory "$restore_tmp" --no-same-owner --no-same-permissions
+
+test -f "$restore_tmp/manifest.json" -a -f "$restore_tmp/outpost.sqlite" -a -f "$restore_tmp/master.key" -a -f "$restore_tmp/nginx.conf"
+test -f "$restore_tmp/config/outpost.env" -a -f "$restore_tmp/config/engines/hysteria.yaml" -a -f "$restore_tmp/config/engines/xray.json"
+test "$(wc -c <"$restore_tmp/master.key")" -eq 32 || { echo "Invalid master key" >&2; exit 1; }
+grep -Eq '^\{.*"format"[[:space:]]*:[[:space:]]*1([,}]).*\}$' "$restore_tmp/manifest.json" || { echo "Unsupported backup manifest" >&2; exit 1; }
+sqlite3 "$restore_tmp/outpost.sqlite" 'PRAGMA integrity_check;' | grep -qx ok
+test "$(sqlite3 "$restore_tmp/outpost.sqlite" 'SELECT COUNT(*) FROM owners;')" -eq 1 || { echo "Backup must contain exactly one owner" >&2; exit 1; }
+test "$(sqlite3 "$restore_tmp/outpost.sqlite" 'SELECT COUNT(*) FROM passkeys;')" -ge 1 || { echo "Backup does not contain a passkey" >&2; exit 1; }
+
+backup_env="$restore_tmp/config/outpost.env"
+backup_domain=$(env_value "$backup_env" OUTPOST_DOMAIN)
+xhttp_path=$(env_value "$backup_env" OUTPOST_XHTTP_PATH)
+grpc_service=$(env_value "$backup_env" OUTPOST_GRPC_SERVICE)
+stats_secret=$(env_value "$backup_env" OUTPOST_HYSTERIA_STATS_SECRET)
+test "$backup_domain" = "$current_domain" || { echo "Backup domain does not match this server" >&2; exit 1; }
+[[ "$xhttp_path" =~ ^/[a-zA-Z0-9._~-]{8,128}$ ]] || { echo "Backup XHTTP path is invalid" >&2; exit 1; }
+[[ "$grpc_service" =~ ^[a-zA-Z0-9._~-]{8,128}$ ]] || { echo "Backup gRPC service is invalid" >&2; exit 1; }
+[[ "$stats_secret" =~ ^[a-f0-9]{48}$ ]] || { echo "Backup Hysteria stats secret is invalid" >&2; exit 1; }
+
+grep -Fq "$xhttp_path" "$restore_tmp/config/engines/xray.json"
+grep -Fq "$grpc_service" "$restore_tmp/config/engines/xray.json"
+grep -Fq "$stats_secret" "$restore_tmp/config/engines/hysteria.yaml"
+grep -Fq "/etc/letsencrypt/live/$current_domain/" "$restore_tmp/config/engines/hysteria.yaml"
+/opt/outpost/engines/xray/current/xray run -test -config "$restore_tmp/config/engines/xray.json"
+
+cat >"$restore_tmp/outpost.env" <<ENV
+NODE_ENV=production
+OUTPOST_VERSION=$current_version
+OUTPOST_SETUP=0
+OUTPOST_PUBLIC_IP=$current_public_ip
+OUTPOST_DOMAIN=$current_domain
+OUTPOST_RP_ID=$current_domain
+OUTPOST_ORIGIN=https://$current_domain
+OUTPOST_ADMIN_PATH=$current_admin_path
+OUTPOST_XHTTP_PATH=$xhttp_path
+OUTPOST_GRPC_SERVICE=$grpc_service
+OUTPOST_LISTEN=127.0.0.1:8181
+OUTPOST_DATA_DIR=/var/lib/outpost
+OUTPOST_CONFIG_DIR=/etc/outpost
+OUTPOST_WEB_ROOT=/opt/outpost/current/public
+OUTPOST_RELEASE_PUBLIC_KEY=/opt/outpost/current/infra/release/minisign.pub
+OUTPOST_HYSTERIA_STATS_URL=http://127.0.0.1:9999
+OUTPOST_HYSTERIA_STATS_SECRET=$stats_secret
+OUTPOST_XRAY_BINARY=/opt/outpost/engines/xray/current/xray
+OUTPOST_XRAY_API=127.0.0.1:10085
+ENV
+
+sed \
+  -e "s|__DOMAIN__|$current_domain|g" \
+  -e "s|__PUBLIC_IP__|$current_public_ip|g" \
+  -e "s|__XHTTP_PATH__|$xhttp_path|g" \
+  -e "s|__GRPC_SERVICE__|$grpc_service|g" \
+  /opt/outpost/current/infra/nginx/outpost.conf.template >"$restore_tmp/nginx.current"
+
+if test "$mode" = "--check"; then
+  echo "Backup is valid for $current_domain"
+  exit 0
+fi
+
+nginx_was_active=0
+outpost_was_active=0
+xray_was_active=0
+hysteria_was_active=0
+systemctl is-active --quiet nginx && nginx_was_active=1
+systemctl is-active --quiet outpost && outpost_was_active=1
+systemctl is-active --quiet xray && xray_was_active=1
+systemctl is-active --quiet hysteria-server && hysteria_was_active=1
+
+sqlite3 /var/lib/outpost/outpost.sqlite ".backup '$restore_tmp/current.sqlite'"
+cp /var/lib/outpost/master.key "$restore_tmp/current.master.key"
+cp /etc/outpost/outpost.env "$restore_tmp/current.outpost.env"
+cp /etc/outpost/engines/hysteria.yaml "$restore_tmp/current.hysteria.yaml"
+cp /etc/outpost/engines/xray.json "$restore_tmp/current.xray.json"
+cp /etc/nginx/sites-available/outpost "$restore_tmp/current.nginx.conf"
+armed=1
+
+systemctl stop outpost hysteria-server xray nginx
+rm -f -- /var/lib/outpost/outpost.sqlite-wal /var/lib/outpost/outpost.sqlite-shm
 install -o outpost -g outpost -m 0600 "$restore_tmp/outpost.sqlite" /var/lib/outpost/outpost.sqlite
 install -o outpost -g outpost -m 0600 "$restore_tmp/master.key" /var/lib/outpost/master.key
-cp -a "$restore_tmp/config/." /etc/outpost/
-chown -R root:outpost /etc/outpost
-chmod 0750 /etc/outpost /etc/outpost/engines
-install -o root -g root -m 0644 "$restore_tmp/nginx.conf" /etc/nginx/sites-available/outpost
+install -o root -g outpost -m 0640 "$restore_tmp/outpost.env" /etc/outpost/outpost.env
+install -o root -g outpost -m 0640 "$restore_tmp/config/engines/hysteria.yaml" /etc/outpost/engines/hysteria.yaml
+install -o root -g outpost -m 0640 "$restore_tmp/config/engines/xray.json" /etc/outpost/engines/xray.json
+install -o root -g root -m 0644 "$restore_tmp/nginx.current" /etc/nginx/sites-available/outpost
+
+OUTPOST_DATABASE=/var/lib/outpost/outpost.sqlite /opt/outpost/current/bin/outpostctl migrate
 nginx -t
 systemctl start nginx outpost-agent outpost xray hysteria-server
+for service in nginx outpost outpost-agent xray hysteria-server; do systemctl is-active --quiet "$service"; done
+for _ in {1..30}; do
+  curl -fsS http://127.0.0.1:8181/readyz >/dev/null && break
+  sleep 1
+done
+curl -fsS http://127.0.0.1:8181/readyz >/dev/null
+
+armed=0
 echo "Backup restored and services started. Existing clients continue to work when the original domain points to this server."

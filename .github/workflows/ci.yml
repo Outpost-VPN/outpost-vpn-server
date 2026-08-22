@@ -16,7 +16,11 @@ jobs:
         with:
           bun-version: "1.3.13"
       - run: bun install --frozen-lockfile
-      - run: shellcheck infra/scripts/bootstrap infra/scripts/install infra/scripts/finalize-domain infra/scripts/outpostctl infra/scripts/deploy-remote infra/renewal-hooks/deploy/outpost
+      - run: |
+          shellcheck infra/scripts/bootstrap infra/scripts/install infra/scripts/finalize-domain \
+            infra/scripts/outpostctl infra/scripts/deploy-remote infra/scripts/apply-update \
+            infra/scripts/export-backup infra/scripts/export-backup-plain infra/scripts/restore-backup \
+            infra/renewal-hooks/deploy/outpost
       - run: bun run check
       - name: Validate generated subscriptions with native engines
         env:

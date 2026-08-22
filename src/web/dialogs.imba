@@ -554,7 +554,7 @@ tag outpost-connect-modal
 		.link-option strong d:block c:var(--outpost-text) fs:12px fw:800 lh:1.35
 		.link-option p mt:4px c:var(--outpost-muted) fs:10px lh:1.45
 		.browser-preview d:inline-flex ai:center g:5px mt:9px c:var(--outpost-brand) fs:9px fw:750 td:none
-		.browser-preview@hover td:underline
+		.browser-preview@hover span td:underline
 		.browser-preview@focus-visible ol:2px solid var(--outpost-brand-soft) olo:3px rd:4px
 		.browser-preview outpost-icon fs:11px
 		.detection-note d:grid gtc:18px minmax(0,1fr) ai:start g:9px mt:20px c:var(--outpost-muted)
@@ -593,7 +593,7 @@ tag outpost-connect-modal
 		.app-qr-frame s:182px p:7px
 		.profile-qr s:100% d:block
 		.profile-copy-link justify-self:center d:inline-flex ai:center g:6px p:0 bd:0 ol:none bgc:transparent c:var(--outpost-brand) ff:inherit fs:11px fw:750 cursor:pointer
-		.profile-copy-link@hover td:underline
+		.profile-copy-link@hover span td:underline
 		.profile-copy-link@focus-visible ol:2px solid var(--outpost-brand-soft)
 		.profile-copy-link outpost-icon fs:15px
 		.profile-copy miw:0
@@ -601,7 +601,8 @@ tag outpost-connect-modal
 		.profile-heading .app-icon s:38px fl:0 0 38px rd:10px object-fit:cover bgc:var(--outpost-white) bxs:0 3px 10px black/10
 		.profile-heading h3 m:0 c:var(--outpost-text) fs:20px
 		.app-source-link d:inline-flex ai:center g:4px c:var(--outpost-muted) fs:9px fw:650 td:none
-		.app-source-link@hover c:var(--outpost-brand) td:underline
+		.app-source-link@hover c:var(--outpost-brand)
+		.app-source-link@hover span td:underline
 		.app-source-link@focus-visible ol:2px solid var(--outpost-brand-soft) olo:3px rd:4px
 		.app-source-link outpost-icon fs:12px
 		.profile-copy > p mt:7px maw:500px c:var(--outpost-muted) fs:12px lh:1.5
@@ -1079,11 +1080,14 @@ tag outpost-backup-modal
 			<header.outpost-modal-header>
 				<span.outpost-modal-mark><outpost-icon name="download-simple">
 				<div>
-					<h2> t('Экспорт резервной копии')
-					<p> t('Настройки, ключи и данные подключений.')
+					<h2> t('backup.download')
+					<p> t('backup.card.subtitle')
 				<button.outpost-modal-close type="button" @click=store.close aria-label=t('action.close')><outpost-icon name="x">
 			<div.outpost-modal-body>
-				<p> t('Архив содержит настройки, ключи доступа, подключения, маршруты и историю. Сертификаты и файлы движков не включаются.')
+				<p> t('backup.includes')
+				<div.backup-domain>
+					<outpost-icon name="link-simple">
+					<span> t('backup.domain', {domain: store.data.system.domain})
 				<label.protect>
 					<input type="checkbox" bind=locked autofocus>
 					<span>
@@ -1109,12 +1113,18 @@ tag outpost-backup-modal
 					<div.outpost-error role="alert"> error
 				elif busy
 					<p.modal-status aria-live="polite"> locked ? t('Создаём зашифрованную копию…') : t('Создаём резервную копию…')
+				if locked
+					<p.password-note>
+						<outpost-icon name="key">
+						<span> t('backup.password_note')
 			<footer.outpost-modal-footer>
 				<div.modal-actions>
 					<button.outpost-button.quiet type="button" @click=store.close> t('action.cancel')
 					<button.outpost-button type="submit" disabled=(busy or !valid?)> busy ? t('Создаём…') : t('Создать и скачать')
 
 	css self
+		.backup-domain d:grid gtc:20px minmax(0,1fr) ai:start g:10px mt:18px p:12px 14px rd:10px bgc:var(--outpost-success-soft) c:var(--outpost-text) fs:12px lh:1.45
+		.backup-domain outpost-icon mt:1px c:var(--outpost-success) fs:18px
 		.protect d:grid gtc:20px minmax(0,1fr) ai:start g:11px mt:22px p:14px bd:1px solid var(--outpost-line) rd:11px bgc:var(--outpost-soft) cur:pointer
 		.protect input s:18px mt:1px accent-color:var(--outpost-brand)
 		.protect strong, .protect small d:block
@@ -1127,35 +1137,8 @@ tag outpost-backup-modal
 		.backup-warning d:grid gtc:20px minmax(0,1fr) ai:start g:10px mt:16px p:12px 14px rd:10px bgc:var(--outpost-soft) c:var(--outpost-muted) fs:12px lh:1.45
 		.backup-warning outpost-icon mt:1px c:var(--outpost-warning) fs:18px
 		.modal-status mt:16px c:var(--outpost-muted) fs:13px
-
-tag outpost-restore-modal
-	store = null
-
-	<self.outpost-modal-backdrop role="dialog" aria-modal="true" aria-label=t('Восстановление из резервной копии') tabindex="-1" @click.self=store.close>
-		<div.outpost-modal.restore-modal>
-			<header.outpost-modal-header>
-				<span.outpost-modal-mark><outpost-icon name="upload-simple">
-				<div>
-					<h2> t('Восстановление из копии')
-					<p> t('Восстановление выполняется на чистом сервере.')
-				<button.outpost-modal-close type="button" @click=store.close aria-label=t('action.close')><outpost-icon name="x">
-			<div.outpost-modal-body>
-				<p> t('Резервная копия восстанавливает доступ владельца, ключи, подключения и маршруты. Поэтому её можно загрузить только на чистый сервер — до настройки доступа.')
-				<div.restore-note>
-					<strong> t('На этом сервере восстановление заблокировано')
-					<span> t('Так активные ключи и подключения нельзя случайно заменить из панели.')
-				<pre> 'outpostctl restore /path/to/backup.age'
-				<p.help> t('Если копия защищена, на новом сервере команда запросит пароль, а после проверки запустит все службы.')
-			<footer.outpost-modal-footer>
-				<div.modal-actions><button.outpost-button type="button" @click=store.close> t('Понятно')
-
-	css self
-		.restore-modal w:min(620px,100%)
-		.restore-note mt:20px p:14px 16px rd:10px bgc:#FFF7E8 c:#754900
-		.restore-note strong, .restore-note span d:block
-		.restore-note span mt:5px fs:13px lh:1.45
-		pre mt:18px p:13px 15px rd:9px bgc:#101A2D c:#E7EDF7 fs:13px white-space:pre-wrap
-		.help mt:14px c:var(--outpost-muted) fs:13px lh:1.45
+		.password-note d:flex ai:flex-start g:8px mt:14px c:var(--outpost-muted) fs:11px lh:1.45
+		.password-note outpost-icon mt:1px fl:0 0 auto c:var(--outpost-brand) fs:14px
 
 tag outpost-domain-modal
 	store = null

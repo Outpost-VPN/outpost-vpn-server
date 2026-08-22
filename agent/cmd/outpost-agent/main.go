@@ -120,6 +120,13 @@ func execute(request policy.Request) (string, error) {
 			return exportBackup(request.Payload["output"].(string), passphrase)
 		}
 		return run("/opt/outpost/current/infra/scripts/export-backup-plain", request.Payload["output"].(string))
+	case "backup.restore":
+		passphrase, _ := request.Payload["passphrase"].(string)
+		return restoreBackup(
+			request.Payload["archive"].(string),
+			request.Payload["restoreId"].(string),
+			passphrase,
+		)
 	case "config.apply":
 		restart := "1"
 		if value, ok := request.Payload["restart"].(bool); ok && !value {
@@ -242,6 +249,58 @@ func exportBackup(output, passphrase string) (string, error) {
 		return "", err
 	}
 	return output, nil
+}
+
+func restoreBackup(archive, restoreID, passphrase string) (string, error) {
+	defer os.Remove(archive)
+	input, err := os.Open(archive)
+	if err != nil {
+		return "", err
+	}
+	defer input.Close()
+	plain := archive + ".plain.tar"
+	output, err := os.OpenFile(plain, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return "", err
+	}
+	cleanup := func() { _ = output.Close(); _ = os.Remove(plain) }
+	var source io.Reader = input
+	if passphrase != "" {
+		identity, identityErr := age.NewScryptIdentity(passphrase)
+		if identityErr != nil {
+			cleanup()
+			return "", identityErr
+		}
+		decrypted, decryptErr := age.Decrypt(input, identity)
+		if decryptErr != nil {
+			cleanup()
+			return "", errors.New("backup passphrase is incorrect or the archive is damaged")
+		}
+		source = decrypted
+	}
+	if _, err = io.Copy(output, source); err != nil {
+		cleanup()
+		return "", err
+	}
+	if err = output.Close(); err != nil {
+		_ = os.Remove(plain)
+		return "", err
+	}
+	script := "/opt/outpost/current/infra/scripts/restore-backup"
+	if checked, checkErr := run(script, plain, "--check"); checkErr != nil {
+		_ = os.Remove(plain)
+		return checked, checkErr
+	}
+	started, startErr := run(
+		"systemd-run", "--on-active=1s", "--collect", "--quiet",
+		"--unit", "outpost-restore-"+restoreID,
+		script, plain, "--consume",
+	)
+	if startErr != nil {
+		_ = os.Remove(plain)
+		return started, startErr
+	}
+	return "backup validated; restore scheduled", nil
 }
 
 func install(source, target string) (string, error) {

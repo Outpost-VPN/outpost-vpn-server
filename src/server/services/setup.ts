@@ -14,6 +14,7 @@ type Runner = typeof callAgent;
 
 export class SetupService {
   private finalizing = false;
+  private restoring = false;
 
   constructor(
     private auth: AuthService,
@@ -63,6 +64,38 @@ export class SetupService {
       };
     } finally {
       this.finalizing = false;
+    }
+  }
+
+  async restore(input: unknown) {
+    if (this.settings.setup) throw new ServiceError(409, "Сначала подключите постоянный домен");
+    if (this.restoring) throw new ServiceError(409, "Восстановление уже выполняется");
+    const body = z.object({
+      claimToken: z.string().min(1),
+      archive: z.string().min(1),
+      restoreId: z.string().uuid(),
+      passphrase: z.string().min(12).max(200).optional(),
+    }).strict().parse(input);
+    this.auth.authorizeClaim(body.claimToken);
+    this.restoring = true;
+    try {
+      await this.runner({
+        action: "backup.restore",
+        payload: {
+          archive: body.archive,
+          restoreId: body.restoreId,
+          ...(body.passphrase ? { passphrase: body.passphrase } : {}),
+        },
+      });
+      // The root script applies asynchronously. Keep the claim valid so a
+      // rolled-back restore can be retried; a successful restore brings back
+      // the owner and closes this endpoint automatically.
+      return { status: "restarting" as const };
+    } catch (error) {
+      console.error("[RESTORE] Не удалось проверить или запланировать восстановление:", error);
+      throw new ServiceError(400, "Резервная копия не прошла проверку — проверьте файл, домен и пароль");
+    } finally {
+      this.restoring = false;
     }
   }
 

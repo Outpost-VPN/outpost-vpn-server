@@ -77,4 +77,12 @@ describe("message translation", () => {
     expect(localize(duplicate, "zh-CN")).toBe("具有此条件的规则已存在。");
     expect(localize(duplicate, "fa")).toBe("قانونی با این شرط از قبل وجود دارد.");
   });
+
+  test("localizes restore validation failures with a stable code", () => {
+    const failure = "Резервная копия не прошла проверку — проверьте файл, домен и пароль";
+    expect(errorCode(failure, 400)).toBe("restore.validation_failed");
+    expect(localize(failure, "en")).toBe("The backup did not pass validation. Check the file, domain, and password.");
+    expect(localize(failure, "zh-CN")).toBe("备份未通过验证。请检查文件、域名和密码。");
+    expect(localize(failure, "fa")).toBe("پشتیبان تأیید نشد؛ فایل، دامنه و رمز را بررسی کنید.");
+  });
 });

@@ -120,4 +120,92 @@ describe("initial domain setup", () => {
     );
     await expect(setup.finalize({ domain: "proxy.example.com", language: "de" })).rejects.toThrow();
   });
+
+  test("allows a valid first-claim to schedule one browser restore", async () => {
+    const requests: unknown[] = [];
+    const claim = auth.issueClaim();
+    const setup = new SetupService(
+      auth,
+      { setup: false, publicIp: "203.0.113.42", adminPath: "/admin" },
+      async () => [],
+      async (request) => { requests.push(request); return { ok: true }; },
+    );
+    const restoreId = "12345678-1234-4234-8234-123456789abc";
+    await expect(setup.restore({
+      claimToken: claim.token,
+      archive: `/var/lib/outpost/incoming/restore-${restoreId}.age`,
+      restoreId,
+      passphrase: "correct horse battery staple",
+    })).resolves.toEqual({ status: "restarting" });
+    expect(requests).toEqual([{
+      action: "backup.restore",
+      payload: {
+        archive: `/var/lib/outpost/incoming/restore-${restoreId}.age`,
+        restoreId,
+        passphrase: "correct horse battery staple",
+      },
+    }]);
+    expect(fixture.db.setting<{ hash: string } | null>("setup_claim", null)?.hash).toBe(hashToken(claim.token));
+  });
+
+  test("rejects a parallel browser restore before it reaches root-agent", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const running = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const claim = auth.issueClaim();
+    const setup = new SetupService(
+      auth,
+      { setup: false, publicIp: "203.0.113.42", adminPath: "/admin" },
+      async () => [],
+      async () => { entered(); await running; return { ok: true }; },
+    );
+    const input = {
+      claimToken: claim.token,
+      archive: "/var/lib/outpost/incoming/restore-12345678-1234-4234-8234-123456789abc.tar",
+      restoreId: "12345678-1234-4234-8234-123456789abc",
+    };
+
+    const first = setup.restore(input);
+    await started;
+    const parallel = setup.restore(input);
+    await expect(parallel).rejects.toMatchObject({ status: 409 });
+    await expect(parallel).rejects.toThrow("уже выполняется");
+    release();
+    await first;
+  });
+
+  test("keeps the first-claim usable when root-agent rejects a backup", async () => {
+    const log = spyOn(console, "error").mockImplementation(() => {});
+    const claim = auth.issueClaim();
+    const setup = new SetupService(
+      auth,
+      { setup: false, publicIp: "203.0.113.42", adminPath: "/admin" },
+      async () => [],
+      async () => { throw new Error("invalid archive"); },
+    );
+
+    await expect(setup.restore({
+      claimToken: claim.token,
+      archive: "/var/lib/outpost/incoming/restore-12345678-1234-4234-8234-123456789abc.tar",
+      restoreId: "12345678-1234-4234-8234-123456789abc",
+    })).rejects.toMatchObject({ status: 400 });
+    expect(fixture.db.setting<{ hash: string } | null>("setup_claim", null)?.hash).toBe(hashToken(claim.token));
+    expect(log).toHaveBeenCalledTimes(1);
+    log.mockRestore();
+  });
+
+  test("rejects browser restore without the current first-claim", async () => {
+    const setup = new SetupService(
+      auth,
+      { setup: false, publicIp: "203.0.113.42", adminPath: "/admin" },
+      async () => [],
+      async () => ({ ok: true }),
+    );
+    await expect(setup.restore({
+      claimToken: "invalid",
+      archive: "/var/lib/outpost/incoming/restore-12345678-1234-4234-8234-123456789abc.tar",
+      restoreId: "12345678-1234-4234-8234-123456789abc",
+    })).rejects.toThrow("недействительно или истекло");
+  });
 });
