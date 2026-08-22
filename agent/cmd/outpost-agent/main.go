@@ -113,13 +113,8 @@ func execute(request policy.Request) (string, error) {
 			request.Payload["checksum"].(string),
 		)
 	case "update.apply":
-		return run(
-			"/opt/outpost/current/infra/scripts/apply-update",
-			request.Payload["bundle"].(string),
-			request.Payload["signature"].(string),
-			request.Payload["version"].(string),
-			request.Payload["operationId"].(string),
-		)
+		command := applicationUpdateCommand(request.Payload)
+		return run(command[0], command[1:]...)
 	case "backup.export":
 		if passphrase, ok := request.Payload["passphrase"].(string); ok {
 			return exportBackup(request.Payload["output"].(string), passphrase)
@@ -163,6 +158,19 @@ func execute(request policy.Request) (string, error) {
 		return installed + "; API hot-remove failed, loaded recovery config; " + restarted, restartErr
 	default:
 		return "", errors.New("unsupported action")
+	}
+}
+
+func applicationUpdateCommand(payload map[string]any) []string {
+	operationID := payload["operationId"].(string)
+	return []string{
+		"systemd-run", "--wait", "--collect", "--quiet",
+		"--unit", "outpost-update-" + operationID,
+		"/opt/outpost/current/infra/scripts/apply-update",
+		payload["bundle"].(string),
+		payload["signature"].(string),
+		payload["version"].(string),
+		operationID,
 	}
 }
 

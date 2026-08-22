@@ -24,7 +24,7 @@
 - pinned Hysteria/Xray с SHA-256;
 - отдельно публикуемый подписанный GeoIP/Geosite SRS bundle из официальных SagerNet sources: manifest, SHA-256, source commits, licenses, atomic switch и две rollback-версии;
 - immutable releases, migration snapshot и автоматический rollback обновления;
-- production web updater с stable/candidate channels, обнаружением GitHub Release, потоковой staging-загрузкой archive + Minisign, фиксированными asset URL/именами/размерами, двухэтапным подтверждением и ожиданием целевой версии после restart;
+- production web updater с stable/candidate channels, обнаружением GitHub Release и release notes, потоковой staging-загрузкой archive + Minisign, фиксированными asset URL/именами/размерами, подтверждением конкретной версии, persistent этапами операции и ожиданием целевой версии после restart;
 - переносимый age-backup из CLI и UI, restore на установке без владельца;
 - локальный stdio MCP с двухэтапным подтверждением опасных операций;
 - единое внутреннее именование `outpost` для служб, бинарников, CLI,
@@ -49,7 +49,7 @@
 ## Проверено локально и на VPS
 
 - TypeScript typecheck и Imba production build;
-- 173 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, signed application update discovery/staging/channel/version binding/restart recovery/bounded proxy timeout, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
+- 175 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, signed application update discovery/staging/release notes/channel/version binding/transient-unit restart recovery/persistent stages/bounded proxy timeout, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
 - сгенерированные Mihomo, sing-box и Xray JSON профили приняты нативными `mihomo 1.19.30`, `sing-box 1.13.19` и `xray 26.7.28`;
 - Go policy tests и статический linux/amd64 agent build;
 - standalone Linux server/CLI и macOS CLI builds;
@@ -82,15 +82,17 @@
 - первый прямой импорт универсального `/s/:token` в Everywhere 1.5 выявил регрессию `rc.12`: корневой URL всегда отдавал HTML-каталог, поэтому Mihomo завершался с `yaml: line 5: found character that cannot start any token`. Исправление `rc.13` вернуло User-Agent negotiation для `Everywhere/1.0 Clash/1.11.0`, сохранило HTML для браузера и explicit `/apps/:appId`; профильные тесты, полный `bun run check` и native subscription validation зелёные;
 - одноразовый signed bridge `rc.12 -> rc.14` завершён без rollback и потери данных. HostKey работает на `rc.14`, candidate-канал включён, службы и monitoring зелёные; следующий candidate можно впервые устанавливать через web updater;
 - полевой тест новой Everywhere-подписки выявил отдельную IPv6-регрессию: Brave Secure DNS передавал Mihomo готовые AAAA-адреса, а IPv4-only HostKey не имеет global IPv6/default route. Из-за этого Cloudflare/GitHub-сайты получали `ERR_CONNECTION_CLOSED`, хотя те же URL по IPv4 через Hysteria отвечали `200`. QUIC `UDP/443` при этом корректно попадал в системный `REJECT`. Локальный post-`rc.14` fix возвращает Mihomo TLS/HTTP/QUIC sniffing, добавляет fail-fast `::/0` для Mihomo/sing-box/Xray/INCY routes и проходит полный `bun run check`, native config validation и изолированный Hysteria-тест принудительного IPv6 literal с TLS SNI.
+- первый запуск `rc.14 → rc.16` из web-панели успешно проверил подпись, распаковал release, мигрировал данные и переключил symlink/environment, но завис после `systemctl restart outpost-agent`: updater был дочерним процессом самого agent service, поэтому systemd уничтожил его вместе с cgroup до запуска Outpost и фиксации результата. На HostKey точечно выполнены оставшиеся штатные шаги; сейчас `rc.16`, Outpost, root-agent, Nginx, Hysteria и Xray active, внутренние/внешние health/ready зелёные, SQLite `quick_check=ok`, incoming очищен, зависшая операция закрыта как completed. У пяти application units ноль warning/error; kernel warning — только штатные `UFW BLOCK` внешних сканов и IPv6 multicast;
+- post-`rc.16` исправление запускает `apply-update` в отдельном transient-unit systemd без привязанного pipe, сохраняет реальные этапы в SQLite и показывает их в модальном окне и Настройках после reload. Confirmation теперь подтверждает установку конкретной версии, показывает очищенные release notes из GitHub Release и не выносит Minisign в пользовательское решение; HTML-ответ 502 больше не маскируется ошибкой JSON parser. Полный локальный gate: 175 Bun tests/3657 assertions, TypeScript, production Imba build, Go tests, Bash syntax и ShellCheck.
 
 ## Оставшийся полевой gate
 
-Чистая signed-установка `rc.12`, browser setup и одноразовый bridge до `rc.14`
-на HostKey завершены. Первый прямой импорт закрыл в `rc.13` ошибку content
-negotiation, а следующий полевой тест нашёл post-`rc.14` IPv6/Secure DNS
-регрессию и подготовил локальное исправление. Следующий checkpoint — выпустить
-этот fix отдельным candidate и впервые применить его через web updater. После
-этого остаются:
+Чистая signed-установка, browser setup и обновление до `rc.16` на HostKey
+завершены. Полевые тесты закрыли content negotiation и IPv6/Secure DNS, но
+первое обновление через панель выявило self-termination updater при restart
+root-agent. Локальное исправление готово и полностью проверено. Следующий
+checkpoint — выпустить его отдельным candidate и повторить web update с `rc.16`,
+не выполняя ручных шагов. После этого остаются:
 
 1. прямой импорт минимум в один Mihomo-, sing-box- и Xray-клиент без обязательного browser step;
 2. Hysteria UDP/443, XHTTP и gRPC через общий TCP/443 и автоматическое переключение при недоступном UDP;
@@ -172,3 +174,18 @@ Archive и signature были корректными, временные фай�
 в карточке версии, показывает progress во время download/apply/restart и
 восстанавливает активное обновление из persistent `application_update` и
 `operations` после reload страницы или control-plane restart.
+
+## Исправление после 0.1.0-rc.16
+
+Полевое обновление переключило release на `rc.16`, но установленный updater
+оборвался на перезапуске root-agent: script выполнялся в cgroup agent service и
+был уничтожен самим `systemctl restart outpost-agent`. Исправление запускает
+script отдельным transient-unit systemd; его stdout остаётся в journal, поэтому
+смерть клиента `systemd-run` не создаёт SIGPIPE для продолжающегося обновления.
+
+Операция сохраняет в SQLite этапы проверки, снимка данных, установки,
+перезапуска и readiness. UI показывает GitHub release notes до подтверждения,
+а после подтверждения — фактическое сообщение и determinate progress. После
+reload Настройки читают тот же persistent stage. Следующий полевой gate —
+выпустить отдельный candidate и пройти обновление `rc.16 → candidate` целиком
+из панели.

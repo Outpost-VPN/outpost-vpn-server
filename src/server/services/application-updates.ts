@@ -20,6 +20,7 @@ export type ApplicationUpdateState = {
   checkedAt: string | null;
   publishedAt: string | null;
   size: number | null;
+  notes: string[];
   error: string | null;
 };
 
@@ -29,12 +30,14 @@ type GithubRelease = {
   draft: boolean;
   prerelease: boolean;
   published_at: string | null;
+  body?: string | null;
   assets: ReleaseAsset[];
 };
 type PreparedRelease = {
   version: string;
   tag: string;
   publishedAt: string | null;
+  notes: string[];
   archive: ReleaseAsset;
   signature: ReleaseAsset;
 };
@@ -133,6 +136,7 @@ export class ApplicationUpdateService {
         checkedAt,
         publishedAt: release.publishedAt,
         size: release.archive.size,
+        notes: release.notes,
         error: null,
         release,
       } : { ...emptyState(this.current, channel), status: "current", checkedAt };
@@ -275,6 +279,7 @@ function parseRelease(value: unknown, channel: UpdateChannel): PreparedRelease |
     version,
     tag: release.tag_name,
     publishedAt: typeof release.published_at === "string" ? release.published_at : null,
+    notes: releaseNotes(release.body),
     archive,
     signature,
   };
@@ -286,6 +291,7 @@ function validateStoredRelease(release: PreparedRelease) {
     draft: false,
     prerelease: isPrerelease(release.version),
     published_at: release.publishedAt,
+    body: storedReleaseNotes(release.notes).map((note) => `* ${note}`).join("\n"),
     assets: [release.archive, release.signature],
   }, "candidate");
   if (!parsed || parsed.version !== release.version) throw new ServiceError(409, "Данные обновления устарели — проверьте версии заново");
@@ -303,12 +309,21 @@ function emptyState(current: string, channel: UpdateChannel): ApplicationUpdateS
     checkedAt: null,
     publishedAt: null,
     size: null,
+    notes: [],
     error: null,
   };
 }
 
 function demoState(current: string, channel: UpdateChannel): ApplicationUpdateState {
-  return { ...emptyState(current, channel), status: "available", latest: "0.1.1", available: true, checkedAt: now(), size: 84_720_495 };
+  return {
+    ...emptyState(current, channel),
+    status: "available",
+    latest: "0.1.1",
+    available: true,
+    checkedAt: now(),
+    size: 84_720_495,
+    notes: ["Improved update reliability", "Clearer update progress in the web panel"],
+  };
 }
 
 function demoPrepared(current: string, channel: UpdateChannel): PreparedUpdate {
@@ -319,7 +334,35 @@ function demoPrepared(current: string, channel: UpdateChannel): PreparedUpdate {
 
 function publicState(state: StoredUpdate | ApplicationUpdateState): ApplicationUpdateState {
   const { status, channel, current, latest, available, ready, checkedAt, publishedAt, size, error } = state;
-  return { status, channel, current, latest, available, ready, checkedAt, publishedAt, size, error };
+  return { status, channel, current, latest, available, ready, checkedAt, publishedAt, size, notes: storedReleaseNotes(state.notes), error };
+}
+
+function releaseNotes(value: unknown) {
+  if (typeof value !== "string") return [];
+  return value.split(/\r?\n/)
+    .filter((line) => /^\s*[-*]\s+/.test(line))
+    .map((line) => cleanReleaseNote(line.replace(/^\s*[-*]\s+/, "")))
+    .filter((line): line is string => Boolean(line))
+    .slice(0, 8);
+}
+
+function storedReleaseNotes(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((note): note is string => typeof note === "string")
+    .map(cleanReleaseNote)
+    .filter((note): note is string => Boolean(note))
+    .slice(0, 8);
+}
+
+function cleanReleaseNote(value: string) {
+  const note = value
+    .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
+    .replace(/\s+by\s+@[A-Za-z0-9-]+\s+in\s+https?:\/\/\S+$/i, "")
+    .replace(/[`*_]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return note ? note.slice(0, 240) : "";
 }
 
 function secureDirectory(path: string) {

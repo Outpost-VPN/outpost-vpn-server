@@ -213,6 +213,14 @@ describe("release trust chain", () => {
     expect(updater).toContain('if test "$xray_was_active" = 1; then systemctl restart xray || true; fi');
   });
 
+  test("reports persistent application update stages", async () => {
+    const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
+    for (const stage of ["verifying", "snapshotting", "installing", "restarting", "readiness"]) {
+      expect(updater).toContain(`operation.update_${stage}`);
+    }
+    expect(updater).toContain("mark_progress 90 operation.update_readiness");
+  });
+
   test("reconciles versioned engine presets before the updated app becomes ready", async () => {
     const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
     const agent = updater.indexOf("systemctl is-active --quiet outpost-agent");

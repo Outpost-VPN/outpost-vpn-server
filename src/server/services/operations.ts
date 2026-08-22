@@ -35,8 +35,8 @@ const previews: Record<OperationAction, (payload: Record<string, unknown>, conte
   }),
   "nginx.reload": (payload) => ({ title: "Проверить и перечитать Nginx", changes: ["Сначала будет выполнен nginx -t"], payload }),
   "update.apply": (payload) => ({
-    title: "Обновить Outpost",
-    changes: ["Подпись Minisign будет проверена до распаковки", "Будет создан снимок SQLite", "Работающий движок перезапустится только при безопасном обновлении его системного пресета"],
+    title: `Обновить Outpost до ${String(payload.version ?? "")}`,
+    changes: ["Во время перезапуска панель ненадолго станет недоступна"],
     payload,
   }),
   "backup.export": (payload) => ({
@@ -135,7 +135,10 @@ export class OperationService {
 
   private async execute(id: string, action: OperationAction, payload: Record<string, unknown>, actor: string) {
     try {
-      this.update(id, "running", 15, action === "connection.rotate" ? "operation.credentials_rotating" : "operation.delegating");
+      const message = action === "connection.rotate" ? "operation.credentials_rotating"
+        : action === "update.apply" ? "operation.update_verifying"
+          : "operation.delegating";
+      this.update(id, "running", 15, message);
       const delegated = action === "update.apply" ? { ...payload, operationId: id } : payload;
       const result = action === "connection.rotate"
         ? await this.rotate(payload, actor)

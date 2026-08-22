@@ -39,7 +39,14 @@ mark_operation() {
   fi
 }
 
+mark_progress() {
+  test -n "$operation_id" || return 0
+  sqlite3 -cmd '.timeout 5000' /var/lib/outpost/outpost.sqlite \
+    "UPDATE operations SET status='running', progress=$1, message='$2', error=NULL, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='$operation_id' AND kind='update.apply';"
+}
+
 test -f "$env_file" || { echo "Outpost environment not found" >&2; exit 1; }
+mark_progress 15 operation.update_verifying
 cp "$env_file" "$env_previous"
 cp /etc/outpost/engines/hysteria.yaml "$hysteria_previous"
 cp /etc/outpost/engines/xray.json "$xray_previous"
@@ -52,6 +59,7 @@ version=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$source_dir/manifest.json"
 [[ "$version" =~ ^[0-9][0-9A-Za-z.-]{0,39}$ ]] || { echo "Invalid release manifest" >&2; exit 1; }
 test -z "$expected_version" || test "$version" = "$expected_version" || { echo "Release manifest version does not match requested update" >&2; exit 1; }
 (cd "$source_dir" && sha256sum -c SHA256SUMS)
+mark_progress 30 operation.update_snapshotting
 sed "s/^OUTPOST_VERSION=.*/OUTPOST_VERSION=$version/" "$env_file" >"$update_tmp/outpost.env.next"
 grep -qxF "OUTPOST_VERSION=$version" "$update_tmp/outpost.env.next"
 
@@ -63,6 +71,7 @@ install -d -o outpost -g outpost -m 0700 /var/lib/outpost/update-snapshots
 systemctl stop outpost
 sqlite3 /var/lib/outpost/outpost.sqlite 'PRAGMA wal_checkpoint(TRUNCATE);'
 sqlite3 /var/lib/outpost/outpost.sqlite ".backup '$snapshot'"
+mark_progress 50 operation.update_installing
 
 rollback() {
   ln -sfn "$previous" /opt/outpost/current
@@ -85,11 +94,13 @@ ln -sfn "$next" /opt/outpost/current
 install -o root -g outpost -m 0640 "$update_tmp/outpost.env.next" "$env_file"
 install -m 0644 "$next"/infra/systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
+mark_progress 75 operation.update_restarting
 systemctl restart outpost-agent
 systemctl is-active --quiet outpost-agent
 OUTPOST_RESTART_HYSTERIA="$hysteria_was_active" OUTPOST_RESTART_XRAY="$xray_was_active" \
   /opt/outpost/current/infra/scripts/outpostctl reconcile-engine-presets
 systemctl start outpost
+mark_progress 90 operation.update_readiness
 
 for _ in {1..30}; do
   curl -fsS http://127.0.0.1:8181/readyz >/dev/null && break
