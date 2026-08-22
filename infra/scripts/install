@@ -155,6 +155,7 @@ OUTPOST_LISTEN=127.0.0.1:8181
 OUTPOST_DATA_DIR=/var/lib/outpost
 OUTPOST_CONFIG_DIR=/etc/outpost
 OUTPOST_WEB_ROOT=/opt/outpost/current/public
+OUTPOST_RELEASE_PUBLIC_KEY=/opt/outpost/current/infra/release/minisign.pub
 OUTPOST_HYSTERIA_STATS_URL=http://127.0.0.1:9999
 OUTPOST_HYSTERIA_STATS_SECRET=$stats_secret
 OUTPOST_XRAY_BINARY=/opt/outpost/engines/xray/current/xray

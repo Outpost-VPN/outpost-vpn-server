@@ -8,9 +8,13 @@ describe("release trust chain", () => {
     const publicKey = (await Bun.file(resolve(root, "infra/release/minisign.pub")).text()).trim().split("\n").at(-1)!;
     const installer = await Bun.file(resolve(root, "infra/scripts/install")).text();
     const bootstrap = await Bun.file(resolve(root, "infra/scripts/bootstrap")).text();
+    const configuration = await Bun.file(resolve(root, "src/server/config.ts")).text();
     expect(publicKey).toMatch(/^RW[QRT][A-Za-z0-9+/]{53}$/);
     expect(installer).toContain(`release_public_key="${publicKey}"`);
     expect(bootstrap).toContain(`release_public_key="${publicKey}"`);
+    expect(installer).toContain("OUTPOST_RELEASE_PUBLIC_KEY=/opt/outpost/current/infra/release/minisign.pub");
+    expect(configuration).toContain('join(webRoot, "..", "infra/release/minisign.pub")');
+    expect(configuration).not.toContain('production ? "/opt/outpost/current/infra/release/minisign.pub"');
   });
 
   test("obtains the trusted IP certificate before exposing the setup application", async () => {

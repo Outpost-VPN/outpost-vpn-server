@@ -32,12 +32,14 @@ export class Store
 	trigger = null
 	selected = null
 	confirmation = null
+	hold = false
 	trafficPeriod = '30d'
 	security = null
 	pending = false
 	cycle = null
 	source = null
 	timer = null
+	watcher = null
 	connected = false
 	started = false
 
@@ -126,7 +128,21 @@ export class Store
 				error = issue.message
 		finally
 			loading = false
+			watch! if data
 			imba.commit!
+
+	def watch
+		const operation = (data.operations or []).find do(item) item.kind == 'update.apply'
+		const active = data.system.updates.status == 'preparing' or (operation and ['queued', 'running'].includes(operation.status))
+		if active
+			return if watcher
+			const tick = do
+				watcher = null
+				self.load!
+			watcher = window.setTimeout(tick, 1000)
+		elif watcher
+			window.clearTimeout(watcher)
+			watcher = null
 
 	def api method, url, body = undefined
 		const options = {method: method, headers: {'content-type': 'application/json', 'X-Outpost-Language': language!}}
@@ -218,6 +234,9 @@ export class Store
 		if timer
 			window.clearInterval(timer)
 			timer = null
+		if watcher
+			window.clearTimeout(watcher)
+			watcher = null
 		connected = false
 
 	def visibility
@@ -241,6 +260,7 @@ export class Store
 	def expire
 		stop!
 		pending = false
+		hold = false
 		data = null
 		security = null
 		loading = false
@@ -250,11 +270,13 @@ export class Store
 		trigger ||= window.document.activeElement
 		dialogKey++
 		dialog = name
+		hold = false
 		error = null
 		imba.commit!
 		window.requestAnimationFrame do self.focus!
 
 	def close
+		return if hold
 		const target = trigger
 		dialog = null
 		selected = null
