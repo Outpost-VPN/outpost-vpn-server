@@ -108,7 +108,7 @@ dpkg --compare-versions "$certbot_version" ge 5.4 || { echo "Certbot 5.4 or newe
 minisign -Vm "$release_archive" -x "$release_signature" -P "$release_public_key"
 
 release_tmp=$(mktemp -d)
-tar -xzf "$release_archive" -C "$release_tmp"
+tar --no-same-owner -xzf "$release_archive" -C "$release_tmp"
 release_dir=$(find "$release_tmp" -mindepth 1 -maxdepth 1 -type d -name 'outpost-*' -print -quit)
 if test -z "$release_dir" || ! test -f "$release_dir/manifest.json"; then
   echo "Invalid release archive" >&2
@@ -129,6 +129,7 @@ install -d -o root -g outpost -m 0750 /etc/outpost /etc/outpost/engines
 
 test ! -e "/opt/outpost/releases/$version" || { echo "Release $version already exists" >&2; exit 1; }
 cp -a "$release_dir" "/opt/outpost/releases/$version"
+chown -R -h root:root -- /opt/outpost/releases
 ln -sfn "/opt/outpost/releases/$version" /opt/outpost/current
 
 xhttp_path="/$(openssl rand -hex 18)"

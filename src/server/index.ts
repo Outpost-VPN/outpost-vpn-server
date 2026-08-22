@@ -24,10 +24,14 @@ const trafficTimer = setInterval(() => void app.collectTraffic(), 30_000);
 const monitoringTimer = setInterval(() => void app.collectMonitoring(), 60_000);
 const connectionSyncTimer = setInterval(() => void app.syncConnections(), 5_000);
 const rulesetTimer = setInterval(() => void app.refreshRulesets(), config.rulesetCheckHours * 60 * 60 * 1_000);
+const updateTimer = setInterval(() => void app.checkUpdates(), config.updateCheckHours * 60 * 60 * 1_000);
 void app.collectTraffic();
 void app.collectMonitoring();
 void app.syncConnections();
-if (config.production && !config.setup) void app.refreshRulesets();
+if (config.production && !config.setup) {
+  void app.refreshRulesets();
+  void app.checkUpdates();
+}
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
@@ -35,6 +39,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     clearInterval(monitoringTimer);
     clearInterval(connectionSyncTimer);
     clearInterval(rulesetTimer);
+    clearInterval(updateTimer);
     db.close();
     server.stop(true);
     process.exit(0);

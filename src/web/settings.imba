@@ -22,6 +22,8 @@ const channels = [
 	{id: 'candidate', label: 'settings.update.channel.candidate'}
 ]
 
+const preview = new URLSearchParams(window.location.search).get('preview')
+
 tag outpost-settings-select
 	value = ''
 	items = []
@@ -144,7 +146,10 @@ tag outpost-settings
 
 	get owner do store.data.auth.owner
 	get settings do store.data.settings or {interface: {}, system: {}}
-	get update do store.data.system.updates or {status: 'idle', available: false, current: store.data.system.version}
+	get update
+		const value = store.data.system.updates or {status: 'idle', available: false, current: store.data.system.version}
+		return {...value, status: 'current', available: false, ready: false, latest: value.current} if preview == 'current'
+		value
 	get tls do store.data.system.tls
 	get operation do (store.data.operations or []).find do(item) item.kind == 'update.apply'
 	get applying? do operation and ['queued', 'running'].includes(operation.status)
@@ -158,19 +163,13 @@ tag outpost-settings
 		return t(operation.message) if applying? and operation.message and operation.message.startsWith('operation.update_')
 		return t('settings.update.installing', {version: update.latest}) if applying?
 		return t('settings.update.preparing') if preparing?
-		return t('settings.update.checking') if busy == 'check'
 		return update.error if update.status == 'failed' and update.error
 		return operation.error or t('settings.update.failed') if failed?
 		return t('settings.update.completed') if completed?
 		return t('settings.update.available', {version: update.latest}) if update.available
 		return t('settings.update.current') if update.status == 'current'
 		t('settings.update.unchecked')
-
-	get action
-		return t('settings.update.loading') if preparing?
-		return t('settings.update.working') if applying?
-		return t('settings.update.retry') if update.status == 'failed' or failed?
-		t('settings.update.upgrade')
+	get install do "{t('settings.update.install')} {update.latest}"
 
 	def expiry
 		return tls.error or t('Не удалось проверить сертификат') unless tls.expiresAt
@@ -268,22 +267,25 @@ tag outpost-settings
 							<strong title=store.data.system.domain> store.data.system.domain
 						<span> "IPv4 {store.data.system.address or '—'} · HTTPS · TCP 443"
 				<div.system-item.version>
-					<span.system-mark><outpost-icon name="squares-four">
+					<span.system-mark>
+						<outpost-icon name="squares-four">
+						if update.available
+							<span.notice aria-hidden="true">
 					<div.system-copy>
 						<small> t('Версия панели')
 						<div.system-value>
 							<strong> store.data.system.version
-							if update.available or working?
-								<button.system-action type="button" disabled=(busy or working?) @click=upgrade aria-label=t('Обновить до {version}', {version: update.latest}) title=t('Обновить до {version}', {version: update.latest})>
-									<outpost-icon name=(working? ? 'spinner-gap' : update.status == 'failed' or failed? ? 'arrow-clockwise' : 'download-simple')>
-									<span> action
-							else
+							unless update.available or working?
 								<button.system-action type="button" disabled=busy @click=check>
 									<outpost-icon name=(busy == 'check' ? 'spinner-gap' : 'arrows-clockwise')>
-									<span> busy == 'check' ? t('settings.update.checking') : t('settings.update.check')
-						<span> summary
-						if working?
-							<progress.update-progress aria-label=summary>
+									<span> t('settings.update.check')
+						if update.available and !working?
+							<button.system-action.install type="button" disabled=busy @click=upgrade aria-label=install title=install>
+								<span> install
+						else
+							<span> summary
+					if working?
+						<progress.update-progress aria-label=summary>
 			<div.content-grid>
 				<section.outpost-card.settings-card>
 					<h2> t('Параметры интерфейса')
@@ -334,12 +336,13 @@ tag outpost-settings
 							<li>
 								<span> '2'
 								<div.step-copy>
-									<strong.domain-line>
-										<span> t('transfer.step.domain')
-										<button.panel-address type="button" aria-label=t('transfer.address_value', {domain: store.data.system.domain})>
+									<strong> t('transfer.step.domain')
+									<small.domain-hint>
+										<span> t('transfer.step.domain_hint_before')
+										<button.dns-record type="button" aria-label=t('transfer.address_value', {domain: store.data.system.domain})>
 											<span> t('transfer.address')
 											<span.address-tooltip.technical role="tooltip"> store.data.system.domain
-									<small> t('transfer.step.domain_hint')
+										<span> t('transfer.step.domain_hint_after')
 							<li>
 								<span> '3'
 								<div.step-copy>
@@ -362,6 +365,8 @@ tag outpost-settings
 		.system-mark s:42px d:grid ja:center rd:10px bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:20px
 		.system-item.warning .system-mark bgc:color-mix(in srgb, var(--outpost-warning) 10%, var(--outpost-white)) c:var(--outpost-warning)
 		.system-item.address .system-mark, .system-item.version .system-mark bgc:var(--outpost-auth-start) c:var(--outpost-brand)
+		.version .system-mark pos:relative
+		.version .system-mark .notice pos:absolute t:-3px r:-3px s:10px rd:full bd:2px solid var(--outpost-white) bgc:var(--outpost-danger)
 		.system-copy miw:0
 		.system-copy > small, .system-copy > strong, .system-copy > span d:block
 		.system-copy > small c:var(--outpost-muted) fs:10px
@@ -377,7 +382,10 @@ tag outpost-settings
 		.system-action@hover span td:underline
 		.system-action outpost-icon fs:12px
 		.system-action outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
-		.update-progress d:block w:100% h:4px mt:7px accent-color:var(--outpost-brand)
+		.system-copy > .install mt:3px
+		.version .update-progress
+			grid-column: 1 / -1
+		.update-progress d:block w:100% h:4px mt:1px accent-color:var(--outpost-brand)
 		.content-grid d:grid gtc:minmax(0,2.15fr) minmax(260px,.85fr) ai:stretch g:18px
 		.settings-card px:24px
 		.settings-card > h2 pt:22px pb:14px c:var(--outpost-navy) fs:17px fw:750
@@ -404,12 +412,12 @@ tag outpost-settings
 		.step-copy > strong, .step-copy > small d:block
 		.step-copy > strong c:var(--outpost-text) fs:11px fw:700 lh:1.35
 		.step-copy > small mt:3px c:var(--outpost-muted) fs:9px fw:500 lh:1.4
-		.domain-line d:flex flw:nowrap ai:baseline white-space:nowrap
-		.panel-address pos:relative d:inline-flex ml:4px p:0 bd:0 border-bottom:1px dotted var(--outpost-brand) bgc:transparent c:var(--outpost-brand) ff:inherit fs:inherit fw:inherit lh:inherit cur:help
-		.panel-address@hover c:var(--outpost-brand-dark)
-		.panel-address@focus-visible ol:2px solid var(--outpost-brand-soft) olo:2px rd:3px
+		.step-copy > small.domain-hint d:block
+		.dns-record pos:relative d:inline-flex mx:3px p:0 bd:0 border-bottom:1px dotted var(--outpost-brand) bgc:transparent c:var(--outpost-brand) ff:inherit fs:inherit fw:inherit lh:inherit cur:help
+		.dns-record@hover c:var(--outpost-brand-dark)
+		.dns-record@focus-visible ol:2px solid var(--outpost-brand-soft) olo:2px rd:3px
 		.address-tooltip pos:absolute b:calc(100% + 7px) l:0 zi:10 w:max-content maw:220px p:6px 8px rd:6px bgc:var(--outpost-navy) c:white fs:9px fw:600 lh:1.3 white-space:normal overflow-wrap:anywhere o:0 pe:none transform:translateY(3px) tween:opacity 140ms ease, transform 140ms ease
-		.panel-address@hover .address-tooltip, .panel-address@focus-visible .address-tooltip o:1 transform:translateY(0)
+		.dns-record@hover .address-tooltip, .dns-record@focus-visible .address-tooltip o:1 transform:translateY(0)
 		.transfer-result d:grid gtc:24px minmax(0,1fr) ai:center g:8px mt:auto p:10px rd:9px bgc:var(--outpost-success-soft) c:var(--outpost-text) fs:10px fw:650 lh:1.4
 		.transfer-result outpost-icon s:24px d:grid ja:center rd:full bgc:white c:var(--outpost-success) fs:15px
 		@media(max-width: 1280px)

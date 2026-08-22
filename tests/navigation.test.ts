@@ -26,6 +26,9 @@ describe("admin navigation", () => {
     expect(shell).not.toContain("outpost-system store");
     expect(shell).toContain("outpost-connections");
     expect(shell).toContain("outpost-protocols");
+    expect(shell).toContain("overflow-x: hidden");
+    expect(shell).toContain("get update? do store.data.system.updates.available");
+    expect(shell).toContain('<span.notice aria-hidden="true">');
     expect(app).not.toContain("./traffic.imba");
     expect(app).not.toContain("./system.imba");
     for (const action of ["Изменить аватар", "Свернуть", "Выберите аватар"]) {
@@ -84,10 +87,14 @@ describe("admin navigation", () => {
     expect(settings).toContain("operation.status == 'failed'");
     expect(settings).toContain("settings.update.completed");
     expect(settings).toContain("<progress.update-progress aria-label=summary>");
+    expect(settings).toContain("<span> t('settings.update.check')");
+    expect(settings).toContain("<button.system-action.install");
+    expect(settings).toContain('<span.notice aria-hidden="true">');
     expect(settings).toContain("status: 'failed', ready: false, error: issue.message");
     expect(dialogs).toContain("store.hold = true");
     expect(dialogs).toContain("item.id == operation.id");
     expect(dialogs).toContain('<progress value=progress max="100" aria-label=stage>');
     expect(dialogs).toContain("stage = t(current.message) if current.message");
+    expect(dialogs).toContain("window.location.reload!");
   });
 });

@@ -104,6 +104,11 @@ tag outpost-sidebar
 	def active path
 		store.path == path
 
+	get update? do store.data.system.updates.available
+	get label
+		return "{t('title.settings_short')}. {t('settings.update.available', {version: store.data.system.updates.latest})}" if update?
+		t('title.settings_short')
+
 	def check
 		return if checking
 		checking = true
@@ -137,9 +142,11 @@ tag outpost-sidebar
 				<button.utility-item type="button" .active=active('/access') @click=(do store.goto('/access')) aria-label=t('title.access') title=t('title.access') aria-current=(active('/access') ? 'page' : null)>
 					<span.utility-mark><outpost-icon name="shield-check">
 					<span> t('title.access')
-				<button.utility-item type="button" .active=active('/settings') @click=(do store.goto('/settings')) aria-label=t('title.settings_short') title=t('title.settings_short') aria-current=(active('/settings') ? 'page' : null)>
+				<button.utility-item type="button" .active=active('/settings') @click=(do store.goto('/settings')) aria-label=label title=label aria-current=(active('/settings') ? 'page' : null)>
 					<span.utility-mark><outpost-icon name="gear-six">
 					<span> t('title.settings_short')
+					if update?
+						<span.notice aria-hidden="true">
 			<div.server-health .pending=!serverHealthy?>
 				<div.health-state title=(serverIssue or t('Всё работает штатно'))>
 					<outpost-icon name=(serverHealthy? ? 'check-circle' : 'warning-circle')>
@@ -192,10 +199,11 @@ tag outpost-sidebar
 			position: relative
 			z-index: 50
 		.utility-nav d:grid g:4px p:12px 18px border-top:1px solid #CCD9ED
-		.utility-item h:48px d:grid gtc:36px minmax(0,1fr) ai:center g:12px px:12px bd:0 rd:11px bgc:transparent c:#17213D ta:left fs:14px fw:650 ol:none
+		.utility-item pos:relative h:48px d:grid gtc:36px minmax(0,1fr) ai:center g:12px px:12px bd:0 rd:11px bgc:transparent c:#17213D ta:left fs:14px fw:650 ol:none
 		.utility-item bgc@hover:#DFEAFB
 		.utility-item.active bgc:#D7E6FC c:#0B56D9
 		.utility-mark s:36px d:grid ja:center rd:10px bgc:#D7E6FC c:#0B56D9 fs:19px
+		.notice pos:absolute r:14px t:50% s:7px rd:full bgc:var(--outpost-danger) transform:translateY(-50%)
 		.server-health
 			height: 96px
 			display: flex
@@ -227,6 +235,7 @@ tag outpost-sidebar
 			.sidebar-footer margin-left: -12px; margin-right: -12px; margin-bottom: -18px
 			.utility-nav p:10px 12px
 			.utility-item gtc:1fr; justify-items:center; p:0
+			.notice t:8px r:8px transform:none
 			.server-health flex-direction:column; justify-content: center; gap: 8px; padding-left: 0; padding-right: 0
 			.server-health .health-state g:0
 		@media(max-width: 620px)
@@ -304,6 +313,7 @@ tag outpost-shell
 			height: 100vh
 			min-height: 0
 			margin-left: 300px
+			overflow-x: hidden
 			overflow-y: auto
 			overscroll-behavior: contain
 			padding: 60px clamp(32px, 5vw, 82px)

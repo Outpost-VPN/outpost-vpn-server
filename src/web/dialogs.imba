@@ -773,10 +773,13 @@ tag outpost-confirm-modal
 						break
 					throw new Error(current.error or t('Операция завершилась ошибкой')) if current and current.status == 'failed'
 				throw new Error(t('Операция выполняется дольше ожидаемого')) unless completed
+			if updating
+				store.hold = false
+				window.location.reload!
+				return
 			await store.load!
 			if action == 'engine.update' or action.startsWith('service.')
 				store.data.system = await store.api('GET', '/api/v1/system')
-			store.hold = false if updating
 			store.close!
 		catch issue
 			error = issue.message
@@ -819,7 +822,7 @@ tag outpost-confirm-modal
 					<button.outpost-button.quiet type="button" disabled=saving @click=store.close> t('action.cancel')
 					<button.outpost-button type="button" disabled=saving @click=confirm>
 						<outpost-icon name=(saving ? 'spinner-gap' : 'check')>
-						<span> saving and updating? ? t('settings.update.working') : updating? ? t('settings.update.upgrade') : t('action.confirm')
+						<span> saving and updating? ? t('settings.update.working') : updating? ? t('settings.update.install') : t('action.confirm')
 
 	css self
 		.update-release-notes d:grid g:12px

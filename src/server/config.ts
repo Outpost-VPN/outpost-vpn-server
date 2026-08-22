@@ -40,6 +40,7 @@ export const config = {
   rulesetPublicKey: process.env.OUTPOST_RULESET_PUBLIC_KEY
     ?? "RWQIi2TPWGnwEuL3XnEdwUYwcd194z3YYWM3sDdZNMhfEPf5xsFAk1FY",
   rulesetCheckHours: 24,
+  updateCheckHours: 6,
   sessionHours: 24 * 30,
 } as const;
 

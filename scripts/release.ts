@@ -55,7 +55,7 @@ for (const file of files) {
 writeFileSync(join(stage, "SHA256SUMS"), `${checksums.join("\n")}\n`);
 
 const archive = join(releaseRoot, `${basename(stage)}-linux-amd64.tar.gz`);
-await command(["tar", "-czf", archive, "-C", releaseRoot, basename(stage)]);
+await command(["tar", "--owner=0", "--group=0", "--numeric-owner", "-czf", archive, "-C", releaseRoot, basename(stage)]);
 const secretKey = process.env.OUTPOST_MINISIGN_SECRET_KEY;
 if (secretKey) {
   if (!existsSync(secretKey)) throw new Error(`Minisign secret key not found: ${secretKey}`);
