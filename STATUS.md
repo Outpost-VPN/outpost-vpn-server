@@ -84,16 +84,15 @@
 - полевой тест новой Everywhere-подписки выявил отдельную IPv6-регрессию: Brave Secure DNS передавал Mihomo готовые AAAA-адреса, а IPv4-only HostKey не имеет global IPv6/default route. Из-за этого Cloudflare/GitHub-сайты получали `ERR_CONNECTION_CLOSED`, хотя те же URL по IPv4 через Hysteria отвечали `200`. QUIC `UDP/443` при этом корректно попадал в системный `REJECT`. Локальный post-`rc.14` fix возвращает Mihomo TLS/HTTP/QUIC sniffing, добавляет fail-fast `::/0` для Mihomo/sing-box/Xray/INCY routes и проходит полный `bun run check`, native config validation и изолированный Hysteria-тест принудительного IPv6 literal с TLS SNI.
 - первый запуск `rc.14 → rc.16` из web-панели успешно проверил подпись, распаковал release, мигрировал данные и переключил symlink/environment, но завис после `systemctl restart outpost-agent`: updater был дочерним процессом самого agent service, поэтому systemd уничтожил его вместе с cgroup до запуска Outpost и фиксации результата. На HostKey точечно выполнены оставшиеся штатные шаги; сейчас `rc.16`, Outpost, root-agent, Nginx, Hysteria и Xray active, внутренние/внешние health/ready зелёные, SQLite `quick_check=ok`, incoming очищен, зависшая операция закрыта как completed. У пяти application units ноль warning/error; kernel warning — только штатные `UFW BLOCK` внешних сканов и IPv6 multicast;
 - post-`rc.16` исправление запускает `apply-update` в отдельном transient-unit systemd без привязанного pipe, сохраняет реальные этапы в SQLite и показывает их в модальном окне и Настройках после reload. Confirmation теперь подтверждает установку конкретной версии, показывает очищенные release notes из GitHub Release и не выносит Minisign в пользовательское решение; HTML-ответ 502 больше не маскируется ошибкой JSON parser. Полный локальный gate: 175 Bun tests/3657 assertions, TypeScript, production Imba build, Go tests, Bash syntax и ShellCheck.
+- signed `rc.17` установлен на HostKey; переход из `rc.16` ожидаемо потребовал ручного завершения после self-termination старого agent. Recovery сохранил данные, закрыл operation/audit, очистил incoming/temp и оставил все application services и monitoring зелёными на `rc.17`.
 
 ## Оставшийся полевой gate
 
-Чистая signed-установка, browser setup и обновление до `rc.16` на HostKey
-завершены. Полевые тесты закрыли content negotiation и IPv6/Secure DNS, но
-первое обновление через панель выявило self-termination updater при restart
-root-agent. Исправление подготовлено как `rc.17`; следующий checkpoint — пройти
-web update `rc.16 → rc.17` без ручных шагов. Поскольку новый UI lifecycle начнёт
-работать только после этого перехода, его полный gate выполняется следующим
-обновлением `rc.17 → rc.18`. После этого остаются:
+Чистая signed-установка, browser setup и восстановленный переход до `rc.17` на
+HostKey завершены. Полевые тесты закрыли content negotiation, IPv6/Secure DNS и
+bootstrap-ограничение старого updater. Следующий checkpoint — впервые пройти
+полный transient-unit и UI lifecycle обновлением `rc.17 → rc.18` без ручных
+шагов. После этого остаются:
 
 1. прямой импорт минимум в один Mihomo-, sing-box- и Xray-клиент без обязательного browser step;
 2. Hysteria UDP/443, XHTTP и gRPC через общий TCP/443 и автоматическое переключение при недоступном UDP;
@@ -191,3 +190,10 @@ reload Настройки читают тот же persistent stage. Следу�
 пройти обновление `rc.16 → rc.17` целиком из панели. На этом переходе запуск
 ещё выполняет код `rc.16`; полный новый UI lifecycle и восстановление состояния
 проверяются переходом `rc.17 → rc.18`.
+
+## Кандидат 0.1.0-rc.18
+
+Кандидат намеренно минимален: английский статус «Всё работает штатно» сокращён
+с `Everything is working normally` до `Everything works`. Он предназначен для
+первой полной полевой проверки нового updater и persistent progress переходом
+`rc.17 → rc.18`; HostKey до ручного запуска из панели остаётся на `rc.17`.

@@ -608,7 +608,7 @@ export const raw = {
     "Все события": "All events",
     "Все текущие правила уже опубликованы.": "All current rules are already published.",
     "Всё остальное": "Everything else",
-    "Всё работает штатно": "Everything is working normally",
+    "Всё работает штатно": "Everything works",
     "Вход без пароля с доверенных устройств": "Passwordless login from trusted devices",
     "Вход владельца": "Owner Login",
     "Вход, активные сеансы и интеграции": "Login, Active Sessions and Integrations",
