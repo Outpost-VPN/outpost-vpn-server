@@ -8,15 +8,21 @@ describe("admin navigation", () => {
     const auth = await Bun.file(new URL("../src/web/auth.imba", import.meta.url)).text();
     const shell = await Bun.file(new URL("../src/web/shell.imba", import.meta.url)).text();
     const store = await Bun.file(new URL("../src/web/store.imba", import.meta.url)).text();
+    const home = await Bun.file(new URL("../src/web/home.imba", import.meta.url)).text();
+    const connections = await Bun.file(new URL("../src/web/connections.imba", import.meta.url)).text();
     const routes = await Bun.file(new URL("../src/web/routes.imba", import.meta.url)).text();
     const dialogs = await Bun.file(new URL("../src/web/dialogs.imba", import.meta.url)).text();
+    const security = await Bun.file(new URL("../src/web/security.imba", import.meta.url)).text();
     const avatars = await Bun.file(new URL("../src/web/avatar-picker.imba", import.meta.url)).text();
 
     expect(store).toContain("['/', '/connections', '/protocols', '/routes', '/journal', '/access', '/settings', '/login', '/onboarding']");
     expect(app).not.toContain("path == '/setup'");
     expect(store).not.toContain("'/setup'");
     expect(auth).toContain("window.location.assign(onboarding)");
+    expect(auth).toContain("credential.authenticatorAttachment == 'cross-platform'");
+    expect(auth).toContain("t('auth.remote_hint')");
     expect(app).toContain("window.location.pathname.startsWith('/admin') and params.get('preview') == 'setup'");
+    expect(app).toContain("store.dialog == 'passkey'");
     for (const legacy of ["path.startsWith('/traffic')", "path.startsWith('/system')", "path.startsWith('/profile')"]) {
       expect(store).not.toContain(legacy);
     }
@@ -43,7 +49,24 @@ describe("admin navigation", () => {
     expect(routes).toContain("disabled=busy @click.stop=routes.drop(rule.id)");
     expect(routes).not.toContain("remove = null");
     expect(routes).not.toContain("remove=remove update=update");
+    expect(home).toContain('Math.max(0, Math.min(100, usage(connection) / maximum * 100))');
+    expect(home).toContain('<div.bar><span [w:{scale(connection)}%]>');
+    expect(home).not.toContain('style="width:{fmt.percent');
+    expect(home).toContain("<span> t('Активность')");
+    expect(home).toContain('<span.activity .online=fmt.connectionOnline(connection)');
+    expect(home).not.toContain("<span> t('Последняя активность')");
+    expect(home).not.toContain("<span> t('Статус')");
+    expect(connections).toContain('<outpost-icon name="dots-three">');
+    expect(connections).toContain('"/api/v1/connections/{connection.id}/suspend"');
+    expect(connections).toContain('"/api/v1/connections/{connection.id}/resume"');
+    expect(connections).toContain('disabled=!!connection.suspended_at @click.stop=(do use(connection))');
+    expect(connections).toContain("t('connection.edit')");
+    expect(connections).toContain("t('connection.delete')");
+    expect(dialogs).toContain("t('connection.delete_title')");
     expect(dialogs).not.toContain("connections.note");
+    expect(security).toContain("t('access.methods.title')");
+    expect(security).toContain("authenticatorAttachment: 'platform'");
+    expect(security).toContain("t('passkey.add.warning')");
     expect(existsSync(fileURLToPath(new URL("../src/web/traffic.imba", import.meta.url)))).toBeFalse();
     expect(existsSync(fileURLToPath(new URL("../src/web/system.imba", import.meta.url)))).toBeFalse();
     expect(existsSync(fileURLToPath(new URL("../src/web/people.imba", import.meta.url)))).toBeFalse();
@@ -88,6 +111,9 @@ describe("admin navigation", () => {
     expect(settings).toContain("settings.update.completed");
     expect(settings).toContain("<progress.update-progress aria-label=summary>");
     expect(settings).toContain("<span> t('settings.update.check')");
+    expect(settings).toContain('<outpost-icon name="arrows-clockwise" .checking=(busy == \'check\')>');
+    expect(settings).toContain(".system-action outpost-icon.checking animation:spin");
+    expect(settings).not.toContain("busy == 'check' ? 'spinner-gap' : 'arrows-clockwise'");
     expect(settings).toContain("<button.system-action.install");
     expect(settings).toContain('<span.notice aria-hidden="true">');
     expect(settings).toContain("status: 'failed', ready: false, error: issue.message");

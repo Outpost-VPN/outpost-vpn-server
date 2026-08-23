@@ -73,6 +73,7 @@ export class ConnectionService {
       first_seen_at: null,
       last_seen_at: null,
       absence_notified_at: null,
+      suspended_at: null,
       archived_at: null,
     };
     const token = this.token(connection.id, connection.generation);
@@ -127,7 +128,9 @@ export class ConnectionService {
 
   prepareRotation(id: string, actor = "owner") {
     const connection = this.get(id);
-    if (connection.status !== "active") throw new ServiceError(409, "Подключение пока нельзя перевыпустить");
+    if (connection.status !== "active" || connection.suspended_at) {
+      throw new ServiceError(409, "Подключение пока нельзя перевыпустить");
+    }
     const generation = connection.generation + 1;
     const timestamp = now();
     const token = this.token(id, generation);
@@ -141,6 +144,66 @@ export class ConnectionService {
       this.issue(id, generation, "pending");
       this.createJob(id, generation, connection.generation, "rotate", actor);
     })();
+    return this.get(id);
+  }
+
+  prepareSuspend(id: string, actor = "owner") {
+    const connection = this.get(id);
+    if (connection.status !== "active") throw new ServiceError(409, "Подключение пока нельзя приостановить");
+    const timestamp = now();
+    this.db.raw.transaction(() => {
+      this.db.raw.query(`
+        UPDATE connection_sync_jobs SET status = 'cancelled', completed_at = ?, updated_at = ?
+        WHERE connection_id = ? AND status IN ('pending', 'running', 'failed')
+      `).run(timestamp, timestamp, id);
+      this.db.raw.query("UPDATE connections SET suspended_at = COALESCE(suspended_at, ?), updated_at = ? WHERE id = ?")
+        .run(timestamp, timestamp, id);
+      this.db.raw.query("DELETE FROM connection_presence WHERE connection_id = ?").run(id);
+      this.createJob(id, connection.generation, null, "suspend", actor);
+    })();
+    return this.get(id);
+  }
+
+  prepareResume(id: string, actor = "owner") {
+    const connection = this.get(id);
+    if (connection.status !== "active") throw new ServiceError(409, "Подключение пока нельзя возобновить");
+    if (!connection.suspended_at) return connection;
+    const timestamp = now();
+    this.db.raw.transaction(() => {
+      this.db.raw.query(`
+        UPDATE connection_sync_jobs SET status = 'cancelled', completed_at = ?, updated_at = ?
+        WHERE connection_id = ? AND status IN ('pending', 'running', 'failed')
+      `).run(timestamp, timestamp, id);
+      this.createJob(id, connection.generation, null, "resume", actor);
+    })();
+    return this.get(id);
+  }
+
+  completeSuspend(id: string, actor: string) {
+    const connection = this.get(id);
+    const auditId = this.db.audit({ actor, action: "connections.suspend", resource: "connection", resourceId: id, after: { suspended_at: connection.suspended_at } });
+    this.journal.record("connection.suspended", {
+      actor,
+      auditId,
+      subjectType: "connection",
+      subjectId: id,
+      data: { connectionName: connection.name },
+    });
+  }
+
+  completeResume(id: string, actor: string) {
+    const connection = this.get(id);
+    const timestamp = now();
+    this.db.raw.query("UPDATE connections SET suspended_at = NULL, updated_at = ? WHERE id = ?")
+      .run(timestamp, id);
+    const auditId = this.db.audit({ actor, action: "connections.resume", resource: "connection", resourceId: id, before: connection, after: { suspended_at: null } });
+    this.journal.record("connection.resumed", {
+      actor,
+      auditId,
+      subjectType: "connection",
+      subjectId: id,
+      data: { connectionName: connection.name },
+    });
     return this.get(id);
   }
 
@@ -213,7 +276,8 @@ export class ConnectionService {
   bySubscriptionToken(token: string) {
     const connection = this.db.raw.query<Connection, string>(`
       SELECT ${connectionColumns()} FROM connections
-      WHERE subscription_token_hash = ? AND status = 'active' AND archived_at IS NULL
+      WHERE subscription_token_hash = ? AND status = 'active'
+        AND suspended_at IS NULL AND archived_at IS NULL
     `).get(hashToken(token));
     if (!connection) throw new ServiceError(404, "Ссылка не найдена или отозвана");
     return this.withPresence(connection);
@@ -251,7 +315,9 @@ export class ConnectionService {
   }
 
   activeCredentials() {
-    return this.list().filter((connection) => connection.status === "active").map((connection) => this.credentials(connection.id));
+    return this.list()
+      .filter((connection) => connection.status === "active" && !connection.suspended_at)
+      .map((connection) => this.credentials(connection.id));
   }
 
   authenticateHysteria(auth: string) {
@@ -259,7 +325,8 @@ export class ConnectionService {
       SELECT credentials.connection_id, credentials.engine, credentials.ciphertext, credentials.iv, credentials.tag
       FROM credentials JOIN connections ON connections.id = credentials.connection_id
       WHERE credentials.engine = 'hysteria' AND credentials.state = 'active'
-        AND connections.status = 'active' AND connections.archived_at IS NULL
+        AND connections.status = 'active' AND connections.suspended_at IS NULL
+        AND connections.archived_at IS NULL
     `).all();
     for (const row of rows) {
       const credential = decryptSecret<{ id: string; password: string }>(row);
@@ -301,7 +368,7 @@ export class ConnectionService {
     connectionId: string,
     generation: number,
     previous: number | null,
-    kind: "activate" | "rotate" | "revoke",
+    kind: "activate" | "rotate" | "revoke" | "suspend" | "resume",
     actor: string,
   ) {
     const timestamp = now();
@@ -334,7 +401,9 @@ export class ConnectionService {
       };
     }
     const statuses = rows.map((row) => row.status);
-    const status: PresenceStatus = statuses.includes("online")
+    const status: PresenceStatus = connection.suspended_at
+      ? "offline"
+      : statuses.includes("online")
       ? "online"
       : statuses.includes("unknown") || statuses.length === 0
         ? "unknown"
@@ -364,7 +433,7 @@ function connectionColumns() {
   return [
     "id", "serial", "name", "color", "avatar", "status", "generation",
     "created_at", "updated_at", "activated_at", "first_used_at", "last_fetched_at",
-    "first_seen_at", "last_seen_at", "absence_notified_at", "archived_at",
+    "first_seen_at", "last_seen_at", "absence_notified_at", "suspended_at", "archived_at",
   ].join(", ");
 }
 

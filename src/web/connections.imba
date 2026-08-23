@@ -4,6 +4,7 @@ import {fmt} from './context.imba'
 tag outpost-connections
 	store = null
 	open = []
+	busy = null
 
 	def use connection
 		store.selected = connection
@@ -13,9 +14,37 @@ tag outpost-connections
 		store.selected = null
 		store.open('connection')
 
-	def edit connection
+	def edit connection, event = null
+		close(event) if event
 		store.selected = connection
 		store.open('connection')
+
+	def remove connection, event
+		close(event)
+		store.selected = connection
+		store.open('archive')
+
+	def pause connection, event
+		close(event)
+		busy = connection.id
+		try
+			await store.mutate('POST', "/api/v1/connections/{connection.id}/suspend", {})
+		finally
+			busy = null
+			imba.commit!
+
+	def resume connection, event
+		close(event)
+		busy = connection.id
+		try
+			await store.mutate('POST', "/api/v1/connections/{connection.id}/resume", {})
+		finally
+			busy = null
+			imba.commit!
+
+	def close event
+		const menu = event.currentTarget.closest('details')
+		menu.removeAttribute('open') if menu
 
 	def shown connection
 		open.includes(connection.id)
@@ -35,6 +64,7 @@ tag outpost-connections
 		t('подключений')
 
 	def activity connection
+		return t('connection.suspended') if connection.suspended_at
 		return t('Готовим подключение') if connection.status == 'provisioning'
 		return t('Перевыпускаем ссылку') if connection.status == 'rotating'
 		return t('Архивируем') if connection.status == 'archiving'
@@ -102,7 +132,7 @@ tag outpost-connections
 								<outpost-avatar value=connection.avatar size="48">
 								<div>
 									<button.name-button type="button" @click.stop=(do edit(connection)) aria-label=t('Редактировать {name}', {name: connection.name})> connection.name
-									<small.connection-state .online=fmt.connectionOnline(connection) .pending=(connection.presence == 'unknown' or connection.status != 'active')> activity(connection)
+									<small.connection-state .online=fmt.connectionOnline(connection) .paused=!!connection.suspended_at .pending=(connection.presence == 'unknown' or connection.status != 'active')> activity(connection)
 							<div.trend>
 								<outpost-line-chart points=trend(connection) mini=true tone="neutral">
 							<div.traffic>
@@ -111,9 +141,27 @@ tag outpost-connections
 									<span.received> "↓ {fmt.bytes(traffic(connection)..download or 0)}"
 									<span.sent> "↑ {fmt.bytes(traffic(connection)..upload or 0)}"
 							<div.row-actions>
-								<button.table-action.primary type="button" @click.stop=(do use(connection))>
+								<button.table-action.primary type="button" disabled=!!connection.suspended_at @click.stop=(do use(connection))>
 									<outpost-icon name=(connection.status == 'active' ? 'qr-code' : 'spinner-gap')>
 									<span> t('Подписка')
+								<details.connection-menu>
+									<summary @click.stop aria-label=t('connection.actions') title=t('connection.actions')>
+										<outpost-icon name="dots-three">
+									<menu @click.stop>
+										if connection.suspended_at
+											<button type="button" disabled=(busy == connection.id) @click=(do(e) resume(connection, e))>
+												<outpost-icon name="play">
+												<span> t('connection.resume')
+										else
+											<button type="button" disabled=(busy == connection.id) @click=(do(e) pause(connection, e))>
+												<outpost-icon name="pause">
+												<span> t('connection.suspend')
+										<button type="button" @click=(do(e) edit(connection, e))>
+											<outpost-icon name="pencil-simple">
+											<span> t('connection.edit')
+										<button.danger type="button" @click=(do(e) remove(connection, e))>
+											<outpost-icon name="trash">
+											<span> t('connection.delete')
 						if shown(connection)
 							<div.connection-details ease>
 								<div.detail-chart>
@@ -136,7 +184,7 @@ tag outpost-connections
 		.table-head px:20px pb:13px c:var(--outpost-muted) fs:12px
 		.table-head span@first-child gc:1 / 3
 		.table-head span@last-child ta:right
-		.connection mb:12px of:hidden bd:1px solid var(--outpost-line) rd:13px bgc:var(--outpost-white) tween:border-color .16s ease, background .16s ease
+		.connection pos:relative mb:12px bd:1px solid var(--outpost-line) rd:13px bgc:var(--outpost-white) tween:border-color .16s ease, background .16s ease
 		.connection@hover bc:blue3
 		.connection-row miw:0 mih:86px px:20px bgc:transparent cursor:pointer tween:background .16s ease
 		.connection-row bgc@hover:color-mix(in srgb,var(--outpost-auth-start) 46%,var(--outpost-white))
@@ -152,6 +200,7 @@ tag outpost-connections
 		.connection-state::before content:'' s:7px fl:0 0 7px d:block rd:full bgc:currentColor
 		.connection-state.online c:var(--outpost-success)
 		.connection-state.pending c:var(--outpost-warning)
+		.connection-state.paused c:var(--outpost-warning)
 		.trend w:100% h:28px of:hidden
 		.trend > outpost-line-chart w:100% h:28px
 		.traffic d:flex fld:column ai:flex-start g:5px miw:0
@@ -159,12 +208,24 @@ tag outpost-connections
 		.traffic small d:flex g:10px c:var(--outpost-muted) fs:10px fw:600 ws:nowrap
 		.traffic small .received c:var(--outpost-brand)
 		.traffic small .sent c:var(--outpost-warning)
-		.row-actions d:flex ai:center jc:flex-end
+		.row-actions d:flex ai:center jc:flex-end g:8px
 		.table-action mih:38px d:inline-flex jai:center g:8px px:14px bd:1px solid var(--outpost-line) rd:9px bgc:var(--outpost-white) c:var(--outpost-muted) fs:12px fw:700 ws:nowrap
 		.table-action bg@hover:var(--outpost-soft) c@hover:var(--outpost-brand)
+		.table-action@disabled o:.55 pe:none
 		.table-action.primary bc:color-mix(in srgb,var(--outpost-brand) 25%,var(--outpost-line)) bgc:var(--outpost-brand-soft) c:var(--outpost-brand)
 		.table-action outpost-icon fs:16px
 		.table-action outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
+		.connection-menu pos:relative fl:0 0 auto
+		.connection-menu summary s:38px d:grid jai:center bd:1px solid var(--outpost-line) rd:9px bgc:var(--outpost-white) c:var(--outpost-muted) cur:pointer list-style:none
+		.connection-menu summary::-webkit-details-marker d:none
+		.connection-menu summary bgc@hover:var(--outpost-soft) c@hover:var(--outpost-brand)
+		.connection-menu[open] summary bc:color-mix(in srgb,var(--outpost-brand) 30%,var(--outpost-line)) c:var(--outpost-brand)
+		.connection-menu menu pos:absolute t:calc(100% + 7px) r:0 zi:20 miw:190px d:grid g:3px m:0 p:6px bd:1px solid var(--outpost-line) rd:10px bgc:var(--outpost-white) bxs:0 14px 36px black/12 list-style:none
+		.connection-menu menu button w:100% d:grid gtc:18px 1fr ai:center g:9px p:9px 10px bd:0 rd:7px bgc:transparent c:var(--outpost-text) fs:12px fw:650 ta:left ws:nowrap
+		.connection-menu menu button bgc@hover:var(--outpost-soft) c@hover:var(--outpost-brand)
+		.connection-menu menu button@disabled o:.5 pe:none
+		.connection-menu menu button.danger c:var(--outpost-danger)
+		.connection-menu outpost-icon fs:16px
 		.connection-details min-height:168px p:14px 22px 16px 52px bdt:1px solid var(--outpost-line) bgc:color-mix(in srgb,var(--outpost-soft) 44%,white) ease:180ms cubic-bezier(.22,1,.36,1) o@off:0 y@off:-4px
 		.detail-chart d:grid g:10px c:var(--outpost-brand)
 		.detail-chart > outpost-line-chart h:112px

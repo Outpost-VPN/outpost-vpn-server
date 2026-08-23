@@ -13,7 +13,7 @@ import type { Connection } from "../src/server/models";
 const connection: Connection = {
   id: "connection", serial: 1, name: "Мама", color: "blue", avatar: "avatar-8", status: "active", generation: 1,
   created_at: "", updated_at: "", activated_at: "", first_used_at: null, last_fetched_at: null,
-  first_seen_at: null, last_seen_at: null, absence_notified_at: null, archived_at: null,
+  first_seen_at: null, last_seen_at: null, absence_notified_at: null, suspended_at: null, archived_at: null,
 };
 
 const baseUrl = "https://proxy.example/s/token";
@@ -99,6 +99,9 @@ describe("versioned application catalog", () => {
     expect(html).toContain(`${baseUrl}/qr/everywhere.svg`);
     expect(html).toContain("Для опытных");
     expect(html).toContain("@media(max-width:640px)");
+    expect(html).toContain('.platform-tab[aria-selected=true]{z-index:1;color:#fff;background:#0b5bea}');
+    expect(html).toContain('gap:6px;overflow-x:auto');
+    expect(html).not.toContain('.platform-tab[aria-selected=true]{z-index:1;margin:-1px');
     expect(html).not.toContain("?format=");
     expect(html).not.toContain("Мама");
     expect(html).not.toContain("Streisand");

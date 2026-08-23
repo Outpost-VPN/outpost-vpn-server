@@ -62,6 +62,8 @@ const definitions: Record<string, EventDefinition> = {
   "connection.rotation_started": started("connections", "Перевыпуск credentials начат"),
   "connection.rotated": change("connections", "Credentials перевыпущены", connectionDescription, true),
   "connection.rotation_failed": failed("connections", "Не удалось перевыпустить credentials"),
+  "connection.suspended": change("connections", "Подключение приостановлено", connectionDescription, true),
+  "connection.resumed": change("connections", "Подключение возобновлено", connectionDescription),
   "connection.archived": change("connections", "Подключение перенесено в архив", connectionDescription, true),
   "connection.first_used": activity("connections", "Ссылка впервые использована", connectionDescription),
   "connection.first_seen": activity("connections", "Подключение впервые активно", connectionDescription),

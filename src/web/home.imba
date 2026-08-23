@@ -195,6 +195,14 @@ tag outpost-home-connections
 	def usage connection
 		fmt.connectionTraffic(connection, store.data.traffic)
 
+	def scale connection
+		Math.max(0, Math.min(100, usage(connection) / maximum * 100))
+
+	def activity connection
+		return t('connection.suspended') if connection.suspended_at
+		return t('Онлайн') if fmt.connectionOnline(connection)
+		fmt.seen(connection)
+
 	def connectionspage
 		store.goto('/connections')
 
@@ -207,8 +215,7 @@ tag outpost-home-connections
 		<div.columns>
 			<span> t('Подключение')
 			<span> t('Использовано')
-			<span> t('Последняя активность')
-			<span> t('Статус')
+			<span> t('Активность')
 		<div.rows>
 			for connection in connections
 				<button.user type="button" @click=connectionspage>
@@ -217,12 +224,9 @@ tag outpost-home-connections
 						<i .online=fmt.connectionOnline(connection)>
 						<strong> connection.name
 					<div.usage>
-						<div.bar><span style="width:{fmt.percent(usage(connection), maximum)}">
+						<div.bar><span [w:{scale(connection)}%]>
 						<b> fmt.bytes(usage(connection))
-					<span.activity> fmt.seen(connection)
-					<span.presence .online=fmt.connectionOnline(connection) .pending=(connection.presence == 'unknown')>
-						<i>
-						<span> fmt.connectionPresence(connection)
+					<span.activity .online=fmt.connectionOnline(connection) .paused=!!connection.suspended_at> activity(connection)
 
 	css self
 		d:block mt:18px px:24px pb:24px
@@ -230,7 +234,7 @@ tag outpost-home-connections
 		h2 c:color-mix(in srgb, var(--outpost-text) 58%, var(--outpost-muted)) fs:18px fw:750
 		.online-count d:inline-flex ai:center g:7px h:28px px:10px bd:1px solid color-mix(in srgb, var(--outpost-success) 30%, var(--outpost-success-soft)) rd:full bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:11px fw:700 white-space:nowrap
 		.online-count i s:7px d:block rd:full bgc:currentColor
-		.columns, .user gtc:minmax(220px,1.05fr) minmax(300px,1.25fr) minmax(100px,.55fr) minmax(180px,.8fr)
+		.columns, .user gtc:minmax(220px,1.05fr) minmax(300px,1.25fr) minmax(180px,.8fr)
 		.columns d:grid ai:center pt:12px pb:9px c:var(--outpost-muted) fs:10px
 		.user w:100% mih:56px d:grid ai:center p:0 bd:0 border-top:1px solid var(--outpost-line) bgc:transparent c:var(--outpost-text) ta:left
 		.user@hover bgc:var(--outpost-soft)
@@ -243,19 +247,16 @@ tag outpost-home-connections
 		.bar span h:100% d:block rd:full bgc:var(--outpost-brand)
 		.usage b c:var(--outpost-navy) fs:12px fw:700 white-space:nowrap
 		.activity c:var(--outpost-muted) fs:12px white-space:nowrap
-		.presence d:flex ai:center g:8px c:var(--outpost-muted) fs:12px white-space:nowrap
-		.presence i s:7px d:block rd:full bgc:currentColor
-		.presence.online c:var(--outpost-success)
-		.presence.pending c:var(--outpost-warning)
+		.activity.online c:var(--outpost-success)
+		.activity.paused c:var(--outpost-warning)
 		@media(max-width: 900px)
-			.columns, .user gtc:minmax(180px,1fr) minmax(220px,1fr) 90px 150px
+			.columns, .user gtc:minmax(180px,1fr) minmax(220px,1fr) 150px
 		@media(max-width: 720px)
-			.columns gtc:1fr 100px
+			.columns gtc:1fr 120px
 			.columns span:nth-child(2) d:none
-			.columns span:nth-child(3) d:none
-			.user gtc:1fr 100px
-			.usage, .activity d:none
-			.presence justify-self:end
+			.user gtc:1fr 120px
+			.usage d:none
+			.activity justify-self:end
 
 tag outpost-home
 	store = null

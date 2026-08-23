@@ -254,6 +254,16 @@ export class HttpApplication {
       const state = await this.connectionSync.rotate(ctx.params.id!, actor(ctx));
       return json(await this.connectionResult(state, ctx.language), state.state === "ready" ? 200 : 202);
     });
+    this.post("/api/v1/connections/:id/suspend", false, async (ctx) => {
+      ownerOnly(ctx);
+      const state = await this.connectionSync.suspend(ctx.params.id!, actor(ctx));
+      return json(await this.connectionResult(state, ctx.language), state.state === "suspended" ? 200 : 202);
+    });
+    this.post("/api/v1/connections/:id/resume", false, async (ctx) => {
+      ownerOnly(ctx);
+      const state = await this.connectionSync.resume(ctx.params.id!, actor(ctx));
+      return json(await this.connectionResult(state, ctx.language), state.state === "ready" ? 200 : 202);
+    });
 
     this.get("/api/v1/routes", false, () => json(this.routes.state()));
     this.get("/api/v1/routes/revisions", false, () => json({ revisions: this.routes.revisions() }));

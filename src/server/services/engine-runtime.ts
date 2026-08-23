@@ -75,7 +75,8 @@ export class EngineRuntimeService {
 
   private activeCredentials(options: { include?: { id: string; generation: number }; exclude?: string }) {
     const rows = this.db.raw.query<{ id: string; generation: number }, []>(`
-      SELECT id, generation FROM connections WHERE status = 'active' AND archived_at IS NULL
+      SELECT id, generation FROM connections
+      WHERE status = 'active' AND suspended_at IS NULL AND archived_at IS NULL
     `).all();
     const selected = rows
       .filter((connection) => connection.id !== options.exclude && connection.id !== options.include?.id)

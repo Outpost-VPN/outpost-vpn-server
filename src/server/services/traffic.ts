@@ -129,18 +129,41 @@ export class TrafficService {
     const connections = this.activeConnections();
     if (!connections.length) return;
     const existing = this.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM traffic_samples").get()?.count ?? 0;
-    if (existing) return;
+    if (existing) {
+      this.vary(connections.map((connection) => connection.id));
+      return;
+    }
     const cumulative = new Map<string, { upload: number; download: number }>();
     for (let i = 288; i >= 0; i -= 1) {
       const date = new Date(Date.now() - i * 5 * 60 * 1000);
-      for (const connection of connections) {
+      for (const [index, connection] of connections.entries()) {
+        const weight = [1, 0.58, 0.27][index] ?? Math.max(0.1, 0.2 / index);
         const value = cumulative.get(connection.id) ?? { upload: 0, download: 0 };
-        value.upload += Math.floor((1 + Math.sin(i / 17)) * 90_000);
-        value.download += Math.floor((1 + Math.cos(i / 13)) * 540_000);
+        value.upload += Math.floor((1 + Math.sin(i / 17)) * 90_000 * weight);
+        value.download += Math.floor((1 + Math.cos(i / 13)) * 540_000 * weight);
         cumulative.set(connection.id, value);
         this.recordCumulative(i % 2 ? "hysteria" : "xray", { connectionId: connection.id, ...value }, date);
       }
     }
+  }
+
+  private vary(connectionIds: string[]) {
+    if (connectionIds.length < 2) return;
+    const totals = connectionIds.map((id) => this.db.raw.query<{ total: number }, string>(`
+      SELECT COALESCE(SUM(upload + download), 0) AS total
+      FROM traffic_samples WHERE connection_id = ?
+    `).get(id)?.total ?? 0);
+    if (!totals[0] || !totals.every((total) => total === totals[0])) return;
+    this.db.raw.transaction(() => {
+      connectionIds.slice(1).forEach((id, offset) => {
+        const weight = [0.58, 0.27][offset] ?? Math.max(0.1, 0.2 / (offset + 1));
+        this.db.raw.query(`
+          UPDATE traffic_samples
+          SET upload = CAST(upload * ? AS INTEGER), download = CAST(download * ? AS INTEGER)
+          WHERE connection_id = ?
+        `).run(weight, weight, id);
+      });
+    })();
   }
 
   private updateHysteriaPresence(online: Record<string, number>, reference: Date) {
@@ -287,7 +310,8 @@ export class TrafficService {
       absence_notified_at: string | null;
     }, []>(`
       SELECT id, name, first_seen_at, last_seen_at, absence_notified_at
-      FROM connections WHERE status = 'active' AND archived_at IS NULL
+      FROM connections
+      WHERE status = 'active' AND suspended_at IS NULL AND archived_at IS NULL
     `).all();
   }
 

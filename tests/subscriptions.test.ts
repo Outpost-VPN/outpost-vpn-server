@@ -15,7 +15,7 @@ const context: SubscriptionContext = {
   connection: {
     id: "access", serial: 1, name: "iPhone", color: "blue", avatar: "avatar-person",
     status: "active", generation: 1, created_at: "", updated_at: "", activated_at: "", first_used_at: null, last_fetched_at: null,
-    first_seen_at: null, last_seen_at: null, absence_notified_at: null, archived_at: null,
+    first_seen_at: null, last_seen_at: null, absence_notified_at: null, suspended_at: null, archived_at: null,
   },
   credentials: {
     connectionId: "access",

@@ -277,7 +277,7 @@ tag outpost-settings
 							<strong> store.data.system.version
 							unless update.available or working?
 								<button.system-action type="button" disabled=busy @click=check>
-									<outpost-icon name=(busy == 'check' ? 'spinner-gap' : 'arrows-clockwise')>
+									<outpost-icon name="arrows-clockwise" .checking=(busy == 'check')>
 									<span> t('settings.update.check')
 						if update.available and !working?
 							<button.system-action.install type="button" disabled=busy @click=upgrade aria-label=install title=install>
@@ -380,8 +380,8 @@ tag outpost-settings
 		.system-action fl:0 0 auto d:inline-flex ai:center g:5px p:1px 0 bd:0 bgc:transparent c:var(--outpost-brand) fs:11px fw:650 lh:1.2 white-space:nowrap
 		.system-action c@hover:var(--outpost-brand-dark)
 		.system-action@hover span td:underline
-		.system-action outpost-icon fs:12px
-		.system-action outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
+		.system-action outpost-icon s:12px d:inline-grid ja:center fs:12px
+		.system-action outpost-icon.checking animation:spin 1s linear infinite
 		.system-copy > .install mt:3px
 		.version .update-progress
 			grid-column: 1 / -1

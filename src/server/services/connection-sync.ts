@@ -4,7 +4,7 @@ import type { EngineRuntimeService } from "./engine-runtime";
 import { ConnectionService, ServiceError } from "./connections";
 
 type ConnectionEngine = Pick<EngineRuntimeService, "add" | "rotate" | "revoke">;
-type SyncKind = "activate" | "rotate" | "revoke";
+type SyncKind = "activate" | "rotate" | "revoke" | "suspend" | "resume";
 type SyncStatus = "pending" | "running" | "failed" | "completed" | "cancelled";
 
 type SyncJob = {
@@ -53,8 +53,8 @@ export class ConnectionSyncService {
 
   async retry(connectionId: string) {
     const connection = this.connections.get(connectionId, true);
-    if (connection.status === "active" || connection.status === "archived") return this.connection(connectionId, true);
     const job = this.open(connectionId);
+    if (!job && (connection.status === "active" || connection.status === "archived")) return this.connection(connectionId, true);
     if (!job) throw new ServiceError(409, "Для подключения нет незавершённой задачи");
     const timestamp = now();
     this.db.raw.query(`
@@ -71,6 +71,25 @@ export class ConnectionSyncService {
     return this.connection(connectionId);
   }
 
+  async suspend(connectionId: string, actor = "owner") {
+    const connection = this.connections.get(connectionId);
+    if (connection.status !== "active") throw new ServiceError(409, "Подключение пока нельзя приостановить");
+    const job = this.open(connectionId);
+    if (!connection.suspended_at || job?.kind === "resume") this.connections.prepareSuspend(connectionId, actor);
+    if (this.open(connectionId)?.kind === "suspend") await this.run(connectionId);
+    return this.connection(connectionId);
+  }
+
+  async resume(connectionId: string, actor = "owner") {
+    const connection = this.connections.get(connectionId);
+    if (connection.status !== "active") throw new ServiceError(409, "Подключение пока нельзя возобновить");
+    if (!connection.suspended_at) return this.connection(connectionId);
+    const job = this.open(connectionId);
+    if (job?.kind !== "resume") this.connections.prepareResume(connectionId, actor);
+    await this.run(connectionId);
+    return this.connection(connectionId);
+  }
+
   async archive(connectionId: string, actor = "owner") {
     this.connections.prepareArchive(connectionId, actor);
     await this.run(connectionId);
@@ -82,6 +101,20 @@ export class ConnectionSyncService {
     const job = this.latest(connectionId);
     const failed = job?.status === "failed";
     if (connection.status === "active") {
+      if (connection.suspended_at) {
+        const state = job?.kind === "resume" && job.status !== "completed" && job.status !== "cancelled"
+          ? failed ? "resume_retry" as const : "resuming" as const
+          : job?.kind === "suspend" && job.status !== "completed" && job.status !== "cancelled"
+            ? failed ? "suspension_retry" as const : "suspending" as const
+            : "suspended" as const;
+        return {
+          state,
+          connection,
+          subscription: null,
+          error: failed ? job?.last_error ?? null : null,
+          nextAttemptAt: failed ? job?.next_attempt_at ?? null : null,
+        };
+      }
       return {
         state: "ready" as const,
         connection,
@@ -153,6 +186,8 @@ export class ConnectionSyncService {
       try {
         if (current.kind === "activate") await this.engines.add(connectionId, current.generation);
         if (current.kind === "rotate") await this.engines.rotate(connectionId, current.previous_generation!, current.generation);
+        if (current.kind === "suspend") await this.engines.revoke(connectionId, current.generation);
+        if (current.kind === "resume") await this.engines.add(connectionId, current.generation);
         if (current.kind === "revoke") {
           const active = this.db.raw.query<{ generation: number }, string>(`
             SELECT generation FROM credentials
@@ -161,6 +196,8 @@ export class ConnectionSyncService {
           if (active) await this.engines.revoke(connectionId, active.generation);
         }
         if (current.kind === "revoke") this.connections.completeArchive(connectionId, current.actor);
+        else if (current.kind === "suspend") this.connections.completeSuspend(connectionId, current.actor);
+        else if (current.kind === "resume") this.connections.completeResume(connectionId, current.actor);
         else this.connections.completeActivation(connectionId, current.generation, current.actor);
         this.complete(current.id);
         return true;
@@ -181,7 +218,7 @@ export class ConnectionSyncService {
     const timestamp = now();
     this.db.raw.query(`
       UPDATE connection_sync_jobs SET status = 'completed', next_attempt_at = ?,
-        last_error = NULL, completed_at = ?, updated_at = ? WHERE id = ?
+        last_error = NULL, completed_at = ?, updated_at = ? WHERE id = ? AND status = 'running'
     `).run(timestamp, timestamp, timestamp, id);
   }
 
