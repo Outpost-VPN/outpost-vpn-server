@@ -284,8 +284,6 @@ tag outpost-settings
 								<span> install
 						else
 							<span> summary
-					if working?
-						<progress.update-progress aria-label=summary>
 			<div.content-grid>
 				<section.outpost-card.settings-card>
 					<h2> t('Параметры интерфейса')
@@ -383,9 +381,6 @@ tag outpost-settings
 		.system-action outpost-icon s:12px d:inline-grid ja:center fs:12px
 		.system-action outpost-icon.checking animation:spin 1s linear infinite
 		.system-copy > .install mt:3px
-		.version .update-progress
-			grid-column: 1 / -1
-		.update-progress d:block w:100% h:4px mt:1px accent-color:var(--outpost-brand)
 		.content-grid d:grid gtc:minmax(0,2.15fr) minmax(260px,.85fr) ai:stretch g:18px
 		.settings-card px:24px
 		.settings-card > h2 pt:22px pb:14px c:var(--outpost-navy) fs:17px fw:750

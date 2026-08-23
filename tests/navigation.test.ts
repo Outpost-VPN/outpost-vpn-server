@@ -57,6 +57,11 @@ describe("admin navigation", () => {
     expect(home).not.toContain("<span> t('Последняя активность')");
     expect(home).not.toContain("<span> t('Статус')");
     expect(connections).toContain('<outpost-icon name="dots-three">');
+    expect(connections).toContain("<global @click.capture.outside=close @keydown.esc=close>");
+    expect(connections).toContain("above = trigger.bottom + height + 8 > window.innerHeight");
+    expect(connections).toContain(".connection-menu.above menu t:auto b:calc(100% + 7px)");
+    expect(connections).toContain(".connection-row miw:0 mih:86px px:20px rd:12px");
+    expect(connections).not.toContain("<details.connection-menu>");
     expect(connections).toContain('"/api/v1/connections/{connection.id}/suspend"');
     expect(connections).toContain('"/api/v1/connections/{connection.id}/resume"');
     expect(connections).toContain('disabled=!!connection.suspended_at @click.stop=(do use(connection))');
@@ -98,7 +103,7 @@ describe("admin navigation", () => {
     expect(journal).toContain("return if current == seen");
   });
 
-  test("keeps application update progress visible across page and control-plane reloads", async () => {
+  test("keeps application update progress in the confirmation dialog across reloads", async () => {
     const store = await Bun.file(new URL("../src/web/store.imba", import.meta.url)).text();
     const settings = await Bun.file(new URL("../src/web/settings.imba", import.meta.url)).text();
     const dialogs = await Bun.file(new URL("../src/web/dialogs.imba", import.meta.url)).text();
@@ -109,7 +114,7 @@ describe("admin navigation", () => {
     expect(settings).toContain("get applying?");
     expect(settings).toContain("operation.status == 'failed'");
     expect(settings).toContain("settings.update.completed");
-    expect(settings).toContain("<progress.update-progress aria-label=summary>");
+    expect(settings).not.toContain("<progress.update-progress");
     expect(settings).toContain("<span> t('settings.update.check')");
     expect(settings).toContain('<outpost-icon name="arrows-clockwise" .checking=(busy == \'check\')>');
     expect(settings).toContain(".system-action outpost-icon.checking animation:spin");

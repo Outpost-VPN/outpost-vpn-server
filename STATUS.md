@@ -272,3 +272,21 @@ cross-platform входа панель предлагает создать platf
 production Imba build, Go tests/vet/linux build, Bash/ShellCheck, actionlint,
 native Mihomo/Xray validation, реальный XHTTP+gRPC transport integration,
 dependency audit и gitleaks.
+
+## Кандидат 0.1.0-rc.22
+
+Кандидат содержит небольшой интерфейсный проход. Меню действий подключения
+переведено с нативного `details` на управляемый popover: оно закрывается по
+клику снаружи и `Escape`, а у нижнего края окна автоматически открывается
+вверх. Скругление строки подключения теперь корректно стыкуется с раскрытой
+статистикой.
+
+Дублирующий progress bar обновления убран из компактной карточки версии в
+Настройках. Фактический persistent progress, этапы и результат операции
+по-прежнему отображаются в подтверждающем диалоге и восстанавливаются после
+reload.
+
+Полный локальный gate проходит: 185 Bun tests/3757 assertions, TypeScript,
+production Imba build, Go tests/vet/linux build, Bash/ShellCheck, actionlint,
+native Mihomo/Xray validation, реальный XHTTP+gRPC transport integration,
+dependency audit и gitleaks.
