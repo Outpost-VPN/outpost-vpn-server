@@ -9,10 +9,11 @@ import { SystemService } from "../src/server/services/system";
 import { database } from "./helpers";
 
 describe("clean prerelease schema", () => {
-  test("keeps the initial migration and adds owner language separately", () => {
-    expect(migrations).toHaveLength(2);
+  test("keeps incremental owner language and connection suspension migrations", () => {
+    expect(migrations).toHaveLength(3);
     expect(migrations[0]).toMatchObject({ version: 1, name: "initial" });
     expect(migrations[1]).toMatchObject({ version: 2, name: "owner-language" });
+    expect(migrations[2]).toMatchObject({ version: 3, name: "connection-suspension" });
 
     const fixture = database();
     try {
@@ -31,7 +32,7 @@ describe("clean prerelease schema", () => {
       const columns = fixture.db.raw.query<{ name: string }, []>("PRAGMA table_info(connections)").all().map((row) => row.name);
       for (const column of [
         "id", "serial", "name", "color", "avatar", "status", "generation",
-        "created_at", "activated_at", "first_used_at", "last_fetched_at", "first_seen_at", "last_seen_at",
+        "created_at", "activated_at", "first_used_at", "last_fetched_at", "first_seen_at", "last_seen_at", "suspended_at",
       ]) expect(columns).toContain(column);
       for (const removed of ["note", "person_id", "role", "kind", "platform", "last_profile_format", "last_routes_version"]) {
         expect(columns).not.toContain(removed);
@@ -87,6 +88,20 @@ describe("clean prerelease schema", () => {
           VALUES ('owner', 'Europe/Moscow', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
         INSERT INTO settings (key, value_json, updated_at)
           VALUES ('interface', '{"language":"zh-CN","compact":true}', '2026-01-01T00:00:00.000Z');
+        INSERT INTO connections (
+          id, serial, name, color, avatar, status, generation, created_at, updated_at
+        ) VALUES (
+          'connection', 1, 'Legacy', 'blue', 'avatar-person', 'active', 1,
+          '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+        );
+        INSERT INTO connection_sync_jobs (
+          id, connection_id, generation, kind, status, actor, attempts,
+          next_attempt_at, created_at, updated_at, completed_at
+        ) VALUES (
+          'job', 'connection', 1, 'activate', 'completed', 'owner', 1,
+          '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z',
+          '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+        );
       `);
     } finally {
       legacy.close();
@@ -96,7 +111,10 @@ describe("clean prerelease schema", () => {
     try {
       expect(upgraded.raw.query<{ language: string }, []>("SELECT language FROM owners").get()?.language).toBe("zh-CN");
       expect(upgraded.setting("interface", {})).toEqual({ compact: true });
-      expect(upgraded.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM schema_migrations").get()?.version).toBe(2);
+      expect(upgraded.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM schema_migrations").get()?.version).toBe(3);
+      expect(upgraded.raw.query<{ kind: string; status: string }, []>("SELECT kind, status FROM connection_sync_jobs WHERE id = 'job'").get())
+        .toEqual({ kind: "activate", status: "completed" });
+      expect(upgraded.raw.query("PRAGMA foreign_key_check").all()).toEqual([]);
     } finally {
       upgraded.close();
       rmSync(directory, { recursive: true, force: true });

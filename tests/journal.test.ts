@@ -18,7 +18,8 @@ describe("typed journal", () => {
     expect(connectionColumns).toContain("activated_at");
     expect(connectionColumns).toContain("generation");
     expect(connectionColumns).not.toContain("platform");
-    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count).toBe(2);
+    expect(connectionColumns).toContain("suspended_at");
+    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count).toBe(3);
   });
 
   test("links a typed event to audit details and redacts secrets", () => {

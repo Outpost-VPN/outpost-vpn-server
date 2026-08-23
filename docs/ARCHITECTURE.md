@@ -22,9 +22,9 @@ SQLite в `/var/lib/outpost/outpost.sqlite` — источник истины д
 
 Credentials движков шифруются AES-256-GCM мастер-ключом `/var/lib/outpost/master.key`. Subscription token детерминированно выводится через HMAC-SHA-256 из мастер-ключа, connection ID и поколения credentials; в `connections` хранится только SHA-256 hash. Поэтому backup мастер-ключа сохраняет существующие URL, но база не содержит raw subscription tokens.
 
-`connection_sync_jobs` — персистентный outbox между SQLite и Xray. Созданное подключение сразу получает credentials и состояние `provisioning`; control plane пытается добавить один UUID одновременно в XHTTP и gRPC inbounds. Частичный hot-update исправляется полным recovery config. Сбой оставляет retryable job, а старт control plane возвращает прерванные `running` jobs в очередь.
+`connection_sync_jobs` — персистентный outbox между SQLite и Xray. Созданное подключение сразу получает credentials и состояние `provisioning`; control plane пытается добавить один UUID одновременно в XHTTP и gRPC inbounds. Через ту же очередь проходят приостановка и возобновление: ссылка и Hysteria auth блокируются в SQLite до завершения удаления UUID из обоих Xray inbounds, а при возобновлении открываются только после успешного возврата UUID. Частичный hot-update исправляется полным recovery config. Сбой оставляет retryable job, а старт control plane возвращает прерванные `running` jobs в очередь.
 
-Состояния подключения: `provisioning`, `active`, `rotating`, `archiving`, `archived`. В каждый момент действует только одно поколение credentials. Ротация немедленно инвалидирует прежнюю ссылку и Hysteria auth, затем персистентная задача заменяет credentials в движках. Архивирование также сразу закрывает ссылку, а очистка движков может безопасно повторяться.
+Состояния подключения: `provisioning`, `active`, `rotating`, `archiving`, `archived`; отдельный `suspended_at` временно блокирует активное подключение без замены его ссылки. В каждый момент действует только одно поколение credentials. Ротация немедленно инвалидирует прежнюю ссылку и Hysteria auth, затем персистентная задача заменяет credentials в движках. Приостановка, возобновление и архивирование используют повторяемые задачи, поэтому перезапуск control plane не оставляет SQLite и Xray в разных желаемых состояниях.
 
 ### Audit и пользовательский журнал
 

@@ -63,6 +63,8 @@ tag App
 				<outpost-domain-modal store=store>
 			elif store.dialog == 'token'
 				<outpost-token-modal key=store.dialogKey store=store>
+			elif store.dialog == 'passkey'
+				<outpost-passkey-modal key=store.dialogKey store=store>
 			elif store.dialog == 'security'
 				<outpost-security-modal store=store>
 

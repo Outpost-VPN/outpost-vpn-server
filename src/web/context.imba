@@ -85,8 +85,9 @@ export const fmt = {
 		const row = fmt.connectionTrafficRow(connection, traffic)
 		row ? row.upload + row.download : 0
 	connectionOnline: do(connection)
-		connection.presence == 'online'
+		!connection.suspended_at and connection.presence == 'online'
 	connectionPresence: do(connection)
+		return t('connection.suspended') if connection.suspended_at
 		return t('Онлайн') if fmt.connectionOnline(connection)
 		return t('Готовим') if connection.status == 'provisioning'
 		return t('Перевыпускаем') if connection.status == 'rotating'

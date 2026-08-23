@@ -137,9 +137,13 @@ tag outpost-login
 		try
 			const start = await store.api('POST', '/api/v1/auth/login/options', {})
 			const credential = await window.navigator.credentials.get({publicKey: webauthn.decode(start.options)})
+			const remote = credential.authenticatorAttachment == 'cross-platform'
 			await store.api('POST', '/api/v1/auth/login/verify', {challengeId: start.challengeId, response: webauthn.json(credential)})
 			store.goto('/')
 			await store.load!
+			if remote
+				store.selected = {mode: 'device'}
+				store.open('passkey')
 		catch issue
 			message = issue.message
 		finally
@@ -157,6 +161,9 @@ tag outpost-login
 				<button.outpost-button disabled=busy @click=login>
 					<outpost-icon name=(busy ? 'spinner-gap' : 'fingerprint')>
 					<span> busy ? t('auth.wait') : t('auth.button')
+				<div.remote>
+					<outpost-icon name="devices">
+					<span> t('auth.remote_hint')
 				<div.trust>
 					<outpost-icon name="shield-check">
 					<span> t('auth.secure')
@@ -173,6 +180,8 @@ tag outpost-login
 		.auth-panel > .outpost-error mt:22px
 		.auth-panel > .outpost-button w:100% mt:30px
 		.auth-panel > .outpost-button outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
+		.remote d:flex ai:flex-start g:10px mt:16px p:12px 14px rd:10px bgc:var(--outpost-soft) c:var(--outpost-text) fs:12px lh:1.5
+		.remote outpost-icon mt:1px fl:0 0 auto c:var(--outpost-brand) fs:18px
 		.trust d:flex ai:flex-start g:9px mt:18px c:var(--outpost-muted) fs:13px lh:1.45
 		.trust outpost-icon mt:2px c:var(--outpost-success) fs:17px
 		.recovery mt:32px pt:24px border-top:1px solid var(--outpost-line) c:var(--outpost-muted) fs:13px

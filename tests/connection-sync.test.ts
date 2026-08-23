@@ -54,6 +54,69 @@ describe("persistent connection provisioning", () => {
     expect(sync.list()[0]).toMatchObject({ kind: "activate", status: "completed", attempts: 1 });
   });
 
+  test("suspends and resumes a connection without changing its link", async () => {
+    const created = connections.create({ name: "Ребёнок" });
+    const ready = await sync.activate(created.id);
+    const url = ready.subscription!.url;
+    const token = url.split("/").at(-1)!;
+    const password = connections.credentials(created.id).hysteria.password;
+    const observed = new Date().toISOString();
+    fixture.db.raw.query(`
+      INSERT INTO connection_presence (
+        connection_id, engine, status, signal, connections, observed_at, changed_at
+      ) VALUES (?, 'hysteria', 'online', 'connections', 1, ?, ?)
+    `).run(created.id, observed, observed);
+    expect(connections.get(created.id).presence?.status).toBe("online");
+
+    const suspended = await sync.suspend(created.id);
+    expect(suspended.state).toBe("suspended");
+    expect(suspended.subscription).toBeNull();
+    expect(suspended.connection.suspended_at).not.toBeNull();
+    expect(engine.revokeCalls).toBe(1);
+    expect(sync.list().find((job) => job.kind === "suspend")).toMatchObject({ status: "completed", attempts: 1 });
+    expect(() => connections.bySubscriptionToken(token)).toThrow("Ссылка не найдена");
+    expect(connections.authenticateHysteria(password).ok).toBeFalse();
+
+    const resumed = await sync.resume(created.id);
+    expect(resumed.state).toBe("ready");
+    expect(resumed.connection.suspended_at).toBeNull();
+    expect(resumed.subscription!.url).toBe(url);
+    expect(engine.addCalls).toBe(2);
+    expect(sync.list().find((job) => job.kind === "resume")).toMatchObject({ status: "completed", attempts: 1 });
+    expect(connections.bySubscriptionToken(token).id).toBe(created.id);
+    expect(connections.authenticateHysteria(password).ok).toBeTrue();
+    expect(connections.get(created.id).presence?.status).toBe("unknown");
+  });
+
+  test("retries interrupted suspension changes without exposing a partial resume", async () => {
+    const created = connections.create({ name: "Временный доступ" });
+    const ready = await sync.activate(created.id);
+    const token = ready.subscription!.url.split("/").at(-1)!;
+
+    engine.failRevoke = true;
+    const pendingSuspend = await sync.suspend(created.id);
+    expect(pendingSuspend).toMatchObject({ state: "suspension_retry", error: "xray revoke unavailable" });
+    expect(connections.get(created.id).suspended_at).not.toBeNull();
+    expect(() => connections.bySubscriptionToken(token)).toThrow("Ссылка не найдена");
+
+    engine.failRevoke = false;
+    const suspended = await sync.retry(created.id);
+    expect(suspended.state).toBe("suspended");
+    expect(sync.list().find((job) => job.kind === "suspend")).toMatchObject({ status: "completed", attempts: 2 });
+
+    engine.failAdd = true;
+    const pendingResume = await sync.resume(created.id);
+    expect(pendingResume).toMatchObject({ state: "resume_retry", error: "one Xray inbound failed" });
+    expect(connections.get(created.id).suspended_at).not.toBeNull();
+    expect(() => connections.bySubscriptionToken(token)).toThrow("Ссылка не найдена");
+
+    engine.failAdd = false;
+    const resumed = await sync.retry(created.id);
+    expect(resumed.state).toBe("ready");
+    expect(resumed.subscription!.url.split("/").at(-1)).toBe(token);
+    expect(sync.list().find((job) => job.kind === "resume")).toMatchObject({ status: "completed", attempts: 2 });
+  });
+
   test("keeps provisioning persistent after an engine failure and retries", async () => {
     const created = connections.create({ name: "Тестовое подключение" });
     engine.failAdd = true;

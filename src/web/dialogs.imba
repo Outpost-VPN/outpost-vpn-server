@@ -140,8 +140,8 @@ tag outpost-connection-modal
 						<div.modal-actions>
 							if editing?
 								<button.outpost-button.quiet.archive-action type="button" @click=archive>
-									<outpost-icon name="archive">
-									<span> t('Архивировать')
+									<outpost-icon name="trash">
+									<span> t('connection.delete')
 							<button.outpost-button.quiet type="button" @click=close> t('action.cancel')
 							<button.outpost-button type="button" disabled=(saving or !valid?) @click=save>
 								<outpost-icon name=(saving ? 'spinner-gap' : 'check')>
@@ -685,22 +685,22 @@ tag outpost-archive-modal
 		finally
 			saving = false
 
-	<self.outpost-modal-backdrop role="dialog" aria-modal="true" aria-label=t('Архивирование подключения') tabindex="-1" @click.self=store.close>
+	<self.outpost-modal-backdrop role="dialog" aria-modal="true" aria-label=t('connection.delete_title') tabindex="-1" @click.self=store.close>
 		<div.outpost-modal>
 			<header.outpost-modal-header>
-				<span.outpost-modal-mark.danger><outpost-icon name="archive">
+				<span.outpost-modal-mark.danger><outpost-icon name="trash">
 				<div>
-					<h2> t('Архивировать подключение?')
-					<p> t('Ссылка сразу перестанет работать.')
+					<h2> t('connection.delete_title')
+					<p> t('connection.delete_hint')
 				<button.outpost-modal-close type="button" @click=store.close aria-label=t('action.close')><outpost-icon name="x">
 			<div.outpost-modal-body>
-				<p> t('«{name}» исчезнет из активного списка. Credentials будут удалены из протоколов, а история останется в журнале.', {name: store.selected and store.selected.name})
+				<p> t('connection.delete_description', {name: store.selected and store.selected.name})
 				if store.error
 					<div.outpost-error> store.error
 			<footer.outpost-modal-footer>
 				<div.modal-actions>
 					<button.outpost-button.quiet type="button" @click=store.close> t('action.cancel')
-					<button.outpost-button.danger type="button" disabled=saving @click=archive> saving ? t('Архивируем…') : t('Архивировать')
+					<button.outpost-button.danger type="button" disabled=saving @click=archive> saving ? t('connection.deleting') : t('connection.delete')
 
 	css
 		.outpost-error margin-top: 14px

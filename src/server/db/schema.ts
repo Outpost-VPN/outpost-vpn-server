@@ -301,6 +301,48 @@ export const migrations = [
       WHERE key = 'interface';
     `,
   },
+  {
+    version: 3,
+    name: "connection-suspension",
+    sql: `
+      ALTER TABLE connections ADD COLUMN suspended_at TEXT;
+
+      ALTER TABLE connection_sync_jobs RENAME TO connection_sync_jobs_legacy;
+
+      CREATE TABLE connection_sync_jobs (
+        id TEXT PRIMARY KEY,
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+        generation INTEGER NOT NULL,
+        previous_generation INTEGER,
+        kind TEXT NOT NULL CHECK(kind IN ('activate', 'rotate', 'revoke', 'suspend', 'resume')),
+        status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'failed', 'completed', 'cancelled')),
+        actor TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+
+      INSERT INTO connection_sync_jobs (
+        id, connection_id, generation, previous_generation, kind, status,
+        actor, attempts, next_attempt_at, last_error, created_at, updated_at, completed_at
+      )
+      SELECT
+        id, connection_id, generation, previous_generation, kind, status,
+        actor, attempts, next_attempt_at, last_error, created_at, updated_at, completed_at
+      FROM connection_sync_jobs_legacy;
+
+      DROP TABLE connection_sync_jobs_legacy;
+
+      CREATE UNIQUE INDEX connection_sync_jobs_open
+        ON connection_sync_jobs(connection_id)
+        WHERE status IN ('pending', 'running', 'failed');
+      CREATE INDEX connection_sync_jobs_due
+        ON connection_sync_jobs(status, next_attempt_at, created_at);
+    `,
+  },
 ] as const;
 
 export const defaultRoutes = [

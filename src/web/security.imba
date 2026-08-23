@@ -31,10 +31,8 @@ const calendar = do(value)
 tag outpost-access
 	store = null
 	busy = null
-	notice = null
 	dismissed = []
 
-	get owner do store.data.auth.owner
 	get raw do store.security or {passkeys: [], sessions: [], tokens: []}
 
 	get passkeys
@@ -91,21 +89,8 @@ tag outpost-access
 		item.scopes.some(do(value) value.endsWith(':write')) ? t('Управление') : t('Только чтение')
 
 	def passkey
-		return if busy
-		busy = 'passkey'
-		notice = null
-		try
-			const start = await store.api('POST', '/api/v1/auth/register/options', {timezone: owner.timezone})
-			const credential = await window.navigator.credentials.create({publicKey: authn.decode(start.options)})
-			throw new Error(t('Создание passkey отменено')) unless credential
-			await store.api('POST', '/api/v1/auth/register/verify', {challengeId: start.challengeId, response: authn.json(credential)})
-			await store.secure!
-			notice = {kind: 'passkeys', text: t('Новый passkey добавлен')}
-		catch issue
-			notice = {kind: 'passkeys', text: issue.message}
-		finally
-			busy = null
-			imba.commit!
+		store.selected = {mode: 'choice'}
+		store.open('passkey')
 
 	def finish
 		return if busy or sessions.length < 2
@@ -152,11 +137,11 @@ tag outpost-access
 			<section.access-group>
 				<div.subhead>
 					<div>
-						<h3> 'Passkeys'
-						<p> t('Вход без пароля с доверенных устройств')
+						<h3> t('access.methods.title')
+						<p> t('access.methods.subtitle')
 					<button.outpost-button.secondary.small type="button" disabled=busy @click=passkey>
 						<outpost-icon name="plus">
-						<span> busy == 'passkey' ? t('Добавляем…') : t('Добавить passkey')
+						<span> t('access.methods.add')
 				<div.rows>
 					for item in passkeys
 						<div.access-row key=item.id>
@@ -166,8 +151,6 @@ tag outpost-access
 								<small> credential(item).detail
 							<span.used> t('Использован {time}', {time: stamp(item.lastUsedAt)})
 							<button.icon-button type="button" disabled=(busy or passkeys.length < 2) @click=(do revoke('passkeys', item)) aria-label=t('Отозвать passkey')><outpost-icon name="trash">
-				if notice and notice.kind == 'passkeys'
-					<p.notice aria-live="polite"> notice.text
 			<section.access-group>
 				<div.subhead>
 					<div>
@@ -253,6 +236,90 @@ tag outpost-access
 			.used d:none
 			.current grid-column:2; justify-self:start
 			.token-row gtc:42px minmax(0, 1fr) 32px; py:10px
+
+tag outpost-passkey-modal
+	store = null
+	busy = false
+	message = null
+
+	get guided? do store.selected and store.selected.mode == 'device'
+	get title do guided? ? t('passkey.device.title') : t('passkey.add.title')
+	get hint do guided? ? t('passkey.device.hint') : t('passkey.add.hint')
+	get action do guided? ? t('passkey.device.action') : t('passkey.add.action')
+
+	def add
+		return if busy
+		busy = true
+		message = null
+		try
+			const owner = store.data.auth.owner
+			const start = await store.api('POST', '/api/v1/auth/register/options', {timezone: owner.timezone})
+			const options = authn.decode(start.options)
+			if guided?
+				options.authenticatorSelection = {...(options.authenticatorSelection or {}), authenticatorAttachment: 'platform'}
+			const credential = await window.navigator.credentials.create({publicKey: options})
+			throw new Error(t('Создание passkey отменено')) unless credential
+			await store.api('POST', '/api/v1/auth/register/verify', {challengeId: start.challengeId, response: authn.json(credential)})
+			await store.secure!
+			store.close!
+		catch issue
+			message = issue.message
+		finally
+			busy = false
+			imba.commit!
+
+	<self.outpost-modal-backdrop role="dialog" aria-modal="true" aria-label=title tabindex="-1" @click.self=store.close>
+		<div.outpost-modal.passkey-modal>
+			<header.outpost-modal-header>
+				<span.outpost-modal-mark><outpost-icon name=(guided? ? 'device-mobile-camera' : 'key')>
+				<div>
+					<h2> title
+					<p> hint
+				<button.outpost-modal-close type="button" disabled=busy @click=store.close aria-label=t('action.close')><outpost-icon name="x">
+			<div.outpost-modal-body>
+				if guided?
+					<div.device-prompt>
+						<outpost-icon.passkey-device-icon name="fingerprint">
+						<p> t('passkey.device.detail')
+				else
+					<div.passkey-options>
+						<div>
+							<outpost-icon.passkey-option-icon name="fingerprint">
+							<span>
+								<strong> t('passkey.add.current')
+								<small> t('passkey.add.current_hint')
+						<div>
+							<outpost-icon.passkey-option-icon name="devices">
+							<span>
+								<strong> t('passkey.add.other')
+								<small> t('passkey.add.other_hint')
+					<div.owner-warning>
+						<outpost-icon.passkey-warning-icon name="warning-circle">
+						<span> t('passkey.add.warning')
+				if message
+					<div.outpost-error role="alert"> message
+			<footer.outpost-modal-footer>
+				<div.modal-actions>
+					<button.outpost-button.quiet type="button" disabled=busy @click=store.close> t('action.cancel')
+					<button.outpost-button type="button" disabled=busy @click=add>
+						<outpost-icon name=(busy ? 'spinner-gap' : 'fingerprint')>
+						<span> busy ? t('passkey.add.wait') : action
+
+	css self
+		.passkey-modal w:min(620px,100%)
+		.device-prompt d:grid gtc:48px minmax(0,1fr) ai:center g:14px p:16px rd:12px bgc:var(--outpost-soft)
+		.passkey-device-icon s:48px d:grid ja:center rd:12px bgc:var(--outpost-white) c:var(--outpost-brand) fs:24px lh:1
+		.device-prompt p c:var(--outpost-text) fs:13px lh:1.55
+		.passkey-options d:grid g:10px
+		.passkey-options > div d:grid gtc:48px minmax(0,1fr) ai:center g:14px p:14px bd:1px solid var(--outpost-line) rd:11px
+		.passkey-option-icon s:48px d:grid ja:center rd:12px bgc:var(--outpost-soft) c:var(--outpost-brand) fs:24px lh:1
+		.passkey-options strong, .passkey-options small d:block
+		.passkey-options strong c:var(--outpost-text) fs:13px
+		.passkey-options small mt:4px c:var(--outpost-muted) fs:12px lh:1.45
+		.owner-warning d:flex ai:center g:10px mt:14px p:11px 13px rd:10px bgc:var(--outpost-warning-soft) c:var(--outpost-text) fs:12px lh:1.45
+		.passkey-warning-icon s:18px d:grid ja:center fl:0 0 auto c:var(--outpost-warning) fs:18px lh:1
+		.outpost-error mt:14px
+		.outpost-modal-footer outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
 
 tag outpost-security
 	store = null

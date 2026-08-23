@@ -1,6 +1,6 @@
 # Состояние Outpost v1
 
-Обновлено: 22 августа 2026.
+Обновлено: 23 августа 2026.
 
 ## Реализовано
 
@@ -49,7 +49,7 @@
 ## Проверено локально и на VPS
 
 - TypeScript typecheck и Imba production build;
-- 183 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, signed application update discovery/staging/release notes/channel/version binding/transient-unit restart recovery/persistent stages/bounded proxy timeout/периодический discovery, нормализацию ownership release, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
+- 185 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive/suspend/resume, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, signed application update discovery/staging/release notes/channel/version binding/transient-unit restart recovery/persistent stages/bounded proxy timeout/периодический discovery, нормализацию ownership release, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
 - сгенерированные Mihomo, sing-box и Xray JSON профили приняты нативными `mihomo 1.19.30`, `sing-box 1.13.19` и `xray 26.7.28`;
 - Go policy tests и статический linux/amd64 agent build;
 - standalone Linux server/CLI и macOS CLI builds;
@@ -239,6 +239,36 @@ bootstrap, installer и updater дополнительно извлекают б
 предыдущей версии.
 
 Полный локальный gate проходит: 183 Bun tests/3691 assertions, TypeScript,
+production Imba build, Go tests/vet/linux build, Bash/ShellCheck, actionlint,
+native Mihomo/Xray validation, реальный XHTTP+gRPC transport integration,
+dependency audit и gitleaks.
+
+## Кандидат 0.1.0-rc.21
+
+Кандидат объединяет очередной интерфейсный проход с управлением временным
+доступом. В строке подключения появилось меню действий: подключение можно
+приостановить и затем возобновить без перевыпуска постоянной ссылки, отдельно
+отредактировать или удалить. Приостановленные подключения исключаются из
+подписок, Hysteria auth, Xray recovery config, presence и активной телеметрии;
+после возобновления прежний URL снова действует, а устаревший online-state не
+показывается как текущий.
+
+Pause/resume проходят через расширенный персистентный `connection_sync_jobs`.
+SQLite блокирует ссылку до удаления UUID из обоих Xray inbounds, а при
+возобновлении открывает её только после успешного возврата UUID. Failed и
+прерванные операции повторяются после restart; миграция сохраняет старые jobs.
+Это закрывает расхождение SQLite/Xray при сбое между внешним hot update и
+фиксацией состояния.
+
+Экран входа объясняет вход с passkey другого устройства. После успешного
+cross-platform входа панель предлагает создать platform passkey на текущем
+устройстве, а раздел Доступ объединяет добавление способов входа в отдельном
+диалоге с явным предупреждением о правах владельца. Также уточнены таблицы
+активности, mobile tabs каталога, удаление подключения, индикация проверки
+версии и демонстрационные графики трафика; новые тексты добавлены во все четыре
+локали.
+
+Полный локальный gate проходит: 185 Bun tests/3752 assertions, TypeScript,
 production Imba build, Go tests/vet/linux build, Bash/ShellCheck, actionlint,
 native Mihomo/Xray validation, реальный XHTTP+gRPC transport integration,
 dependency audit и gitleaks.

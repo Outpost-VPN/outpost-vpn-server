@@ -42,6 +42,7 @@ export interface Connection {
   first_seen_at: string | null;
   last_seen_at: string | null;
   absence_notified_at: string | null;
+  suspended_at: string | null;
   archived_at: string | null;
   presence?: ConnectionPresence;
 }

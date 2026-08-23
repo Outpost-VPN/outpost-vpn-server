@@ -172,6 +172,17 @@ describe("HTTP API", () => {
     const updated = await (await request(`/api/v1/connections/${id}`, cookie, "PATCH", { name: "Семья", avatar: "avatar-group" })).json();
     expect(updated).toMatchObject({ name: "Семья", avatar: "avatar-group" });
 
+    const suspended = await request(`/api/v1/connections/${id}/suspend`, cookie, "POST", {});
+    expect(suspended.status).toBe(200);
+    expect(await suspended.json()).toMatchObject({ state: "suspended", connection: { suspended_at: expect.any(String) } });
+    const original = oldUrl.replace("localhost:8181", "localhost");
+    expect((await app.fetch(new Request(original))).status).toBe(404);
+
+    const resumed = await request(`/api/v1/connections/${id}/resume`, cookie, "POST", {});
+    expect(resumed.status).toBe(200);
+    expect(await resumed.json()).toMatchObject({ state: "ready", connection: { suspended_at: null } });
+    expect((await app.fetch(new Request(original))).status).toBe(200);
+
     const rotated = await (await request(`/api/v1/connections/${id}/rotate`, cookie, "POST", {})).json();
     expect(rotated.state).toBe("ready");
     expect(rotated.subscription.url).not.toBe(oldUrl);

@@ -20,7 +20,8 @@ export async function seedDemo(app: HttpApplication) {
 
 function seedPresence(app: HttpApplication) {
   const connections = app.db.raw.query<{ id: string; name: string }, []>(`
-    SELECT id, name FROM connections WHERE status = 'active' ORDER BY created_at
+    SELECT id, name FROM connections
+    WHERE status = 'active' AND suspended_at IS NULL ORDER BY created_at
   `).all();
   if (!connections.length) return;
   const timestamp = new Date();
