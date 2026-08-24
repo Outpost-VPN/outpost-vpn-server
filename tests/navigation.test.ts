@@ -47,6 +47,9 @@ describe("admin navigation", () => {
     expect(routes).toContain("def reset");
     expect(routes).toContain("removing = new Set");
     expect(routes).toContain("disabled=busy @click.stop=routes.drop(rule.id)");
+    expect(routes).toContain("<outpost-ruleset-banner store=store>");
+    expect(routes).toContain("'/api/v1/rulesets/refresh'");
+    expect(routes).toContain("routes.rulesets.delivery");
     expect(routes).not.toContain("remove = null");
     expect(routes).not.toContain("remove=remove update=update");
     expect(home).toContain('Math.max(0, Math.min(100, usage(connection) / maximum * 100))');
@@ -122,10 +125,8 @@ describe("admin navigation", () => {
     expect(settings).toContain("<button.system-action.install");
     expect(settings).toContain('<span.notice aria-hidden="true">');
     expect(settings).toContain("status: 'failed', ready: false, error: issue.message");
-    expect(settings).toContain("'/api/v1/rulesets/refresh'");
-    expect(settings).toContain("settings.rulesets.version");
-    expect(settings).toContain("settings.rulesets.checked");
-    expect(settings).toContain("busy == 'rulesets'");
+    expect(settings).not.toContain("'/api/v1/rulesets/refresh'");
+    expect(settings).not.toContain("rulesets.version");
     expect(dialogs).toContain("store.hold = true");
     expect(dialogs).toContain("item.id == operation.id");
     expect(dialogs).toContain('<progress value=progress max="100" aria-label=stage>');
