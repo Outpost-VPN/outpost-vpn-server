@@ -796,6 +796,47 @@ Object.assign dictionaries.fa, {
 	'transfer.links': 'پیوندها و اتصال‌ها حفظ می‌شوند.'
 }
 
+Object.assign dictionaries.ru, {
+	'settings.rulesets.title': 'Базы GeoIP и GeoSite'
+	'settings.rulesets.hint': 'Загружаются при запуске и автоматически проверяются раз в сутки'
+	'settings.rulesets.version': 'Версия {version}'
+	'settings.rulesets.missing': 'Ещё не загружены'
+	'settings.rulesets.never': 'Проверка ещё не выполнялась'
+	'settings.rulesets.checked': 'Проверено {date}'
+	'settings.rulesets.refresh': 'Обновить сейчас'
+	'settings.rulesets.updating': 'Обновляем…'
+}
+Object.assign dictionaries.en, {
+	'settings.rulesets.title': 'GeoIP and GeoSite databases'
+	'settings.rulesets.hint': 'Downloaded at startup and checked automatically once a day'
+	'settings.rulesets.version': 'Version {version}'
+	'settings.rulesets.missing': 'Not downloaded yet'
+	'settings.rulesets.never': 'Not checked yet'
+	'settings.rulesets.checked': 'Checked {date}'
+	'settings.rulesets.refresh': 'Update now'
+	'settings.rulesets.updating': 'Updating…'
+}
+Object.assign dictionaries['zh-CN'], {
+	'settings.rulesets.title': 'GeoIP 和 GeoSite 数据库'
+	'settings.rulesets.hint': '启动时下载，并每天自动检查一次'
+	'settings.rulesets.version': '版本 {version}'
+	'settings.rulesets.missing': '尚未下载'
+	'settings.rulesets.never': '尚未检查'
+	'settings.rulesets.checked': '检查时间：{date}'
+	'settings.rulesets.refresh': '立即更新'
+	'settings.rulesets.updating': '正在更新…'
+}
+Object.assign dictionaries.fa, {
+	'settings.rulesets.title': 'پایگاه‌های GeoIP و GeoSite'
+	'settings.rulesets.hint': 'هنگام راه‌اندازی دریافت و روزی یک‌بار خودکار بررسی می‌شوند'
+	'settings.rulesets.version': 'نسخه {version}'
+	'settings.rulesets.missing': 'هنوز دریافت نشده‌اند'
+	'settings.rulesets.never': 'هنوز بررسی نشده‌اند'
+	'settings.rulesets.checked': 'بررسی‌شده در {date}'
+	'settings.rulesets.refresh': 'اکنون به‌روزرسانی شود'
+	'settings.rulesets.updating': 'در حال به‌روزرسانی…'
+}
+
 export def t key, params = null
 	let message = dictionaries[current][key] or dictionaries.en[key] or ru[key] or key
 	if params

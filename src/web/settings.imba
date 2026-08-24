@@ -158,6 +158,14 @@ tag outpost-settings
 	get completed? do outcome? and operation.status == 'completed'
 	get preparing? do busy == 'update' or update.status == 'preparing'
 	get working? do preparing? or applying?
+	get rulesets do store.data.system.rulesets or {status: 'idle', activeVersion: null, checkedAt: null, lastError: null}
+	get catalog
+		return t('settings.rulesets.version', {version: rulesets.activeVersion}) if rulesets.activeVersion
+		t('settings.rulesets.missing')
+	get detail
+		return rulesets.lastError if rulesets.lastError
+		return t('settings.rulesets.never') unless rulesets.checkedAt
+		t('settings.rulesets.checked', {date: new Intl.DateTimeFormat(intl!, {dateStyle: 'medium', timeStyle: 'short'}).format(new Date(rulesets.checkedAt))})
 
 	get summary
 		return t(operation.message) if applying? and operation.message and operation.message.startsWith('operation.update_')
@@ -196,6 +204,17 @@ tag outpost-settings
 		busy = 'check'
 		try
 			store.data.system.updates = await store.api('POST', '/api/v1/updates/check')
+		finally
+			busy = null
+			imba.commit!
+
+	def sync
+		busy = 'rulesets'
+		store.error = null
+		try
+			store.data.system.rulesets = await store.api('POST', '/api/v1/rulesets/refresh')
+		catch issue
+			store.error = issue.message
 		finally
 			busy = null
 			imba.commit!
@@ -311,6 +330,21 @@ tag outpost-settings
 							<strong> t('settings.update.channel')
 							<small> t('settings.update.channel_hint')
 						<outpost-settings-select value=draft.channel items=channels disabled=busy change=(do(value) channel(value))>
+					<div.setting-row.rulesets-row>
+						<span.setting-mark><outpost-icon name="database">
+						<div.setting-copy>
+							<strong> t('settings.rulesets.title')
+							<small> t('settings.rulesets.hint')
+						<div.ruleset-control>
+							<div.ruleset-status>
+								<strong> catalog
+								<small .error=!!rulesets.lastError> detail
+							<button.outpost-button.small type="button" disabled=busy @click=sync aria-label=t('settings.rulesets.refresh')>
+								<outpost-icon name="arrows-clockwise" .checking=(busy == 'rulesets')>
+								if busy == 'rulesets'
+									<span> t('settings.rulesets.updating')
+								else
+									<span> t('settings.rulesets.refresh')
 					<p.autosave>
 						<outpost-icon name="check-circle">
 						<span> t('Изменения сохраняются автоматически')
@@ -389,6 +423,14 @@ tag outpost-settings
 		.setting-copy strong, .setting-copy small d:block
 		.setting-copy strong fs:14px fw:700
 		.setting-copy small mt:4px c:var(--outpost-muted) fs:11px lh:1.4
+		.ruleset-control miw:230px d:grid gtc:minmax(0,1fr) auto ai:center g:12px
+		.ruleset-status miw:0
+		.ruleset-status strong, .ruleset-status small d:block
+		.ruleset-status strong c:var(--outpost-navy) fs:12px fw:700 of:hidden text-overflow:ellipsis white-space:nowrap
+		.ruleset-status small mt:3px c:var(--outpost-muted) fs:10px lh:1.35 of:hidden text-overflow:ellipsis white-space:nowrap
+		.ruleset-status small.error c:var(--outpost-danger)
+		.ruleset-control .outpost-button h:38px px:12px white-space:nowrap
+		.ruleset-control outpost-icon.checking animation:spin 1s linear infinite
 		.autosave d:flex ai:center g:7px mih:46px border-top:1px solid var(--outpost-line) c:var(--outpost-muted) fs:11px
 		.autosave outpost-icon c:var(--outpost-success) fs:15px
 		.transfer-card d:flex fld:column p:24px bgc:color-mix(in srgb, var(--outpost-success) 3%, var(--outpost-white))
@@ -432,5 +474,6 @@ tag outpost-settings
 			.settings-header p fs:16px
 			.settings-card px:18px
 			.setting-row gtc:42px minmax(0,1fr); py:16px
-			.setting-row outpost-settings-select grid-column:2
+			.setting-row outpost-settings-select, .ruleset-control grid-column:2
+			.ruleset-control miw:0
 			.transfer-card p:20px 18px

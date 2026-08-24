@@ -113,7 +113,7 @@ Updater сначала проверяет detached Minisign signature ключо
 
 GitHub workflow `Signed release` запускается только вручную из ветки `main` для уже существующего `v*` tag и делает checkout по точному `refs/tags/<tag>`. Tag обязан точно совпадать с версией в `package.json`. Build/test выполняются без ключа; отдельный job в environment `release`, ограниченном веткой `main`, получает private key, подписывает archive, повторно проверяет подпись и публикует immutable GitHub Release. Версии с дефисом, например `v0.1.0-rc.19`, помечаются как pre-release и не выбираются bootstrap-командой без явного `OUTPOST_VERSION`; web updater видит их только в канале кандидатов.
 
-Workflow `Signed rule-set bundle` работает отдельно от application releases. Он ежедневно получает официальные SagerNet SRS, закрепляет upstream commits, включает source/license metadata, подписывает `rulesets.json` и обновляет стабильный release `rulesets`. Установленный сервер проверяет manifest раз в сутки, хранит активную и две предыдущие версии; ручное обновление доступно через owner API `POST /api/v1/rulesets/refresh`.
+Workflow `Signed rule-set bundle` работает отдельно от application releases. Он ежедневно получает официальные SagerNet SRS, закрепляет upstream commits, включает source/license metadata, подписывает `rulesets.json` и обновляет стабильный release `rulesets`. Установленный сервер проверяет manifest при production-запуске и раз в сутки, хранит активную и две предыдущие версии. Версия, время последней проверки, ошибка и ручное обновление доступны владельцу в Настройках; тот же запуск предоставляет owner API `POST /api/v1/rulesets/refresh`.
 
 ## Backup и restore
 
