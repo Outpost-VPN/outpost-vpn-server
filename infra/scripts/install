@@ -143,6 +143,7 @@ sed -e "s|__XHTTP_PATH__|$xhttp_path|g" -e "s|__GRPC_SERVICE__|$grpc_service|g" 
   /opt/outpost/current/infra/config/xray.json.template >/etc/outpost/engines/xray.json
 cat >/etc/outpost/outpost.env <<ENV
 NODE_ENV=production
+OUTPOST_ENV=production
 OUTPOST_VERSION=$version
 OUTPOST_SETUP=1
 OUTPOST_PUBLIC_IP=$public_ip

@@ -17,6 +17,23 @@ describe("release trust chain", () => {
     expect(configuration).not.toContain('production ? "/opt/outpost/current/infra/release/minisign.pub"');
   });
 
+  test("detects installed production mode at runtime after Bun compilation", async () => {
+    const configuration = await Bun.file(resolve(root, "src/server/config.ts")).text();
+    const installer = await Bun.file(resolve(root, "infra/scripts/install")).text();
+    const finalizer = await Bun.file(resolve(root, "infra/scripts/finalize-domain")).text();
+    const restore = await Bun.file(resolve(root, "infra/scripts/restore-backup")).text();
+    const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
+
+    expect(configuration).toContain('process.env.OUTPOST_ENV === "production"');
+    expect(configuration).not.toContain('process.env.NODE_ENV === "production"');
+    for (const environment of [installer, finalizer, restore]) {
+      expect(environment).toContain("NODE_ENV=production\nOUTPOST_ENV=production");
+    }
+    expect(updater).toContain("/^OUTPOST_ENV=/d");
+    expect(updater).toContain("printf 'OUTPOST_ENV=production\\n'");
+    expect(updater).toContain('grep -qxF "OUTPOST_ENV=production"');
+  });
+
   test("obtains the trusted IP certificate before exposing the setup application", async () => {
     const installer = await Bun.file(resolve(root, "infra/scripts/install")).text();
     const certificate = installer.indexOf('--ip-address "$public_ip"');
@@ -237,7 +254,7 @@ describe("release trust chain", () => {
     const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
     expect(updater).toContain('test "$version" = "$expected_version"');
     expect(updater).toContain("mark_operation completed");
-    expect(updater).toContain('sed "s/^OUTPOST_VERSION=.*/OUTPOST_VERSION=$version/"');
+    expect(updater).toContain('sed -e "s/^OUTPOST_VERSION=.*/OUTPOST_VERSION=$version/"');
     expect(updater).toContain('install -o root -g outpost -m 0640 "$update_tmp/outpost.env.next" "$env_file"');
     expect(updater).toContain('install -o root -g outpost -m 0640 "$env_previous" "$env_file"');
   });

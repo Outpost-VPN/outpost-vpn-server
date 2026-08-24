@@ -1,6 +1,6 @@
 # Состояние Outpost v1
 
-Обновлено: 23 августа 2026.
+Обновлено: 24 августа 2026.
 
 ## Реализовано
 
@@ -290,3 +290,25 @@ reload.
 production Imba build, Go tests/vet/linux build, Bash/ShellCheck, actionlint,
 native Mihomo/Xray validation, реальный XHTTP+gRPC transport integration,
 dependency audit и gitleaks.
+
+## Кандидат 0.1.0-rc.23
+
+Кандидат исправляет автоматическое обновление GeoIP/Geosite на установленном
+сервере. Bun подставлял `NODE_ENV` при `--compile`, поэтому release-бинарник,
+собранный без build-time `NODE_ENV=production`, навсегда сохранял
+`production=false`: installer корректно передавал runtime environment, но
+стартовый `refreshRulesets()` не запускался. На HostKey это оставило состояние
+rulesets `idle`, пустой каталог и отсутствие ошибок — скачивание ни разу не
+начиналось.
+
+Production mode теперь определяется runtime-переменной `OUTPOST_ENV`, которую
+создают installer, domain finalizer и restore. Updater добавляет её в старый
+environment до запуска нового бинарника, поэтому переход с `rc.22` сам лечит
+существующий сервер без ручной правки. Регрессионная проверка компилирует config
+тем же Bun target и подтверждает, что `OUTPOST_ENV=production` читается уже при
+запуске standalone-бинарника.
+
+Полный локальный gate проходит: 186 Bun tests/3765 assertions, TypeScript,
+production Imba build, Linux server и macOS/Linux CLI builds, Go tests/vet/build,
+Bash/ShellCheck, native Mihomo/Xray validation и реальный XHTTP+gRPC transport
+integration.

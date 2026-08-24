@@ -117,6 +117,7 @@ grep -Fq "/etc/letsencrypt/live/$current_domain/" "$restore_tmp/config/engines/h
 
 cat >"$restore_tmp/outpost.env" <<ENV
 NODE_ENV=production
+OUTPOST_ENV=production
 OUTPOST_VERSION=$current_version
 OUTPOST_SETUP=0
 OUTPOST_PUBLIC_IP=$current_public_ip

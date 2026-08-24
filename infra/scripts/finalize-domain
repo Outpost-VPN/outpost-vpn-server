@@ -75,6 +75,7 @@ sed -e "s|__XHTTP_PATH__|$xhttp_path|g" -e "s|__GRPC_SERVICE__|$grpc_service|g" 
 
 cat >"$stage/outpost.env" <<ENV
 NODE_ENV=production
+OUTPOST_ENV=production
 OUTPOST_VERSION=$version
 OUTPOST_SETUP=0
 OUTPOST_PUBLIC_IP=$public_ip
