@@ -60,8 +60,11 @@ version=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$source_dir/manifest.json"
 test -z "$expected_version" || test "$version" = "$expected_version" || { echo "Release manifest version does not match requested update" >&2; exit 1; }
 (cd "$source_dir" && sha256sum -c SHA256SUMS)
 mark_progress 30 operation.update_snapshotting
-sed "s/^OUTPOST_VERSION=.*/OUTPOST_VERSION=$version/" "$env_file" >"$update_tmp/outpost.env.next"
+sed -e "s/^OUTPOST_VERSION=.*/OUTPOST_VERSION=$version/" -e '/^OUTPOST_ENV=/d' \
+  "$env_file" >"$update_tmp/outpost.env.next"
+printf 'OUTPOST_ENV=production\n' >>"$update_tmp/outpost.env.next"
 grep -qxF "OUTPOST_VERSION=$version" "$update_tmp/outpost.env.next"
+grep -qxF "OUTPOST_ENV=production" "$update_tmp/outpost.env.next"
 
 next="/opt/outpost/releases/$version"
 test ! -e "$next" || { echo "Release $version is already installed" >&2; exit 1; }

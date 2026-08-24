@@ -1,7 +1,10 @@
 import { join, resolve } from "node:path";
 import { version } from "../version";
 
-const production = process.env.NODE_ENV === "production";
+// Bun replaces NODE_ENV while compiling standalone executables, so it cannot
+// describe the environment in which the installed binary is later started.
+// Keep runtime deployment mode in an Outpost-owned variable instead.
+const production = process.env.OUTPOST_ENV === "production";
 const projectRoot = resolve(import.meta.dir, "..", "..");
 const dataDir = resolve(process.env.OUTPOST_DATA_DIR ?? (production ? "/var/lib/outpost" : join(projectRoot, ".data")));
 const configDir = resolve(process.env.OUTPOST_CONFIG_DIR ?? (production ? "/etc/outpost" : join(projectRoot, ".data", "config")));

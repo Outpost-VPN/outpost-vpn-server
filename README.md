@@ -7,7 +7,7 @@ traffic by connection without storing browsing history. Every connection has
 one credential generation and one link that may be shared by any number of
 people and physical devices.
 
-> **Status:** `0.1.0-rc.22` pre-release. Local tests and production builds pass;
+> **Status:** `0.1.0-rc.23` pre-release. Local tests and production builds pass;
 > the signed release passes a clean Ubuntu VPS installation, with the remaining
 > end-to-end field gate tracked in [STATUS.md](STATUS.md).
 
@@ -84,7 +84,7 @@ beside existing services or selecting alternative public ports is not supported.
 To install a specific release candidate instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.22 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.23 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,
