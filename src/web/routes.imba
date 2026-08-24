@@ -1,4 +1,4 @@
-import {t} from './i18n.imba'
+import {intl, t} from './i18n.imba'
 import {fmt, localNetworkValues, routeActions, routeIcons, routeMatchers} from './context.imba'
 
 tag outpost-action-picker
@@ -501,7 +501,7 @@ tag outpost-route-modes
 									<h3> t('GeoSite и GeoIP')
 									<p> t('GeoSite — готовый набор доменов сервиса или категории, GeoIP — набор диапазонов IP страны. Указывайте только код набора, без префиксов domain: или geosite:.')
 									<small> t('Пример: GeoSite google · GeoIP ru · весь .ru: суффикс ru')
-						<p.delivery> t('Outpost передаёт ссылку на геонабор, а не разворачивает его сам. Поэтому точный состав GeoSite и GeoIP зависит от базы и версии приложения.')
+						<p.delivery> t('routes.rulesets.delivery')
 		<section.guide .expanded=clients>
 			<button.guide-head type="button" @click=toggle('clients') aria-expanded=clients>
 				<span.guide-icon><outpost-icon name="devices">
@@ -574,6 +574,71 @@ tag outpost-route-modes
 			.concept padding:14px
 			.mode h:auto mih:0 p:16px
 			.mode-head fld:column g:10px
+
+tag outpost-ruleset-banner
+	store = null
+	busy = false
+	error = null
+
+	get rulesets do store.data.system.rulesets or {status: 'idle', activeVersion: null, checkedAt: null, lastError: null}
+	get failed? do !!error or !!rulesets.lastError
+	get catalog
+		return t('routes.rulesets.version', {version: rulesets.activeVersion}) if rulesets.activeVersion
+		t('routes.rulesets.missing')
+	get detail
+		return error or rulesets.lastError if failed?
+		return t('routes.rulesets.never') unless rulesets.checkedAt
+		t('routes.rulesets.checked', {date: new Intl.DateTimeFormat(intl!, {dateStyle: 'medium', timeStyle: 'short'}).format(new Date(rulesets.checkedAt))})
+
+	def sync
+		return if busy
+		busy = true
+		error = null
+		try
+			store.data.system.rulesets = await store.api('POST', '/api/v1/rulesets/refresh')
+		catch issue
+			error = issue.message
+		finally
+			busy = false
+			imba.commit!
+
+	<self .failed=failed?>
+		<span.geo-mark><outpost-icon name="database">
+		<div.geo-copy>
+			<strong> t('routes.rulesets.title')
+			<p> t('routes.rulesets.hint')
+		<div.geo-control>
+			<div.geo-status>
+				<strong> catalog
+				<small .error=failed?> detail
+			<button.outpost-button.secondary.small type="button" disabled=busy @click=sync aria-label=t('routes.rulesets.refresh')>
+				<outpost-icon name="arrows-clockwise" .checking=busy>
+				<span> busy ? t('routes.rulesets.updating') : t('routes.rulesets.refresh')
+
+	css self
+		mt:24px d:grid gtc:46px minmax(0,1fr) minmax(310px,auto) ai:center g:16px p:18px bd:1px solid var(--outpost-auth-start) rd:13px bgc:var(--outpost-brand-soft)
+		.geo-mark s:46px d:grid ja:center rd:12px bgc:var(--outpost-auth-start) c:var(--outpost-brand) fs:22px
+		.geo-copy miw:0
+		.geo-copy strong d:block c:var(--outpost-navy) fs:16px fw:750
+		.geo-copy p mt:6px c:var(--outpost-muted) fs:12px lh:1.55
+		.geo-control miw:310px d:grid gtc:minmax(130px,1fr) auto ai:center g:14px
+		.geo-status miw:0
+		.geo-status strong, .geo-status small d:block
+		.geo-status strong c:var(--outpost-navy) fs:12px fw:750 of:hidden text-overflow:ellipsis white-space:nowrap
+		.geo-status small mt:4px c:var(--outpost-muted) fs:10px lh:1.35 of:hidden text-overflow:ellipsis white-space:nowrap
+		.geo-status small.error c:var(--outpost-danger)
+		.outpost-button h:38px px:13px white-space:nowrap
+		.outpost-button outpost-icon.checking animation:spin 1s linear infinite
+		&.failed border-color:red2 bgc:red1
+		&.failed .geo-mark bgc:red1 c:var(--outpost-danger)
+		@media(max-width: 980px)
+			gtc:46px minmax(0,1fr)
+			.geo-control grid-column:2 miw:0
+		@media(max-width: 600px)
+			gtc:40px minmax(0,1fr) p:15px g:12px
+			.geo-mark s:40px fs:19px
+			.geo-control grid-column:1/-1 gtc:1fr
+			.outpost-button w:100%
 
 tag outpost-routes
 	store = null
@@ -815,6 +880,7 @@ tag outpost-routes
 		<div.route-top>
 			<span.eyebrow> t('УПРАВЛЕНИЕ ТРАФИКОМ')
 			<outpost-header title=t('routes.title') subtitle=t('Один порядок правил — сервер подберёт формат при запросе подписки')>
+		<outpost-ruleset-banner store=store>
 		<section.rule-card.outpost-card>
 			<header.card-head>
 				<div>
@@ -857,7 +923,7 @@ tag outpost-routes
 		.eyebrow display: block; margin-bottom: 14px; color: #0B56D9; font-size: 12px; font-weight: 750; letter-spacing: .1em
 		outpost-route-modes margin-top: 18px
 		.rule-card
-			margin-top: 30px
+			margin-top: 18px
 			overflow: visible
 			.card-head display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 18px
 			h2 color: #17213D; font-size: 18px

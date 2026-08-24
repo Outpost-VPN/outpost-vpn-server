@@ -335,3 +335,21 @@ development и demo окружения не меняют поведение. О�
 production Imba build, Linux server и macOS/Linux CLI builds, Go tests/vet/build,
 Bash/ShellCheck, actionlint, native Mihomo/Xray validation, реальный XHTTP+gRPC
 transport integration, dependency audit и gitleaks.
+
+## Кандидат 0.1.0-rc.25
+
+Кандидат переносит управление GeoIP/GeoSite из общих Настроек в Маршруты, где
+оно непосредственно связано с правилами. Над порядком правил появилась отдельная
+голубая плашка: она показывает активную версию базы, время последней проверки
+или ошибку и позволяет владельцу вручную запустить подписанное обновление.
+
+Описание уточняет фактическую доставку геобаз: сервер хранит проверенные SRS для
+sing-box, а Mihomo и Xray используют базы на устройствах. Автоматическая
+проверка по-прежнему выполняется при запуске и раз в сутки. Интерфейс и
+объяснение локализованы на русский, английский, китайский и персидский языки.
+
+Полный локальный gate проходит: 187 Bun tests/3775 assertions, TypeScript,
+production Imba build, Linux server и macOS/Linux CLI builds, Go tests/vet/build,
+Bash/ShellCheck, actionlint, native Mihomo/Xray validation, реальный XHTTP+gRPC
+transport integration, dependency audit, gitleaks и проверку Linux release
+archive с 279 внутренними checksums, безопасными путями и ownership `0:0`.
