@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -24,7 +26,8 @@ describe("release trust chain", () => {
     const restore = await Bun.file(resolve(root, "infra/scripts/restore-backup")).text();
     const updater = await Bun.file(resolve(root, "infra/scripts/apply-update")).text();
 
-    expect(configuration).toContain('process.env.OUTPOST_ENV === "production"');
+    expect(configuration).toContain('process.env.OUTPOST_ENV ?? runtimeEnvironment("NODE_ENV")');
+    expect(configuration).toContain("return process.env[name]");
     expect(configuration).not.toContain('process.env.NODE_ENV === "production"');
     for (const environment of [installer, finalizer, restore]) {
       expect(environment).toContain("NODE_ENV=production\nOUTPOST_ENV=production");
@@ -32,6 +35,39 @@ describe("release trust chain", () => {
     expect(updater).toContain("/^OUTPOST_ENV=/d");
     expect(updater).toContain("printf 'OUTPOST_ENV=production\\n'");
     expect(updater).toContain('grep -qxF "OUTPOST_ENV=production"');
+  });
+
+  test("keeps the legacy NODE_ENV fallback dynamic in a compiled executable", () => {
+    const directory = mkdtempSync(join(tmpdir(), "outpost-config-"));
+    const entry = join(directory, "probe.ts");
+    const executable = join(directory, "probe");
+    writeFileSync(entry, [
+      `import { config } from ${JSON.stringify(resolve(root, "src/server/config.ts"))};`,
+      "console.log(JSON.stringify({ production: config.production }));",
+    ].join("\n"));
+
+    try {
+      const build = Bun.spawnSync(["bun", "build", entry, "--compile", `--outfile=${executable}`], { cwd: root });
+      expect(build.exitCode).toBe(0);
+
+      const legacyEnvironment: Record<string, string | undefined> = {
+        ...process.env,
+        NODE_ENV: "production",
+        OUTPOST_DATA_DIR: directory,
+      };
+      delete legacyEnvironment.OUTPOST_ENV;
+      const legacy = Bun.spawnSync([executable], { env: legacyEnvironment });
+      expect(legacy.exitCode).toBe(0);
+      expect(JSON.parse(legacy.stdout.toString())).toEqual({ production: true });
+
+      const explicit = Bun.spawnSync([executable], {
+        env: { ...legacyEnvironment, OUTPOST_ENV: "development" },
+      });
+      expect(explicit.exitCode).toBe(0);
+      expect(JSON.parse(explicit.stdout.toString())).toEqual({ production: false });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   test("obtains the trusted IP certificate before exposing the setup application", async () => {

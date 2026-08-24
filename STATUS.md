@@ -303,12 +303,35 @@ rulesets `idle`, пустой каталог и отсутствие ошибо�
 
 Production mode теперь определяется runtime-переменной `OUTPOST_ENV`, которую
 создают installer, domain finalizer и restore. Updater добавляет её в старый
-environment до запуска нового бинарника, поэтому переход с `rc.22` сам лечит
-существующий сервер без ручной правки. Регрессионная проверка компилирует config
-тем же Bun target и подтверждает, что `OUTPOST_ENV=production` читается уже при
-запуске standalone-бинарника.
+environment до запуска нового бинарника. Полевой переход `rc.22 → rc.23`
+показал ограничение этой миграции: update выполняет ещё updater исходной
+версии, поэтому старый `rc.22` не мог добавить неизвестную ему переменную.
+`rc.23` установился штатно, но сохранил rulesets `idle` до следующего
+совместимого обновления. Регрессионная проверка компилирует config тем же Bun
+target и подтверждает, что `OUTPOST_ENV=production` читается уже при запуске
+standalone-бинарника.
 
 Полный локальный gate проходит: 186 Bun tests/3765 assertions, TypeScript,
 production Imba build, Linux server и macOS/Linux CLI builds, Go tests/vet/build,
 Bash/ShellCheck, native Mihomo/Xray validation и реальный XHTTP+gRPC transport
 integration.
+
+## Кандидат 0.1.0-rc.24
+
+Кандидат закрывает переход со старого updater без ручной правки сервера.
+Production mode по-прежнему предпочитает `OUTPOST_ENV`, но при его отсутствии
+читает legacy `NODE_ENV` через динамический runtime lookup, который Bun не
+подменяет при `--compile`. Явное значение `OUTPOST_ENV` имеет приоритет, поэтому
+development и demo окружения не меняют поведение. Отдельный тест собирает и
+запускает настоящий standalone-бинарник для обоих сценариев.
+
+В Настройках появилась отдельная строка GeoIP/GeoSite: она показывает активную
+версию базы, время последней проверки или конкретную ошибку, объясняет
+автоматическую проверку при старте и раз в сутки и позволяет владельцу запустить
+подписанное обновление вручную. Интерфейс локализован на русский, английский,
+китайский и персидский языки.
+
+Полный локальный gate проходит: 187 Bun tests/3775 assertions, TypeScript,
+production Imba build, Linux server и macOS/Linux CLI builds, Go tests/vet/build,
+Bash/ShellCheck, actionlint, native Mihomo/Xray validation, реальный XHTTP+gRPC
+transport integration, dependency audit и gitleaks.

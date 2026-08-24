@@ -122,6 +122,10 @@ describe("admin navigation", () => {
     expect(settings).toContain("<button.system-action.install");
     expect(settings).toContain('<span.notice aria-hidden="true">');
     expect(settings).toContain("status: 'failed', ready: false, error: issue.message");
+    expect(settings).toContain("'/api/v1/rulesets/refresh'");
+    expect(settings).toContain("settings.rulesets.version");
+    expect(settings).toContain("settings.rulesets.checked");
+    expect(settings).toContain("busy == 'rulesets'");
     expect(dialogs).toContain("store.hold = true");
     expect(dialogs).toContain("item.id == operation.id");
     expect(dialogs).toContain('<progress value=progress max="100" aria-label=stage>');

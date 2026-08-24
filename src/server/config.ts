@@ -1,10 +1,11 @@
 import { join, resolve } from "node:path";
 import { version } from "../version";
 
-// Bun replaces NODE_ENV while compiling standalone executables, so it cannot
-// describe the environment in which the installed binary is later started.
-// Keep runtime deployment mode in an Outpost-owned variable instead.
-const production = process.env.OUTPOST_ENV === "production";
+// Bun replaces direct NODE_ENV reads while compiling standalone executables.
+// Prefer the Outpost-owned runtime variable, but keep an indirect legacy read
+// so releases installed by an older updater still detect production correctly.
+const environment = process.env.OUTPOST_ENV ?? runtimeEnvironment("NODE_ENV");
+const production = environment === "production";
 const projectRoot = resolve(import.meta.dir, "..", "..");
 const dataDir = resolve(process.env.OUTPOST_DATA_DIR ?? (production ? "/var/lib/outpost" : join(projectRoot, ".data")));
 const configDir = resolve(process.env.OUTPOST_CONFIG_DIR ?? (production ? "/etc/outpost" : join(projectRoot, ".data", "config")));
@@ -61,4 +62,8 @@ function normalizeSegment(value: string) {
 function isIPv4(value: string) {
   const parts = value.split(".");
   return parts.length === 4 && parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
+}
+
+function runtimeEnvironment(name: string) {
+  return process.env[name];
 }
