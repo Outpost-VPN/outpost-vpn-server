@@ -36,7 +36,7 @@ tag outpost-home-server
 				<div.metric .disk=(row.title == t('Диск'))>
 					<strong> row.title
 					<outpost-gauge value=row.percent>
-					<small> row.detail if row.detail
+					<small> row.detail
 			<div.metric.network>
 				<strong> t('Сеть сейчас')
 				<div.network-body>
@@ -62,7 +62,7 @@ tag outpost-home-server
 		.metric + .metric border-left:1px solid var(--outpost-line)
 		.metric strong, .metric small d:block
 		.metric strong mb:5px c:var(--outpost-muted) fs:12px fw:650
-		.metric small mt:-1px c:var(--outpost-muted) fs:11px white-space:nowrap
+		.metric small mih:13px mt:-1px c:var(--outpost-muted) fs:11px white-space:nowrap
 		.network-body w:100% d:grid gtc:minmax(72px,1fr) auto ai:center g:16px mt:4px
 		.network-body outpost-line-chart w:100% h:38px
 		.rates d:grid g:7px ta:left white-space:nowrap
@@ -74,8 +74,13 @@ tag outpost-home-server
 			.metrics gtc:repeat(2, minmax(0,1fr)) rg:18px
 			.metric.disk border-left:0
 		@media(max-width: 560px)
-			.metrics gtc:1fr
-			.metric + .metric pt:18px border-left:0 border-top:1px solid var(--outpost-line)
+			.metrics gtc:repeat(3, minmax(0,1fr)) rg:18px
+			.metric px:4px
+			.metric + .metric
+				pt:0 border-top:0 border-left:1px solid var(--outpost-line)
+				&.network gc:1 / -1 pt:18px border-left:0 border-top:1px solid var(--outpost-line)
+			.metric.disk border-left:1px solid var(--outpost-line)
+			.metric small fs:10px
 
 tag outpost-home-traffic
 	store = null
@@ -177,10 +182,17 @@ tag outpost-home-traffic
 		.chart-scale span w:max-content pr:4px bgc:var(--outpost-white)
 		.chart-dates pos:absolute b:0 l:0 r:0 h:24px d:flex ai:end jc:space-between c:var(--outpost-muted) fs:11px
 		@media(max-width: 620px)
-			header ai:flex-start
-			.summary d:block
-			header h2 fw:wrap white-space:normal
-			.totals mt:7px g:12px
+			header d:grid g:12px p:14px 18px
+			.summary d:grid g:7px
+			header h2 jc:space-between g:12px fs:17px flw:nowrap white-space:nowrap
+			header h2 strong fs:19px white-space:nowrap
+			.totals g:12px
+			.totals small fs:11px
+			.totals strong fs:12px fw:650
+			.period w:100%
+			.period order:-1
+			.period summary jc:space-between
+			.period menu w:100% miw:0
 			.chart-scale w:38px
 
 tag outpost-home-connections

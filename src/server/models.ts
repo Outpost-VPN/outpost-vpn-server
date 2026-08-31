@@ -1,5 +1,6 @@
 export type RouteAction = "DIRECT" | "PROXY" | "BLOCK";
 export type RouteMatcher = "DOMAIN" | "SUFFIX" | "IP_CIDR" | "GEOSITE" | "GEOIP";
+export type ClientRouteMatcher = Exclude<RouteMatcher, "GEOSITE"> | "DOMAIN_KEYWORD" | "DOMAIN_REGEX";
 export type SubscriptionFormat = "mihomo" | "sing-box" | "xray" | "xray-json" | "links";
 export type EngineId = "hysteria" | "xray";
 export type ConnectionStatus = "provisioning" | "active" | "rotating" | "archiving" | "archived";
@@ -76,6 +77,8 @@ export interface RouteRule {
   created_at: string;
   updated_at: string;
 }
+
+export type ClientRouteRule = Omit<RouteRule, "matcher"> & { matcher: ClientRouteMatcher };
 
 export interface ConnectionCredential {
   connectionId: string;

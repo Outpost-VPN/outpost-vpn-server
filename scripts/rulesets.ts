@@ -12,20 +12,32 @@ import {
 } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { parseGeoSiteDatabase } from "../src/server/adapters/geosite";
 
 type Family = "geosite" | "geoip";
 type Source = { repository: string; branch: string; commit: string; license: string };
+type GeoSiteSource = {
+  repository: string;
+  release: string;
+  releaseUrl: string;
+  assetUrl: string;
+  sha256: string;
+  bytes: Uint8Array;
+  license: string;
+};
 
 const root = resolve(import.meta.dir, "..");
 const output = resolve(process.env.OUTPOST_RULESET_OUTPUT ?? join(root, "release"));
 const repository = process.env.GITHUB_REPOSITORY ?? "Outpost-VPN/outpost-vpn-server";
-const sources: Record<Family, Source> = {
-  geosite: await source("SagerNet/sing-geosite"),
-  geoip: await source("SagerNet/sing-geoip"),
-};
+const [geositeSource, geoipSource, geositeDatabase] = await Promise.all([
+  source("SagerNet/sing-geosite"),
+  source("SagerNet/sing-geoip"),
+  databaseSource(),
+]);
+const sources: Record<Family, Source> = { geosite: geositeSource, geoip: geoipSource };
 const requestedVersion = process.env.OUTPOST_RULESET_VERSION?.trim();
 const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-const version = requestedVersion || `${date}-${sources.geosite.commit.slice(0, 7)}-${sources.geoip.commit.slice(0, 7)}`;
+const version = requestedVersion || `${date}-${sources.geosite.commit.slice(0, 7)}-${sources.geoip.commit.slice(0, 7)}-${geositeDatabase.sha256.slice(0, 7)}`;
 if (!/^[a-zA-Z0-9._-]{1,80}$/.test(version)) throw new Error("Invalid OUTPOST_RULESET_VERSION");
 
 const temporary = mkdtempSync(join(tmpdir(), "outpost-ruleset-build-"));
@@ -35,6 +47,7 @@ mkdirSync(join(stage, "licenses"));
 
 try {
   const codes = { geosite: [] as string[], geoip: [] as string[] };
+  writeFileSync(join(stage, "geosite.dat"), geositeDatabase.bytes);
   for (const family of ["geosite", "geoip"] as const) {
     const current = sources[family];
     const archive = join(temporary, `${family}.tar.gz`);
@@ -61,6 +74,10 @@ try {
     codes[family].sort();
     writeFileSync(join(stage, "licenses", `sing-${family}.txt`), await download(current.license));
   }
+  const materializedCodes = parseGeoSiteDatabase(geositeDatabase.bytes);
+  const missingCodes = codes.geosite.filter((code) => !materializedCodes.has(code));
+  if (missingCodes.length) throw new Error(`dlc.dat does not contain SagerNet categories: ${missingCodes.slice(0, 20).join(", ")}`);
+  writeFileSync(join(stage, "licenses", "domain-list-community.txt"), await download(geositeDatabase.license));
 
   const sourceDocument = {
     generatedAt: new Date().toISOString(),
@@ -72,15 +89,23 @@ try {
       tree: `https://github.com/${value.repository}/tree/${value.commit}`,
       license: value.license,
     }])),
+    geositeDatabase: {
+      repository: geositeDatabase.repository,
+      release: geositeDatabase.release,
+      releaseUrl: geositeDatabase.releaseUrl,
+      assetUrl: geositeDatabase.assetUrl,
+      sha256: geositeDatabase.sha256,
+      license: geositeDatabase.license,
+    },
   };
   writeFileSync(join(stage, "sources.json"), `${JSON.stringify(sourceDocument, null, 2)}\n`);
-  writeFileSync(join(stage, "THIRD_PARTY_NOTICES.md"), `# Outpost rule-set bundle\n\nThe SRS files are generated and published by the official SagerNet sing-geosite and sing-geoip projects. Their source revisions are recorded in sources.json. Both projects are distributed under GPL-3.0-or-later; license texts are included in licenses/.\n`);
+  writeFileSync(join(stage, "THIRD_PARTY_NOTICES.md"), `# Outpost rule-set bundle\n\nThe SRS files are generated and published by the official SagerNet sing-geosite and sing-geoip projects. The bundled geosite.dat is the verified dlc.dat release from v2fly/domain-list-community and is expanded by the Outpost server before profiles are rendered. Source revisions and checksums are recorded in sources.json; license texts are included in licenses/.\n`);
 
   mkdirSync(output, { recursive: true });
   const bundleName = `rulesets-${version}.tar.gz`;
   const bundlePath = join(output, bundleName);
   rmSync(bundlePath, { force: true });
-  await command(["tar", "-czf", bundlePath, "-C", stage, "geosite", "geoip", "licenses", "sources.json", "THIRD_PARTY_NOTICES.md"]);
+  await command(["tar", "-czf", bundlePath, "-C", stage, "geosite", "geoip", "geosite.dat", "licenses", "sources.json", "THIRD_PARTY_NOTICES.md"]);
   const bundleUrl = process.env.OUTPOST_RULESET_BUNDLE_URL
     ?? `https://github.com/${repository}/releases/download/rulesets/${bundleName}`;
   const manifest = {
@@ -90,6 +115,7 @@ try {
     source: {
       geosite: `https://github.com/${sources.geosite.repository}/tree/${sources.geosite.commit}`,
       geoip: `https://github.com/${sources.geoip.repository}/tree/${sources.geoip.commit}`,
+      geositeDatabase: geositeDatabase.releaseUrl,
     },
   };
   const manifestPath = join(output, "rulesets.json");
@@ -117,6 +143,33 @@ async function source(repository: string): Promise<Source> {
   return { repository, branch, commit: payload.sha, license: `https://raw.githubusercontent.com/${repository}/main/LICENSE` };
 }
 
+async function databaseSource(): Promise<GeoSiteSource> {
+  const repository = "https://github.com/v2fly/domain-list-community";
+  const response = await request("https://api.github.com/repos/v2fly/domain-list-community/releases/latest", { accept: "application/vnd.github+json" });
+  const release = await response.json() as {
+    tag_name?: string;
+    html_url?: string;
+    assets?: Array<{ name?: string; browser_download_url?: string }>;
+  };
+  const dataUrl = release.assets?.find((asset) => asset.name === "dlc.dat")?.browser_download_url;
+  const checksumUrl = release.assets?.find((asset) => asset.name === "dlc.dat.sha256sum")?.browser_download_url;
+  if (!release.tag_name || !release.html_url || !dataUrl || !checksumUrl) throw new Error("Latest domain-list-community release has no dlc.dat or checksum");
+  const [bytes, checksumBytes] = await Promise.all([download(dataUrl), download(checksumUrl)]);
+  const checksumText = new TextDecoder().decode(checksumBytes).trim();
+  const expected = checksumText.match(/^([a-f0-9]{64})\b/i)?.[1]?.toLowerCase();
+  const actual = sha256Bytes(bytes);
+  if (!expected || expected !== actual) throw new Error("domain-list-community dlc.dat checksum mismatch");
+  return {
+    repository,
+    release: release.tag_name,
+    releaseUrl: release.html_url,
+    assetUrl: dataUrl,
+    sha256: actual,
+    bytes,
+    license: "https://raw.githubusercontent.com/v2fly/domain-list-community/master/LICENSE",
+  };
+}
+
 async function download(url: string) {
   return new Uint8Array(await (await request(url)).arrayBuffer());
 }
@@ -140,6 +193,10 @@ function files(directory: string): string[] {
 
 function sha256(path: string) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function sha256Bytes(bytes: Uint8Array) {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function validSrs(path: string) {

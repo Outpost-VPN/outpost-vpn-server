@@ -798,8 +798,8 @@ Object.assign dictionaries.fa, {
 
 Object.assign dictionaries.ru, {
 	'routes.rulesets.title': 'GeoSite и GeoIP'
-	'routes.rulesets.hint': 'Outpost хранит проверенные SRS для sing-box. Mihomo и Xray используют геобазы на устройствах. Проверка — при запуске и раз в сутки.'
-	'routes.rulesets.delivery': 'Mihomo и Xray сопоставляют правила по базе приложения; sing-box скачивает нужные SRS с Outpost.'
+	'routes.rulesets.hint': 'Outpost хранит проверенную GeoSite-базу и SRS. GeoSite разворачивается в обычные доменные правила на сервере. Проверка — при запуске и раз в сутки.'
+	'routes.rulesets.delivery': 'Клиенты получают готовые домены без GeoSite-базы. GeoIP для Mihomo и Xray остаётся кодом из базы приложения, а sing-box получает нужный SRS.'
 	'routes.rulesets.version': 'Версия {version}'
 	'routes.rulesets.missing': 'Ещё не загружены'
 	'routes.rulesets.never': 'Проверка ещё не выполнялась'
@@ -809,8 +809,8 @@ Object.assign dictionaries.ru, {
 }
 Object.assign dictionaries.en, {
 	'routes.rulesets.title': 'GeoSite and GeoIP'
-	'routes.rulesets.hint': 'Outpost stores verified SRS for sing-box. Mihomo and Xray use geo databases on the device. Checks run at startup and once a day.'
-	'routes.rulesets.delivery': 'Mihomo and Xray match rules against the app database; sing-box downloads the required SRS from Outpost.'
+	'routes.rulesets.hint': 'Outpost stores a verified GeoSite database and SRS files. GeoSite is expanded into ordinary domain rules on the server. Checks run at startup and once a day.'
+	'routes.rulesets.delivery': 'Clients receive ready-to-use domains without a GeoSite database. GeoIP remains an app database code for Mihomo and Xray, while sing-box receives the required SRS.'
 	'routes.rulesets.version': 'Version {version}'
 	'routes.rulesets.missing': 'Not downloaded yet'
 	'routes.rulesets.never': 'Not checked yet'
@@ -820,8 +820,8 @@ Object.assign dictionaries.en, {
 }
 Object.assign dictionaries['zh-CN'], {
 	'routes.rulesets.title': 'GeoSite 和 GeoIP'
-	'routes.rulesets.hint': 'Outpost 为 sing-box 保存已验证的 SRS。Mihomo 和 Xray 使用设备上的地理数据库。系统会在启动时及每天检查一次。'
-	'routes.rulesets.delivery': 'Mihomo 和 Xray 使用应用内数据库匹配规则；sing-box 从 Outpost 下载所需的 SRS。'
+	'routes.rulesets.hint': 'Outpost 保存已验证的 GeoSite 数据库和 SRS 文件。服务器会将 GeoSite 展开为普通域名规则。系统会在启动时及每天检查一次。'
+	'routes.rulesets.delivery': '客户端无需 GeoSite 数据库即可收到可直接使用的域名。GeoIP 在 Mihomo 和 Xray 中仍使用应用数据库代码，sing-box 则获取所需的 SRS。'
 	'routes.rulesets.version': '版本 {version}'
 	'routes.rulesets.missing': '尚未下载'
 	'routes.rulesets.never': '尚未检查'
@@ -831,8 +831,8 @@ Object.assign dictionaries['zh-CN'], {
 }
 Object.assign dictionaries.fa, {
 	'routes.rulesets.title': 'GeoSite و GeoIP'
-	'routes.rulesets.hint': 'Outpost فایل‌های SRS تأییدشده را برای sing-box نگه می‌دارد. Mihomo و Xray از پایگاه‌های روی دستگاه استفاده می‌کنند. بررسی هنگام راه‌اندازی و روزی یک‌بار انجام می‌شود.'
-	'routes.rulesets.delivery': 'Mihomo و Xray قوانین را با پایگاه برنامه تطبیق می‌دهند؛ sing-box فایل‌های SRS لازم را از Outpost دریافت می‌کند.'
+	'routes.rulesets.hint': 'Outpost پایگاه GeoSite و فایل‌های SRS تأییدشده را نگه می‌دارد. GeoSite روی سرور به قوانین عادی دامنه تبدیل می‌شود. بررسی هنگام راه‌اندازی و روزی یک‌بار انجام می‌شود.'
+	'routes.rulesets.delivery': 'کلاینت‌ها دامنه‌های آماده را بدون نیاز به پایگاه GeoSite دریافت می‌کنند. GeoIP برای Mihomo و Xray همچنان کد پایگاه برنامه است و sing-box فایل SRS لازم را دریافت می‌کند.'
 	'routes.rulesets.version': 'نسخه {version}'
 	'routes.rulesets.missing': 'هنوز دریافت نشده‌اند'
 	'routes.rulesets.never': 'هنوز بررسی نشده‌اند'

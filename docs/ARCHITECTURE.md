@@ -47,7 +47,7 @@ Credentials движков шифруются AES-256-GCM мастер-ключ�
 После `POST /api/v1/connections` подключение активируется сразу либо остаётся в персистентном `provisioning`. Owner-only `GET /api/v1/connections/:id/subscription` возвращает состояние и постоянный `/s/:token` после готовности. Одна ссылка может одновременно использоваться несколькими клиентами, а трафик и активность учитываются вместе. Для прекращения использования старой ссылки перевыпускается всё подключение через `POST /api/v1/connections/:id/rotate`.
 
 - `mihomo` — Hysteria 2, XHTTP и gRPC, fallback-группа, DNS и маршруты;
-- `sing-box` — Hysteria 2 и gRPC, `urltest`, TUN, DNS и remote SRS;
+- `sing-box` — Hysteria 2 и gRPC, `urltest`, TUN, DNS и remote GeoIP SRS;
 - `xray` — base64 из XHTTP и gRPC URI;
 - `xray-json` — оба VLESS outbounds, observatory, balancer, DNS и routing;
 - `links` — Hysteria/VLESS URI и совместимые INCY headers.
@@ -56,9 +56,13 @@ Credentials движков шифруются AES-256-GCM мастер-ключ�
 
 ### GeoIP и Geosite
 
-Отдельный workflow ежедневно собирает SRS из официальных `SagerNet/sing-geosite` и `SagerNet/sing-geoip`, записывает точные commits и лицензии, публикует versioned archive и подписанный Minisign manifest в отдельном release `rulesets`. Сервер проверяет подпись manifest, SHA-256 архива, безопасную структуру и наличие всех заявленных кодов, после чего атомарно переключает активный каталог и оставляет две предыдущие версии.
+Отдельный workflow ежедневно собирает SRS из официальных `SagerNet/sing-geosite` и `SagerNet/sing-geoip`, а также скачивает официальный release `dlc.dat` из `v2fly/domain-list-community` и сверяет его upstream SHA-256. Точные commits, release, checksum и лицензии входят в metadata. Versioned archive и Minisign manifest публикуются в отдельном release `rulesets`. Сервер проверяет подпись manifest, SHA-256 архива, безопасную структуру, protobuf GeoSite-базы и наличие всех заявленных кодов, после чего атомарно переключает активный каталог и оставляет две предыдущие версии.
 
-Ошибка подписи, checksum, структуры или отсутствующий код не затрагивает рабочую версию и появляется с конкретной причиной в журнале и health. SRS отдаются по `/rulesets/geosite/:code.srs` и `/rulesets/geoip/:code.srs` с ETag и суточным cache. Publish маршрутов с неизвестным кодом отклоняется до создания revision.
+Опубликованные маршруты продолжают хранить компактный `GEOSITE:<code>`. При publish сервер заранее разбирает новые категории из активной базы и активирует подготовленный in-memory cache только после успешной записи revision. Обновлятор аналогично проверяет все опубликованные GeoIP/GeoSite-коды и разбирает нужные GeoSite-категории прямо из staged-базы до переключения версии. Ошибка оставляет прежние revision, bundle и cache активными; ленивый разбор при subscription render сохранён только как восстановительный fallback после рестарта.
+
+Подготовленные категории раскрываются в обычные exact/suffix/keyword/regex правила. Поэтому Mihomo, Xray, INCY и sing-box не скачивают GeoSite и не распаковывают полную базу внутри client Network Extension. GeoIP остаётся нативным правилом клиента; sing-box получает его SRS с Outpost.
+
+Ошибка подписи, checksum, структуры или отсутствующий код не затрагивает рабочую версию и появляется с конкретной причиной в журнале и health. SRS отдаются по `/rulesets/geosite/:code.srs` и `/rulesets/geoip/:code.srs` с ETag и суточным cache; GeoSite endpoint сохранён для совместимости, хотя профили Outpost его больше не используют. Publish маршрутов с неизвестным кодом отклоняется до создания revision.
 
 ## Конфигурации движков
 

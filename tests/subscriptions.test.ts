@@ -25,8 +25,12 @@ const context: SubscriptionContext = {
   },
   routes: [
     { id: "1", position: 0, action: "DIRECT", matcher: "IP_CIDR", value: "10.0.0.0/8", source: "system", locked: true, enabled: true, created_at: "", updated_at: "" },
-    { id: "2", position: 1, action: "PROXY", matcher: "GEOSITE", value: "google", source: "user", locked: false, enabled: true, created_at: "", updated_at: "" },
-    { id: "3", position: 2, action: "PROXY", matcher: "SUFFIX", value: "*", source: "system", locked: true, enabled: true, created_at: "", updated_at: "" },
+    { id: "2", position: 1, action: "BLOCK", matcher: "DOMAIN", value: "ads.example", source: "user", locked: false, enabled: true, created_at: "", updated_at: "" },
+    { id: "3", position: 1, action: "BLOCK", matcher: "SUFFIX", value: ".tracking.example", source: "user", locked: false, enabled: true, created_at: "", updated_at: "" },
+    { id: "4", position: 1, action: "BLOCK", matcher: "DOMAIN_KEYWORD", value: "sponsor", source: "user", locked: false, enabled: true, created_at: "", updated_at: "" },
+    { id: "5", position: 1, action: "BLOCK", matcher: "DOMAIN_REGEX", value: String.raw`^ad\d+\.example$`, source: "user", locked: false, enabled: true, created_at: "", updated_at: "" },
+    { id: "6", position: 2, action: "DIRECT", matcher: "GEOIP", value: "cn", source: "user", locked: false, enabled: true, created_at: "", updated_at: "" },
+    { id: "7", position: 3, action: "PROXY", matcher: "SUFFIX", value: "*", source: "system", locked: true, enabled: true, created_at: "", updated_at: "" },
   ],
   subscriptionToken: "subscription-secret",
   engineOrder: ["hysteria", "xray"],
@@ -37,10 +41,10 @@ describe("technology subscription renderers", () => {
   test("five formats match their golden SHA-256 fingerprints", () => {
     const expected = {
       links: "ee90de33a4c5b6b1f8b62830c05dc51f33e19c045d417230974eee89648ed336",
-      mihomo: "2a816027bff3405cc9887aed0118393779f263b44158f129123d1cb3ef285178",
-      "sing-box": "d6705cc58ca9de593916afc1be720df9ae1e9101718f5484412d1db5bc31c273",
+      mihomo: "690859d5c4b1d25e57e85b1e24f2ab34cf23799a15eb3a3e45ec5e0930a9fa21",
+      "sing-box": "0848019229157830b0f4f02caf6c8bf04c69e3dca06da7f120b3119c711247ea",
       xray: "4acd88ef98861fed276fc4716ab1f1cbd3cba56134e6a4acf4c4a59619a69b16",
-      "xray-json": "79630fccb1118445095751b1a53b11ac738681dcdac53e4ec86ab3890efb06f8",
+      "xray-json": "9310bd75855d5beff6bc47b33a9b2ff8424b539beae23b88991a6dbb41e7d2b9",
     };
     const rendered = [linksRenderer, mihomoRenderer, singBoxRenderer, xrayRenderer, xrayJsonRenderer];
     for (const renderer of rendered) {
@@ -66,7 +70,13 @@ describe("technology subscription renderers", () => {
     const profile = JSON.parse(renderLinkRoutes(context.routes).body);
     expect(profile.GlobalProxy).toBe("true");
     expect(profile.DirectIp).toContain("10.0.0.0/8");
-    expect(profile.ProxySites).toContain("geosite:google");
+    expect(profile.BlockSites).toEqual(expect.arrayContaining([
+      "full:ads.example",
+      "domain:tracking.example",
+      "sponsor",
+      String.raw`regexp:^ad\d+\.example$`,
+    ]));
+    expect(JSON.stringify(profile)).not.toContain("geosite:");
   });
 
   test("a top-level suffix is rendered for every supported routing engine", () => {
@@ -126,12 +136,16 @@ describe("technology subscription renderers", () => {
     expect(xray.routing.rules.at(-1)).toMatchObject({ type: "field", network: "tcp,udp", balancerTag: "proxy" });
   });
 
-  test("sing-box uses Hysteria and gRPC with urltest and remote SRS rules", () => {
+  test("sing-box keeps only GeoIP as remote SRS and embeds materialized domains", () => {
     const profile = JSON.parse(singBoxRenderer.render(context).body);
     expect(profile.outbounds.slice(0, 3).map((outbound: { type: string }) => outbound.type)).toEqual(["hysteria2", "vless", "urltest"]);
     expect(profile.outbounds[1].transport).toMatchObject({ type: "grpc" });
     expect(profile.outbounds[2].outbounds).toEqual(["hysteria2", "vless-grpc"]);
-    expect(profile.route.rule_set[0].url).toContain("/rulesets/geosite/google.srs");
+    expect(profile.route.rule_set).toHaveLength(1);
+    expect(profile.route.rule_set[0].url).toContain("/rulesets/geoip/cn.srs");
+    expect(profile.route.rules).toContainEqual({ domain_keyword: ["sponsor"], action: "reject" });
+    expect(profile.route.rules).toContainEqual({ domain_regex: [String.raw`^ad\d+\.example$`], action: "reject" });
+    expect(JSON.stringify(profile)).not.toContain("geosite");
     expect(profile.route.final).toBe("proxy");
   });
 

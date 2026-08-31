@@ -447,5 +447,7 @@ tag outpost-journal
 			.categories button fs:13px
 			.group mt:28px
 		@media(max-width: 460px)
-			.head d:block
+			.head g:10px
+			.head > div miw:0
+			.head .header-action fl:0 0 42px
 			footer ai:flex-start fld:column py:14px

@@ -6,7 +6,9 @@ import { tmpdir } from "node:os";
 import { config } from "../src/server/config";
 import type { RouteRule } from "../src/server/models";
 import { RuleSetService } from "../src/server/services/rulesets";
+import { RouteService } from "../src/server/services/routes";
 import { database } from "./helpers";
+import { geoSiteDatabase } from "./geosite-fixture";
 
 const original = { rulesetDir: config.rulesetDir, rulesetIndex: config.rulesetIndex };
 const mutableConfig = config as unknown as { rulesetDir: string; rulesetIndex: string };
@@ -32,6 +34,9 @@ describe("signed rule-set updates", () => {
       expect(service.file("geosite", "google.srs").etag).toMatch(/^"[a-f0-9]{64}"$/);
       expect(() => service.assert([geoRule("GEOSITE", "google")])).not.toThrow();
       expect(() => service.assert([geoRule("GEOIP", "us")])).toThrow("нет указанных");
+      expect(service.materialize([geoRule("GEOSITE", "google")]).map(({ matcher, value }) => ({ matcher, value }))).toEqual([
+        { matcher: "SUFFIX", value: ".google.example" },
+      ]);
       expect(readFileSync(join(setup.rules, "v1", "geosite", "google.srs"), "utf8")).toContain("google");
     } finally {
       setup.db.close();
@@ -86,6 +91,106 @@ describe("signed rule-set updates", () => {
       setup.db.close();
     }
   });
+
+  test("re-downloads a recently checked legacy bundle that has no GeoSite database", async () => {
+    const setup = fixture();
+    const bundle = archive(setup.root, "bundle-v1", { geosite: ["google"], geoip: ["cn"] });
+    const manifest = manifestFor("v1", bundle, { geosite: ["google"], geoip: ["cn"] });
+    const service = serviceFor(setup.db.db, () => manifest, () => bundle.bytes);
+    try {
+      expect((await service.refresh(true)).activeVersion).toBe("v1");
+      rmSync(join(setup.rules, "v1", "geosite.dat"));
+
+      expect((await service.refresh()).activeVersion).toBe("v1");
+      expect(existsSync(join(setup.rules, "v1", "geosite.dat"))).toBeTrue();
+      expect(service.materialize([geoRule("GEOSITE", "google")])).toHaveLength(1);
+    } finally {
+      setup.db.close();
+    }
+  });
+
+  test("warms published GeoSite categories before activating a downloaded bundle", async () => {
+    const setup = fixture();
+    const routes = [geoRule("GEOSITE", "google")];
+    const bundle = archive(setup.root, "bundle-v1", { geosite: ["google"], geoip: ["cn"] });
+    const manifest = manifestFor("v1", bundle, { geosite: ["google"], geoip: ["cn"] });
+    const service = serviceFor(setup.db.db, () => manifest, () => bundle.bytes, async () => {}, () => routes);
+    try {
+      expect((await service.refresh(true)).activeVersion).toBe("v1");
+      rmSync(join(setup.rules, "v1", "geosite.dat"));
+
+      expect(service.materialize(routes)).toHaveLength(1);
+    } finally {
+      setup.db.close();
+    }
+  });
+
+  test("warms a newly published GeoSite category before a subscription request", async () => {
+    const setup = fixture();
+    const bundle = archive(setup.root, "bundle-v1", { geosite: ["google"], geoip: ["cn"] });
+    const manifest = manifestFor("v1", bundle, { geosite: ["google"], geoip: ["cn"] });
+    let routes!: RouteService;
+    const service = serviceFor(setup.db.db, () => manifest, () => bundle.bytes, async () => {}, () => routes.published());
+    routes = new RouteService(setup.db.db, undefined, service);
+    try {
+      expect((await service.refresh(true)).activeVersion).toBe("v1");
+      routes.add({ action: "DIRECT", matcher: "GEOSITE", value: "google" }, "test");
+      routes.publish("google direct", "test");
+      rmSync(join(setup.rules, "v1", "geosite.dat"));
+
+      expect(service.materialize(routes.published())).toContainEqual(expect.objectContaining({
+        action: "DIRECT",
+        matcher: "SUFFIX",
+        value: ".google.example",
+      }));
+    } finally {
+      setup.db.close();
+    }
+  });
+
+  test("retains the active bundle and warm cache when an update omits a published code", async () => {
+    const setup = fixture();
+    const routes = [geoRule("GEOSITE", "google")];
+    let currentBundle = archive(setup.root, "bundle-v1", { geosite: ["google"], geoip: ["cn"] });
+    let currentManifest = manifestFor("v1", currentBundle, { geosite: ["google"], geoip: ["cn"] });
+    const service = serviceFor(setup.db.db, () => currentManifest, () => currentBundle.bytes, async () => {}, () => routes);
+    try {
+      expect((await service.refresh(true)).activeVersion).toBe("v1");
+
+      currentBundle = archive(setup.root, "bundle-v2", { geosite: ["telegram"], geoip: ["cn"] });
+      currentManifest = manifestFor("v2", currentBundle, { geosite: ["telegram"], geoip: ["cn"] });
+      const failed = await service.refresh(true);
+
+      expect(failed).toMatchObject({ status: "ready", activeVersion: "v1" });
+      expect(failed.lastError).toContain("не содержит кодов опубликованных маршрутов");
+      rmSync(join(setup.rules, "v1", "geosite.dat"));
+      expect(service.materialize(routes)).toHaveLength(1);
+    } finally {
+      setup.db.close();
+    }
+  });
+
+  test("retains the active bundle when staged GeoSite domains cannot be materialized", async () => {
+    const setup = fixture();
+    const routes = [geoRule("GEOSITE", "google")];
+    let currentBundle = archive(setup.root, "bundle-v1", { geosite: ["google"], geoip: ["cn"] });
+    let currentManifest = manifestFor("v1", currentBundle, { geosite: ["google"], geoip: ["cn"] });
+    const service = serviceFor(setup.db.db, () => currentManifest, () => currentBundle.bytes, async () => {}, () => routes);
+    try {
+      expect((await service.refresh(true)).activeVersion).toBe("v1");
+
+      const malformed = geoSiteDatabase({ google: [{ type: 2, value: "" }] });
+      currentBundle = archive(setup.root, "bundle-v2", { geosite: ["google"], geoip: ["cn"] }, false, malformed);
+      currentManifest = manifestFor("v2", currentBundle, { geosite: ["google"], geoip: ["cn"] });
+      const failed = await service.refresh(true);
+
+      expect(failed).toMatchObject({ status: "ready", activeVersion: "v1" });
+      expect(failed.lastError).toContain("GeoSite-база на сервере повреждена");
+      expect(service.materialize(routes)).toHaveLength(1);
+    } finally {
+      setup.db.close();
+    }
+  });
 });
 
 function fixture() {
@@ -97,8 +202,18 @@ function fixture() {
   return { root, rules, db: database() };
 }
 
-function archive(root: string, name: string, codes: { geosite: string[]; geoip: string[] }, corrupt = false) {
+function archive(
+  root: string,
+  name: string,
+  codes: { geosite: string[]; geoip: string[] },
+  corrupt = false,
+  database = geoSiteDatabase(Object.fromEntries(codes.geosite.map((code) => [code, [
+    { type: 2 as const, value: `${code}.example` },
+  ]]))),
+) {
   const source = join(root, name);
+  mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, "geosite.dat"), database);
   for (const family of ["geosite", "geoip"] as const) {
     mkdirSync(join(source, family), { recursive: true });
     for (const code of codes[family]) {
@@ -109,7 +224,7 @@ function archive(root: string, name: string, codes: { geosite: string[]; geoip: 
     }
   }
   const path = join(root, `${name}.tar.gz`);
-  const process = Bun.spawnSync(["tar", "-czf", path, "-C", source, "geosite", "geoip"]);
+  const process = Bun.spawnSync(["tar", "-czf", path, "-C", source, "geosite", "geoip", "geosite.dat"]);
   if (process.exitCode !== 0) throw new Error(process.stderr.toString());
   const bytes = readFileSync(path);
   return { bytes, sha256: createHash("sha256").update(bytes).digest("hex") };
@@ -128,9 +243,11 @@ function serviceFor(
   manifest: () => ReturnType<typeof manifestFor>,
   bundle: () => Uint8Array,
   verify: (manifestPath: string, signaturePath: string) => Promise<void> = async () => {},
+  activeRoutes: () => RouteRule[] = () => [],
 ) {
   return new RuleSetService(db, undefined, {
     verify,
+    activeRoutes,
     fetch: (async (input: string | URL | Request) => {
       const url = String(input);
       if (url.endsWith("rulesets.json")) return Response.json(manifest());

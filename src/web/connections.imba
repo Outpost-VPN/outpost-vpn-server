@@ -270,6 +270,9 @@ tag outpost-connections
 			.row-actions gc:3 gr:1 / 3
 			.connection-details px:20px
 		@media(max-width: 540px)
+			.page-top fld:row g:10px
+			.page-top > div miw:0
+			.page-top .header-action fl:0 0 42px
 			.connection-row gtc:28px 1fr
 			.row-actions gc:2 gr:auto jc:flex-start
 			.chart-legend flw:wrap
