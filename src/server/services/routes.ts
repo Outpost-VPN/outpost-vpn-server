@@ -10,6 +10,7 @@ type ValidatableRoute = Pick<RouteRule, "matcher" | "value" | "enabled">;
 
 type RuleSetCatalog = {
   assert(rules: ValidatableRoute[]): void;
+  prepare(rules: RouteRule[]): () => void;
   version(rules: RouteRule[]): string | null;
 };
 
@@ -172,7 +173,7 @@ export class RouteService {
     if (rules.length === 0) throw new ServiceError(409, "Нельзя опубликовать пустой набор маршрутов");
     rules.forEach((rule) => this.validateValue(rule.matcher, rule.value));
     this.assertUnique(rules);
-    this.rulesets?.assert(rules);
+    const activateRulesetCache = this.rulesets?.prepare(rules);
     const rulesetVersion = this.rulesets?.version(rules) ?? null;
     const version = (this.db.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM route_revisions").get()?.version ?? 0) + 1;
     const id = crypto.randomUUID();
@@ -201,6 +202,7 @@ export class RouteService {
         data: { version, newVersion: version, rulesCount: rules.length, rulesetVersion, note: note.trim(), ...eventData },
       }),
     );
+    activateRulesetCache?.();
     return this.state();
   }
 

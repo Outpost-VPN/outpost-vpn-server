@@ -1,6 +1,6 @@
 # Состояние Outpost v1
 
-Обновлено: 24 августа 2026.
+Обновлено: 1 сентября 2026.
 
 ## Реализовано
 
@@ -22,7 +22,7 @@
 - versioned presets Hysteria/Xray с семантическим three-way merge `старый preset + пользовательский template + новый preset`: пользовательские поля, удаления и YAML-комментарии сохраняются, массивы совмещаются по `tag`/`name`/`id`, системная политика защищена, а конфликты остаются для явного разрешения;
 - Nginx one-domain split, отключённые secret URL logs, systemd hardening и UFW;
 - pinned Hysteria/Xray с SHA-256;
-- отдельно публикуемый подписанный GeoIP/Geosite SRS bundle из официальных SagerNet sources: manifest, SHA-256, source commits, licenses, atomic switch и две rollback-версии;
+- отдельно публикуемый подписанный GeoIP/Geosite bundle из официальных SagerNet sources и проверенного `v2fly/domain-list-community` `dlc.dat`: manifest, SHA-256, source commits/release, licenses, server-side раскрытие GeoSite, atomic switch и две rollback-версии;
 - immutable releases, migration snapshot и автоматический rollback обновления;
 - production web updater с stable/candidate channels, обнаружением GitHub Release и release notes, потоковой staging-загрузкой archive + Minisign, фиксированными asset URL/именами/размерами, подтверждением конкретной версии, persistent этапами операции и ожиданием целевой версии после restart;
 - переносимый age-backup из CLI и UI, restore на установке без владельца;
@@ -49,7 +49,7 @@
 ## Проверено локально и на VPS
 
 - TypeScript typecheck и Imba production build;
-- 185 unit/integration tests, включая versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive/suspend/resume, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, signed application update discovery/staging/release notes/channel/version binding/transient-unit restart recovery/persistent stages/bounded proxy timeout/периодический discovery, нормализацию ownership release, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
+- 196 unit/integration tests, включая предварительный прогрев GeoSite при publish и staged ruleset update, сохранение рабочей версии при ошибке материализации, protobuf-разбор, server-side материализацию GeoSite и переход с legacy bundle, versioned engine preset merge/reconcile/conflict/rollback, SSE authorization/revision/cleanup/reconnect, versioned cache и Nginx gzip/no-buffering, единый allowlist навигации без скрытых страниц и legacy aliases, чистую схему `connections`, один credential set, provisioning/retry/rotate/archive/suspend/resume, golden-проверки пяти subscription renderers, реальный User-Agent Everywhere для универсальной ссылки, signed application update discovery/staging/release notes/channel/version binding/transient-unit restart recovery/persistent stages/bounded proxy timeout/периодический discovery, нормализацию ownership release, gRPC recovery, signed rule-set update/rollback, setup/DNS/root-agent contract/recovery, WebAuthn, journal, presence и pre-launch monitoring;
 - сгенерированные Mihomo, sing-box и Xray JSON профили приняты нативными `mihomo 1.19.30`, `sing-box 1.13.19` и `xray 26.7.28`;
 - Go policy tests и статический linux/amd64 agent build;
 - standalone Linux server/CLI и macOS CLI builds;
@@ -98,7 +98,7 @@ bootstrap-ограничение старого updater и полный transien
 1. прямой импорт минимум в один Mihomo-, sing-box- и Xray-клиент без обязательного browser step;
 2. Hysteria UDP/443, XHTTP и gRPC через общий TCP/443 и автоматическое переключение при недоступном UDP;
 3. добавление и отзыв одного UUID одновременно в обоих Xray inbounds, включая частичный сбой hot update;
-4. маршруты с GeoIP/Geosite, загрузка SRS, суточное обновление и сохранение рабочей версии при сломанной подписи/checksum;
+4. маршруты с GeoIP/Geosite, server-side раскрытие GeoSite, загрузка SRS, суточное обновление и сохранение рабочей версии при сломанной подписи/checksum;
 5. немедленная инвалидация прежней ссылки при ротации и архивировании, включая незавершённый provisioning;
 6. проверка Nginx, application и audit logs на отсутствие subscription token, XHTTP path и gRPC service name;
 7. traffic/presence обоих движков, остановка/восстановление служб и конкретные health/journal incidents;
@@ -353,3 +353,29 @@ production Imba build, Linux server и macOS/Linux CLI builds, Go tests/vet/buil
 Bash/ShellCheck, actionlint, native Mihomo/Xray validation, реальный XHTTP+gRPC
 transport integration, dependency audit, gitleaks и проверку Linux release
 archive с 279 внутренними checksums, безопасными путями и ownership `0:0`.
+
+## Кандидат 0.1.0-rc.26
+
+Кандидат переносит обработку GeoSite с клиентских устройств на сервер Outpost.
+Подписанный rule-set bundle теперь содержит проверенный по upstream SHA-256
+`dlc.dat` из `v2fly/domain-list-community`, его release metadata и лицензию.
+Сервер валидирует protobuf и каталог кодов, проверяет все опубликованные
+GeoIP/GeoSite-маршруты и прогревает нужные категории из staged-базы до
+атомарного переключения версии. Новые категории также подготавливаются до
+публикации route revision; запрос профиля оставляет ленивый fallback после
+рестарта, но больше не является штатной точкой первого разбора.
+
+При выдаче подписки компактное правило `GEOSITE:<code>` раскрывается в обычные
+`DOMAIN`, `DOMAIN-SUFFIX`, `DOMAIN-KEYWORD` и `DOMAIN-REGEX`, сохраняя порядок и
+действие исходного правила. Mihomo, Xray, INCY и sing-box больше не скачивают и
+не распаковывают GeoSite на устройстве. Для текущего `category-ads-all` это 911
+готовых правил: 162 точных домена, 748 суффиксов и одно регулярное выражение.
+GeoIP остаётся нативным: sing-box получает SRS с Outpost, Mihomo и Xray используют
+свой GeoIP-каталог.
+
+Реальный ежедневный builder сопоставил 1875 SagerNet GeoSite-кодов с базой и
+собрал bundle размером около 3 МБ. Unit/integration gate проходит: 196 Bun
+tests/3826 assertions; нативные Mihomo 1.19.30, sing-box 1.13.19 и Xray 26.7.28
+принимают материализованные exact/suffix/keyword/regex правила. Полный Mihomo
+профиль с реальным `category-ads-all` занимает 39 624 байта, проверяется за 2 мс
+с max RSS около 32 МБ, а чистый home не содержит `GeoSite.dat`.

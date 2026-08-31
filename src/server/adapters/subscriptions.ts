@@ -1,11 +1,11 @@
 import YAML from "yaml";
 import { config } from "../config";
-import type { Connection, ConnectionCredential, EngineId, RouteRule, SubscriptionFormat } from "../models";
+import type { ClientRouteRule, Connection, ConnectionCredential, EngineId, SubscriptionFormat } from "../models";
 
 export interface SubscriptionContext {
   connection: Connection;
   credentials: ConnectionCredential;
-  routes: RouteRule[];
+  routes: ClientRouteRule[];
   subscriptionToken: string;
   engineOrder: readonly EngineId[];
   clientPlatform?: string;
@@ -263,7 +263,7 @@ export const renderers: Record<SubscriptionFormat, SubscriptionRenderer> = {
   links: linksRenderer,
 };
 
-export function renderLinkRoutes(rules: RouteRule[]) {
+export function renderLinkRoutes(rules: ClientRouteRule[]) {
   return {
     contentType: "application/json; charset=utf-8",
     body: JSON.stringify(incyRoutingProfile(rules.filter(enabled)), null, 2),
@@ -285,11 +285,11 @@ function singBoxOrder(order: readonly EngineId[]) {
   return ordered(order, { hysteria: "hysteria2", xray: "vless-grpc" });
 }
 
-function enabled(rule: RouteRule) {
+function enabled(rule: ClientRouteRule) {
   return Boolean(rule.enabled);
 }
 
-function isCatchAll(rule: RouteRule) {
+function isCatchAll(rule: ClientRouteRule) {
   return rule.matcher === "SUFFIX" && rule.value === "*";
 }
 
@@ -297,12 +297,12 @@ function utf8Header(value: string) {
   return `base64:${Buffer.from(value, "utf8").toString("base64")}`;
 }
 
-function catchAll(rules: RouteRule[]) {
+function catchAll(rules: ClientRouteRule[]) {
   const rule = rules.find((item) => item.matcher === "SUFFIX" && item.value === "*");
   return rule?.action === "DIRECT" ? "direct" : rule?.action === "BLOCK" ? "block" : "proxy";
 }
 
-function incyRoutingProfile(rules: RouteRule[]) {
+function incyRoutingProfile(rules: ClientRouteRule[]) {
   const groups = {
     DIRECT: { sites: [] as string[], ips: [] as string[] },
     PROXY: { sites: [] as string[], ips: [] as string[] },
@@ -313,8 +313,9 @@ function incyRoutingProfile(rules: RouteRule[]) {
     const target = groups[rule.action];
     if (rule.matcher === "IP_CIDR") target.ips.push(rule.value);
     else if (rule.matcher === "GEOIP") target.ips.push(`geoip:${rule.value}`);
-    else if (rule.matcher === "GEOSITE") target.sites.push(`geosite:${rule.value}`);
     else if (rule.matcher === "DOMAIN") target.sites.push(`full:${rule.value}`);
+    else if (rule.matcher === "DOMAIN_KEYWORD") target.sites.push(rule.value);
+    else if (rule.matcher === "DOMAIN_REGEX") target.sites.push(`regexp:${rule.value}`);
     else target.sites.push(`domain:${rule.value.replace(/^\./, "")}`);
   }
   return {
@@ -338,21 +339,29 @@ function incyRoutingProfile(rules: RouteRule[]) {
   };
 }
 
-function mihomoRule(rule: RouteRule) {
+function mihomoRule(rule: ClientRouteRule) {
   const target = rule.action === "BLOCK" ? "REJECT" : rule.action;
   if (rule.matcher === "SUFFIX" && rule.value === "*") return `MATCH,${target}`;
-  const types = { DOMAIN: "DOMAIN", SUFFIX: "DOMAIN-SUFFIX", IP_CIDR: "IP-CIDR", GEOSITE: "GEOSITE", GEOIP: "GEOIP" } as const;
+  const types = {
+    DOMAIN: "DOMAIN",
+    SUFFIX: "DOMAIN-SUFFIX",
+    DOMAIN_KEYWORD: "DOMAIN-KEYWORD",
+    DOMAIN_REGEX: "DOMAIN-REGEX",
+    IP_CIDR: "IP-CIDR",
+    GEOIP: "GEOIP",
+  } as const;
   const value = rule.matcher === "SUFFIX" ? rule.value.replace(/^\./, "") : rule.value;
   const type = rule.matcher === "IP_CIDR" && value.includes(":") ? "IP-CIDR6" : types[rule.matcher];
   return `${type},${value},${target}`;
 }
 
-function singBoxSets(rules: RouteRule[]) {
+function singBoxSets(rules: ClientRouteRule[]) {
   const keys = [...new Set(rules
-    .filter((rule) => rule.matcher === "GEOSITE" || rule.matcher === "GEOIP")
-    .map((rule) => `${rule.matcher.toLowerCase()}:${rule.value.toLowerCase()}`))];
+    .filter((rule) => rule.matcher === "GEOIP")
+    .map((rule) => `geoip:${rule.value.toLowerCase()}`))];
   return keys.map((key) => {
-    const [family, code] = key.split(":") as ["geosite" | "geoip", string];
+    const family = "geoip";
+    const code = key.slice("geoip:".length);
     return {
       type: "remote",
       tag: `${family}-${code}`,
@@ -364,11 +373,13 @@ function singBoxSets(rules: RouteRule[]) {
   });
 }
 
-function singBoxRule(rule: RouteRule) {
+function singBoxRule(rule: ClientRouteRule) {
   const match = rule.matcher === "DOMAIN" ? { domain: [rule.value] }
     : rule.matcher === "SUFFIX" ? { domain_suffix: [rule.value.replace(/^\./, "")] }
-      : rule.matcher === "IP_CIDR" ? { ip_cidr: [rule.value] }
-        : { rule_set: [`${rule.matcher.toLowerCase()}-${rule.value.toLowerCase()}`] };
+      : rule.matcher === "DOMAIN_KEYWORD" ? { domain_keyword: [rule.value] }
+        : rule.matcher === "DOMAIN_REGEX" ? { domain_regex: [rule.value] }
+          : rule.matcher === "IP_CIDR" ? { ip_cidr: [rule.value] }
+          : { rule_set: [`geoip-${rule.value.toLowerCase()}`] };
   if (rule.action === "BLOCK") return { ...match, action: "reject" };
   return { ...match, action: "route", outbound: rule.action === "DIRECT" ? "direct" : "proxy" };
 }
@@ -389,14 +400,15 @@ function xrayOutbound(tag: string, host: string, id: string, network: "xhttp" | 
   };
 }
 
-function xrayRule(rule: RouteRule) {
+function xrayRule(rule: ClientRouteRule) {
   const target = rule.action === "PROXY" ? { balancerTag: "proxy" }
     : { outboundTag: rule.action === "DIRECT" ? "direct" : "block" };
   if (rule.matcher === "SUFFIX" && rule.value === "*") return { type: "field", network: "tcp,udp", ...target };
   if (rule.matcher === "IP_CIDR") return { type: "field", ip: [rule.value], ...target };
   if (rule.matcher === "GEOIP") return { type: "field", ip: [`geoip:${rule.value}`], ...target };
   const domain = rule.matcher === "DOMAIN" ? `full:${rule.value}`
-    : rule.matcher === "GEOSITE" ? `geosite:${rule.value}`
-      : `domain:${rule.value.replace(/^\./, "")}`;
+    : rule.matcher === "DOMAIN_KEYWORD" ? rule.value
+      : rule.matcher === "DOMAIN_REGEX" ? `regexp:${rule.value}`
+        : `domain:${rule.value.replace(/^\./, "")}`;
   return { type: "field", domain: [domain], ...target };
 }

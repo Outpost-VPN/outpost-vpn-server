@@ -23,7 +23,11 @@ const context: SubscriptionContext = {
   },
   routes: [
     { id: "local", position: 0, action: "DIRECT", matcher: "IP_CIDR", value: "10.0.0.0/8", source: "system", locked: true, enabled: true, created_at: "", updated_at: "" },
-    { id: "fallback", position: 1, action: "PROXY", matcher: "SUFFIX", value: "*", source: "system", locked: true, enabled: true, created_at: "", updated_at: "" },
+    { id: "ads-exact", position: 1, action: "BLOCK", matcher: "DOMAIN", value: "ads.example", source: "user", locked: false, enabled: true, created_at: "", updated_at: "" },
+    { id: "ads-suffix", position: 1, action: "BLOCK", matcher: "SUFFIX", value: ".tracking.example", source: "user", locked: false, enabled: true, created_at: "", updated_at: "" },
+    { id: "ads-keyword", position: 1, action: "BLOCK", matcher: "DOMAIN_KEYWORD", value: "sponsor", source: "user", locked: false, enabled: true, created_at: "", updated_at: "" },
+    { id: "ads-regex", position: 1, action: "BLOCK", matcher: "DOMAIN_REGEX", value: String.raw`^speed\.(coe|open)\.ad\.[a-z]{2,6}\.prod\.hosts\.ooklaserver\.net$`, source: "user", locked: false, enabled: true, created_at: "", updated_at: "" },
+    { id: "fallback", position: 2, action: "PROXY", matcher: "SUFFIX", value: "*", source: "system", locked: true, enabled: true, created_at: "", updated_at: "" },
   ],
   subscriptionToken: "native-check-token",
   engineOrder: ["hysteria", "xray"],
@@ -43,6 +47,7 @@ try {
   mkdirSync(mihomoHome);
 
   await check(binary("OUTPOST_MIHOMO_BINARY", "mihomo"), ["-t", "-d", mihomoHome, "-f", files.mihomo]);
+  if (existsSync(join(mihomoHome, "GeoSite.dat"))) throw new Error("Mihomo downloaded GeoSite.dat for a materialized profile");
   await check(binary("OUTPOST_SING_BOX_BINARY", "sing-box"), ["check", "-c", files.singBox]);
   await check(binary("OUTPOST_XRAY_BINARY", "xray"), ["run", "-test", "-config", files.xray]);
   console.log(`Native subscription validation passed for ${config.domain}`);

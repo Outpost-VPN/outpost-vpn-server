@@ -15,7 +15,7 @@
 - публичная конфигурация недоступна до `active`; активация добавляет UUID в оба Xray inbound, а частичный успех исправляется полным recovery config;
 - отзыв завершается только после очистки движка; операции сохраняются в outbox, повторяются после рестарта и сериализуются с незавершённой активацией;
 - все ответы `/s/:token` используют `Cache-Control: no-store` и `Referrer-Policy: no-referrer`; format URLs и tokens не записываются в application/audit logs;
-- GeoIP/Geosite manifest имеет detached Minisign signature, bundle проверяется по SHA-256 и переключается атомарно; ошибка сохраняет предыдущий набор;
+- GeoIP/Geosite manifest имеет detached Minisign signature, bundle проверяется по SHA-256, GeoSite protobuf и каталогу кодов, а upstream `dlc.dat` — по опубликованному SHA-256; опубликованные коды и материализация нужных GeoSite-категорий проверяются до активации, поэтому ошибка сохраняет предыдущие набор и cache;
 - application update metadata читается только из фиксированного публичного GitHub-репозитория; archive и signature имеют точные versioned имена, size limits и атомарную staging-запись без пользовательских URL;
 - release archive имеет detached Minisign signature, проверяемую installer/updater до распаковки; target version связана с именем archive и подписанным manifest, downgrade через owner API запрещён;
 - setup IP edge разрешает только корень, setup API/SPA и статические ресурсы; после final domain тот же IP edge оставляет read-only setup status и предупреждение, но не публикует WebAuthn, dashboard, мутации, подписки или transports;

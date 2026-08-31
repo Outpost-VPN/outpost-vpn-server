@@ -342,8 +342,12 @@ describe("release trust chain", () => {
     const builder = await Bun.file(resolve(root, "scripts/rulesets.ts")).text();
     expect(workflow).toContain("gh release upload rulesets --clobber");
     expect(workflow).toContain("OUTPOST_REQUIRE_SIGNATURE=1");
+    expect(workflow).toContain("GITHUB_TOKEN: ${{ github.token }}");
     expect(builder).toContain("SagerNet/sing-geosite");
     expect(builder).toContain("SagerNet/sing-geoip");
+    expect(builder).toContain("v2fly/domain-list-community");
+    expect(builder).toContain("geosite.dat");
+    expect(builder).toContain("dlc.dat.sha256sum");
     expect(builder).toContain("sources.json");
     expect(builder).toContain("licenses");
   });

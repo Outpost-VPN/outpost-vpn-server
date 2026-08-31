@@ -4,7 +4,8 @@ import { basename, join } from "node:path";
 import type { OutpostDatabase } from "../db/database";
 import { now } from "../db/database";
 import { config } from "../config";
-import type { RouteRule } from "../models";
+import type { ClientRouteRule, RouteRule } from "../models";
+import { geoSiteCodes, parseGeoSiteDatabase, type GeoSiteDomain } from "../adapters/geosite";
 import { JournalService } from "./journal";
 import { ServiceError } from "./connections";
 
@@ -14,7 +15,7 @@ type RulesetManifest = {
   version: string;
   bundle: { url: string; sha256: string };
   codes: Record<Family, string[]>;
-  source?: { geosite?: string; geoip?: string };
+  source?: { geosite?: string; geoip?: string; geositeDatabase?: string };
 };
 
 type RulesetState = {
@@ -29,7 +30,10 @@ type RulesetState = {
 type RuleSetDependencies = {
   fetch?: typeof globalThis.fetch;
   verify?: (manifestPath: string, signaturePath: string) => Promise<void>;
+  activeRoutes?: () => RouteRule[];
 };
+
+type GeoSiteCache = { version: string; sites: Map<string, GeoSiteDomain[]> };
 
 const emptyState: RulesetState = {
   status: "idle",
@@ -45,10 +49,13 @@ export class RuleSetService {
   private refreshing: Promise<RulesetState> | null = null;
   private fetcher: typeof globalThis.fetch;
   private verify: (manifestPath: string, signaturePath: string) => Promise<void>;
+  private activeRoutes: () => RouteRule[];
+  private geoSiteCache: GeoSiteCache | null = null;
 
   constructor(private db: OutpostDatabase, journal?: JournalService, dependencies: RuleSetDependencies = {}) {
     this.journal = journal ?? new JournalService(db);
     this.fetcher = dependencies.fetch ?? globalThis.fetch;
+    this.activeRoutes = dependencies.activeRoutes ?? (() => []);
     this.verify = dependencies.verify ?? ((manifestPath, signaturePath) => command(
       ["minisign", "-Vm", manifestPath, "-x", signaturePath, "-P", config.rulesetPublicKey],
       "Подпись индекса наборов недействительна",
@@ -64,6 +71,43 @@ export class RuleSetService {
     return this.required(rules).length ? this.state().activeVersion : null;
   }
 
+  materialize(rules: RouteRule[]): ClientRouteRule[] {
+    const requested = rules.filter((rule) => Boolean(rule.enabled) && rule.matcher === "GEOSITE");
+    if (!requested.length) return rules.filter((rule) => rule.matcher !== "GEOSITE") as ClientRouteRule[];
+    this.prepare(rules)();
+    const sites = this.geoSiteCache!.sites;
+    return rules.flatMap((rule): ClientRouteRule[] => {
+      if (!rule.enabled) return rule.matcher === "GEOSITE" ? [] : [rule as ClientRouteRule];
+      if (rule.matcher !== "GEOSITE") return [rule as ClientRouteRule];
+      const code = normalizeCode(rule.value);
+      const domains = sites.get(code);
+      if (!domains?.length) {
+        throw new ServiceError(503, `GeoSite-категория ${code} не подготовлена на сервере`);
+      }
+      return domains.map((domain, index) => ({
+        ...rule,
+        id: `${rule.id}:geosite:${index}`,
+        matcher: domain.matcher,
+        value: domain.value,
+      }));
+    });
+  }
+
+  prepare(rules: RouteRule[]) {
+    this.assert(rules);
+    const state = this.state();
+    if (!state.activeVersion) return () => {};
+    const prepared = this.prepareGeoSites(
+      state.activeVersion,
+      join(config.rulesetDir, state.activeVersion, "geosite.dat"),
+      rules,
+      this.geoSiteCache,
+    );
+    return () => {
+      if (this.state().activeVersion === prepared.version) this.geoSiteCache = prepared;
+    };
+  }
+
   assert(rules: RulesetRoute[]) {
     const required = this.required(rules);
     if (!required.length) return;
@@ -71,10 +115,7 @@ export class RuleSetService {
     if (state.status !== "ready" || !state.activeVersion) {
       throw new ServiceError(409, "GeoIP/Geosite-наборы ещё не готовы", { reason: state.lastError });
     }
-    const missing = required.filter(({ family, code }) => !state.codes[family].includes(code));
-    if (missing.length) {
-      throw new ServiceError(400, "В текущем наборе нет указанных GeoIP/Geosite-кодов", { missing });
-    }
+    this.assertCodes(rules, state.codes, "В текущем наборе нет указанных GeoIP/Geosite-кодов");
   }
 
   file(family: string, rawCode: string) {
@@ -93,8 +134,14 @@ export class RuleSetService {
   async refresh(force = false) {
     if (this.refreshing) return this.refreshing;
     const current = this.state();
-    if (!force && current.checkedAt && Date.now() - Date.parse(current.checkedAt) < config.rulesetCheckHours * 60 * 60 * 1000) {
-      return current;
+    if (!force && current.checkedAt && Date.now() - Date.parse(current.checkedAt) < config.rulesetCheckHours * 60 * 60 * 1000
+      && (!current.activeVersion || this.installedComplete(current))) {
+      try {
+        this.prepare(this.activeRoutes())();
+        return current;
+      } catch {
+        // A failed warm-up may be caused by a damaged local database. Re-download it below.
+      }
     }
     this.refreshing = this.update().finally(() => { this.refreshing = null; });
     return this.refreshing;
@@ -119,9 +166,22 @@ export class RuleSetService {
       const manifest = parseManifest(JSON.parse(readFileSync(manifestPath, "utf8")));
       const current = this.state();
       if (current.activeVersion === manifest.version && this.complete(manifest)) {
-        const state = { ...current, status: "ready" as const, checkedAt, lastError: null };
-        this.db.setSetting("rulesets", state);
-        return state;
+        try {
+          const routes = this.activeRoutes();
+          this.assertCodes(routes, manifest.codes, "Новый набор не содержит кодов опубликованных маршрутов");
+          const prepared = this.prepareGeoSites(
+            manifest.version,
+            join(config.rulesetDir, manifest.version, "geosite.dat"),
+            routes,
+            this.geoSiteCache,
+          );
+          const state = { ...current, status: "ready" as const, checkedAt, lastError: null };
+          this.db.setSetting("rulesets", state);
+          this.geoSiteCache = prepared;
+          return state;
+        } catch {
+          // Re-download the same version if its local GeoSite database cannot be warmed.
+        }
       }
 
       const bundleResponse = await this.fetcher(manifest.bundle.url, { signal: AbortSignal.timeout(120_000) });
@@ -136,6 +196,9 @@ export class RuleSetService {
       mkdirSync(staged, { mode: 0o700 });
       await command(["tar", "-xzf", bundlePath, "-C", staged, "--no-same-owner", "--no-same-permissions"], "Не удалось распаковать наборы");
       validateFiles(staged, manifest);
+      const routes = this.activeRoutes();
+      this.assertCodes(routes, manifest.codes, "Новый набор не содержит кодов опубликованных маршрутов");
+      const prepared = this.prepareGeoSites(manifest.version, join(staged, "geosite.dat"), routes);
       writeFileSync(join(staged, "manifest.json"), JSON.stringify(manifest, null, 2), { mode: 0o600 });
 
       const target = join(config.rulesetDir, manifest.version);
@@ -150,6 +213,7 @@ export class RuleSetService {
         codes: manifest.codes,
       };
       this.db.setSetting("rulesets", state);
+      this.geoSiteCache = prepared;
       this.cleanup(manifest.version);
       this.journal.record("rulesets.updated", {
         actor: "ruleset-updater",
@@ -189,12 +253,51 @@ export class RuleSetService {
       })).values()];
   }
 
+  private assertCodes(rules: RulesetRoute[], codes: Record<Family, string[]>, message: string) {
+    const missing = this.required(rules).filter(({ family, code }) => !codes[family].includes(code));
+    if (missing.length) throw new ServiceError(400, message, { missing });
+  }
+
   private complete(manifest: RulesetManifest) {
     try {
       validateFiles(join(config.rulesetDir, manifest.version), manifest);
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private installedComplete(state: RulesetState) {
+    if (!state.activeVersion) return false;
+    try {
+      const codes = geoSiteCodes(readFileSync(join(config.rulesetDir, state.activeVersion, "geosite.dat")));
+      return state.codes.geosite.every((code) => codes.has(code));
+    } catch {
+      return false;
+    }
+  }
+
+  private prepareGeoSites(version: string, database: string, rules: RulesetRoute[], previous?: GeoSiteCache | null): GeoSiteCache {
+    const requested = [...new Set(rules
+      .filter((rule) => Boolean(rule.enabled) && rule.matcher === "GEOSITE")
+      .map((rule) => normalizeCode(rule.value)))];
+    const sites = previous?.version === version
+      ? new Map(previous.sites)
+      : new Map<string, GeoSiteDomain[]>();
+    const active = new Set(requested);
+    for (const code of sites.keys()) if (!active.has(code)) sites.delete(code);
+    const missing = requested.filter((code) => !sites.has(code));
+    if (!missing.length) return { version, sites };
+    try {
+      const loaded = parseGeoSiteDatabase(readFileSync(database), missing);
+      for (const code of missing) {
+        const domains = loaded.get(code);
+        if (!domains?.length) throw new Error(`GeoSite-категория ${code} не содержит доменных правил`);
+        sites.set(code, domains);
+      }
+      return { version, sites };
+    } catch (error) {
+      throw new ServiceError(503, "GeoSite-база на сервере повреждена или отсутствует", { reason: safeError(error), version });
     }
   }
 
@@ -229,6 +332,11 @@ function parseManifest(value: unknown): RulesetManifest {
 }
 
 function validateFiles(directory: string, manifest: RulesetManifest) {
+  const database = join(directory, "geosite.dat");
+  if (!existsSync(database) || !lstatSync(database).isFile()) throw new Error("В архиве отсутствует geosite.dat");
+  const sites = geoSiteCodes(readFileSync(database));
+  const missingSites = manifest.codes.geosite.filter((code) => !sites.has(code));
+  if (missingSites.length) throw new Error(`GeoSite.dat не содержит категории: ${missingSites.slice(0, 10).join(", ")}`);
   for (const family of ["geosite", "geoip"] as const) {
     for (const code of manifest.codes[family]) {
       const file = join(directory, family, `${code}.srs`);
@@ -253,7 +361,7 @@ function unsafeEntry(value: string) {
   const normalized = value.replace(/^\.\//, "");
   return value.startsWith("/")
     || normalized.split("/").includes("..")
-    || !/^(?:(?:geosite|geoip|licenses)\/?|(?:geosite|geoip)\/[a-zA-Z0-9_@.!+-]+\.srs|licenses\/sing-(?:geosite|geoip)\.txt|sources\.json|THIRD_PARTY_NOTICES\.md)$/.test(normalized);
+    || !/^(?:(?:geosite|geoip|licenses)\/?|(?:geosite|geoip)\/[a-zA-Z0-9_@.!+-]+\.srs|licenses\/(?:sing-(?:geosite|geoip)|domain-list-community)\.txt|geosite\.dat|sources\.json|THIRD_PARTY_NOTICES\.md)$/.test(normalized);
 }
 
 function sha256(path: string) {
@@ -270,5 +378,8 @@ async function command(args: string[], message: string) {
 }
 
 function safeError(error: unknown) {
+  if (error instanceof ServiceError && error.details && typeof error.details === "object" && "reason" in error.details) {
+    return `${error.message}: ${String(error.details.reason)}`.slice(0, 500);
+  }
   return (error instanceof Error ? error.message : String(error)).slice(0, 500);
 }

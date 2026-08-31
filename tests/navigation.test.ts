@@ -35,6 +35,14 @@ describe("admin navigation", () => {
     expect(shell).toContain("overflow-x: hidden");
     expect(shell).toContain("get update? do store.data.system.updates.available");
     expect(shell).toContain('<span.notice aria-hidden="true">');
+    expect(shell).toContain("tag outpost-mobile-menu");
+    expect(shell).toContain("grid-template-columns: repeat(6, minmax(0, 1fr))");
+    expect(shell).toContain("nav, .sidebar-footer display: contents");
+    expect(shell).toContain(".utility-nav display: none");
+    expect(shell).toContain("calc(64px + env(safe-area-inset-bottom))");
+    expect(shell).not.toContain(".brand, .sidebar-footer display: none");
+    const index = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    expect(index).toContain("viewport-fit=cover");
     expect(app).not.toContain("./traffic.imba");
     expect(app).not.toContain("./system.imba");
     for (const action of ["Изменить аватар", "Свернуть", "Выберите аватар"]) {
@@ -56,6 +64,14 @@ describe("admin navigation", () => {
     expect(home).toContain('<div.bar><span [w:{scale(connection)}%]>');
     expect(home).not.toContain('style="width:{fmt.percent');
     expect(home).toContain("<span> t('Активность')");
+    expect(home).toContain(".metrics gtc:repeat(3, minmax(0,1fr))");
+    expect(home).toContain("&.network gc:1 / -1");
+    expect(home).toContain("<small> row.detail");
+    expect(home).toContain(".metric small mih:13px");
+    expect(home).toContain("header h2 strong fs:19px white-space:nowrap");
+    expect(home).toContain(".totals strong fs:12px fw:650");
+    expect(home).toContain(".period order:-1");
+    expect(home).toContain(".period summary jc:space-between");
     expect(home).toContain('<span.activity .online=fmt.connectionOnline(connection)');
     expect(home).not.toContain("<span> t('Последняя активность')");
     expect(home).not.toContain("<span> t('Статус')");

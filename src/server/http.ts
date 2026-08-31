@@ -73,7 +73,7 @@ export class HttpApplication {
     this.auth = new AuthService(db, this.journal);
     this.setup = new SetupService(this.auth);
     this.connections = new ConnectionService(db, this.journal);
-    this.rulesets = new RuleSetService(db, this.journal);
+    this.rulesets = new RuleSetService(db, this.journal, { activeRoutes: () => this.routes.published() });
     this.routes = new RouteService(db, this.journal, this.rulesets);
     this.traffic = new TrafficService(db, configuredCollectors(), this.journal, !config.setup);
     this.engines = new EngineRuntimeService(db);
@@ -418,10 +418,11 @@ export class HttpApplication {
     const token = ctx.params.token!;
     const connection = this.connections.bySubscriptionToken(token);
     const credentials = this.connections.credentials(connection.id);
+    const routes = this.rulesets.materialize(this.routes.published());
     const rendered = renderers[format].render({
       connection,
       credentials,
-      routes: this.routes.published(),
+      routes,
       subscriptionToken: token,
       engineOrder: this.system.engineOrder(),
       clientPlatform: detectPlatform(ctx.request.headers.get("user-agent") ?? ""),
@@ -455,7 +456,7 @@ export class HttpApplication {
   private async linkRoutes(ctx: RequestContext, head = false) {
     const token = ctx.params.token!;
     this.connections.bySubscriptionToken(token);
-    const rendered = renderLinkRoutes(this.routes.published());
+    const rendered = renderLinkRoutes(this.rulesets.materialize(this.routes.published()));
     const version = this.db.setting("active_route_version", 0);
     return contentResponse(ctx.request, rendered.body, rendered.contentType, head, { "x-routes-version": String(version) });
   }

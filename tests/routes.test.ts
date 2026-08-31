@@ -134,12 +134,45 @@ describe("route revisions", () => {
   test("checks ruleset availability before persisting a geo rule", () => {
     const guarded = new RouteService(fixture.db, undefined, {
       assert: () => { throw new Error("Такого GeoSite-кода нет"); },
+      prepare: () => () => {},
       version: () => null,
     });
     const before = guarded.draft();
     expect(() => guarded.add({ action: "DIRECT", matcher: "GEOSITE", value: "google" }, "test"))
       .toThrow("Такого GeoSite-кода нет");
     expect(guarded.draft()).toEqual(before);
+  });
+
+  test("prepares GeoSite rules on publish and activates the cache after the revision", () => {
+    const lifecycle: string[] = [];
+    const guarded = new RouteService(fixture.db, undefined, {
+      assert: () => {},
+      prepare: (rules) => {
+        lifecycle.push(`prepare:${fixture.db.setting("active_route_version", 0)}:${rules.some((rule) => rule.matcher === "GEOSITE")}`);
+        return () => lifecycle.push(`activate:${fixture.db.setting("active_route_version", 0)}`);
+      },
+      version: () => "v1",
+    });
+
+    guarded.add({ action: "DIRECT", matcher: "GEOSITE", value: "google" }, "test");
+    expect(lifecycle).toEqual([]);
+
+    guarded.publish("google direct", "test");
+    expect(lifecycle).toEqual(["prepare:1:true", "activate:2"]);
+  });
+
+  test("does not publish when GeoSite preparation fails", () => {
+    const guarded = new RouteService(fixture.db, undefined, {
+      assert: () => {},
+      prepare: () => { throw new Error("GeoSite cache is unavailable"); },
+      version: () => "v1",
+    });
+    guarded.add({ action: "DIRECT", matcher: "GEOSITE", value: "google" }, "test");
+    const before = guarded.state();
+
+    expect(() => guarded.publish("google direct", "test")).toThrow("GeoSite cache is unavailable");
+    expect(guarded.state()).toMatchObject({ activeVersion: before.activeVersion, published: before.published });
+    expect(guarded.revisions()).toHaveLength(1);
   });
 
   test("publishes a typed route revision event", () => {

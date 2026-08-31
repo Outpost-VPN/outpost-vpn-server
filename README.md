@@ -7,7 +7,7 @@ traffic by connection without storing browsing history. Every connection has
 one credential generation and one link that may be shared by any number of
 people and physical devices.
 
-> **Status:** `0.1.0-rc.25` pre-release. Local tests and production builds pass;
+> **Status:** `0.1.0-rc.26` pre-release. Local tests and production builds pass;
 > the signed release passes a clean Ubuntu VPS installation, with the remaining
 > end-to-end field gate tracked in [STATUS.md](STATUS.md).
 
@@ -42,8 +42,10 @@ TCP/443 → Nginx → secret XHTTP path → Xray on localhost
   directories.
 - Connection activation, rotation, and archival are synchronized with Xray through a
   persistent SQLite outbox.
-- Signed GeoIP/Geosite SRS bundles are published separately and updated
-  atomically with two rollback versions retained on each server.
+- Signed GeoIP/Geosite bundles include SRS files and a verified GeoSite
+  database. The server prepares published GeoSite categories before a route
+  revision or database version becomes active, then expands them into ordinary
+  domain rules for clients. Updates are atomic and retain two rollback versions.
 - Release archives are signed with Minisign, and signatures are verified before
   installation or updates.
 
@@ -84,7 +86,7 @@ beside existing services or selecting alternative public ports is not supported.
 To install a specific release candidate instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.25 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.26 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,

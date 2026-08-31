@@ -78,6 +78,58 @@ tag outpost-logo
 		@media(max-width: 900px)
 			.copy display:none
 
+tag outpost-mobile-menu
+	store = null
+	open = false
+
+	get active? do store.path == '/access' or store.path == '/settings'
+	get update? do store.data.system.updates.available
+	get label do "{t('title.access')} · {t('title.settings_short')}"
+
+	def toggle
+		open = !open
+
+	def close
+		open = false
+
+	def go path
+		close!
+		store.goto(path)
+
+	<self .active=active?>
+		if open
+			<global @click.capture.outside=close @keydown.esc=close>
+		<button.mobile-trigger type="button" @click.stop=toggle aria-label=label title=label aria-haspopup="menu" aria-expanded=open>
+			<outpost-icon name="gear-six">
+			if update?
+				<span.mobile-notice aria-hidden="true">
+		if open
+			<div.mobile-menu role="menu" ease>
+				<button type="button" role="menuitem" .current=(store.path == '/access') @click=(do go('/access'))>
+					<outpost-icon name="shield-check">
+					<span> t('title.access')
+				<button type="button" role="menuitem" .current=(store.path == '/settings') @click=(do go('/settings'))>
+					<outpost-icon name="gear-six">
+					<span> t('title.settings_short')
+					if update?
+						<span.menu-notice aria-hidden="true">
+
+	css self
+		d:none
+		@media(max-width: 620px)
+			pos:relative d:block min-width:0
+			.mobile-trigger pos:relative w:100% h:52px d:grid jai:center p:0 bd:0 rd:10px bgc:transparent c:var(--outpost-muted) ol:none
+			.mobile-trigger > .ph s:24px d:grid jai:center fs:21px
+			.mobile-trigger bgc@hover:var(--outpost-soft)
+			&.active .mobile-trigger bgc:var(--outpost-auth-start) c:var(--outpost-brand)
+			.mobile-notice pos:absolute t:7px r:7px s:7px rd:full bgc:var(--outpost-danger)
+			.mobile-menu pos:absolute b:calc(100% + 10px) r:0 zi:80 w:208px d:grid g:3px p:6px bd:1px solid var(--outpost-line) rd:12px bgc:var(--outpost-white) bxs:0 16px 40px black/16 ease:180ms cubic-bezier(.22,1,.36,1) o@off:0 y@off:6px scale@off:.98 transform-origin:bottom right
+			.mobile-menu button pos:relative w:100% h:46px d:grid gtc:24px minmax(0,1fr) auto ai:center g:10px p:0 11px bd:0 rd:8px bgc:transparent c:var(--outpost-text) ta:left fs:13px fw:680
+			.mobile-menu button bgc@hover:var(--outpost-soft) c@hover:var(--outpost-brand)
+			.mobile-menu button.current bgc:var(--outpost-auth-start) c:var(--outpost-brand)
+			.mobile-menu .ph s:24px d:grid jai:center fs:19px
+			.menu-notice s:7px rd:full bgc:var(--outpost-danger)
+
 tag outpost-sidebar
 	store = null
 	checking = false
@@ -141,12 +193,13 @@ tag outpost-sidebar
 			<div.utility-nav>
 				<button.utility-item type="button" .active=active('/access') @click=(do store.goto('/access')) aria-label=t('title.access') title=t('title.access') aria-current=(active('/access') ? 'page' : null)>
 					<span.utility-mark><outpost-icon name="shield-check">
-					<span> t('title.access')
+					<span.utility-label> t('title.access')
 				<button.utility-item type="button" .active=active('/settings') @click=(do store.goto('/settings')) aria-label=label title=label aria-current=(active('/settings') ? 'page' : null)>
 					<span.utility-mark><outpost-icon name="gear-six">
-					<span> t('title.settings_short')
+					<span.utility-label> t('title.settings_short')
 					if update?
 						<span.notice aria-hidden="true">
+			<outpost-mobile-menu store=store>
 			<div.server-health .pending=!serverHealthy?>
 				<div.health-state title=(serverIssue or t('Всё работает штатно'))>
 					<outpost-icon name=(serverHealthy? ? 'check-circle' : 'warning-circle')>
@@ -227,7 +280,7 @@ tag outpost-sidebar
 			padding: 28px 12px 18px
 			outpost-logo .copy display: none
 			nav span display: none
-			.utility-item > span:last-child display: none
+			.utility-label display: none
 			.server-health .health-state span display: none
 			.brand margin-left: 9px
 			nav margin-top: 38px
@@ -240,7 +293,7 @@ tag outpost-sidebar
 			.server-health .health-state g:0
 		@media(max-width: 620px)
 			width: 100%
-			height: 68px
+			height: calc(64px + env(safe-area-inset-bottom))
 			min-height: 0
 			position: fixed
 			top: auto
@@ -248,13 +301,17 @@ tag outpost-sidebar
 			bottom: 0
 			left: 0
 			z-index: 50
-			padding: 8px 12px
+			display: grid
+			grid-template-columns: repeat(6, minmax(0, 1fr))
+			gap: 2px
+			padding: 6px 8px calc(6px + env(safe-area-inset-bottom))
 			border-right: 0
 			border-top: 1px solid var(--outpost-line)
-			.brand, .sidebar-footer display: none
-			nav display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; margin: 0
-			.nav-item height: 50px; border-radius: 10px
-			.nav-item outpost-icon font-size: 23px
+			.brand, .server-health display: none
+			nav, .sidebar-footer display: contents
+			.utility-nav display: none
+			.nav-item height: 52px; min-width: 0; display: grid; place-items: center; padding: 0; border-radius: 10px
+			.nav-item > .ph s:24px d:grid jai:center fs:21px
 
 tag outpost-header
 	title = ''
@@ -320,11 +377,12 @@ tag outpost-shell
 		@media(max-width: 900px)
 			main margin-left: 82px; padding: 48px 28px
 		@media(max-width: 620px)
+			height: 100dvh
 			outpost-header
 				gap: 10px
 				h1 font-size: 31px
 				p font-size: 16px
-			main margin-left: 0; padding: 30px 20px 96px
+			main height: 100dvh; margin-left: 0; padding: 30px 20px calc(96px + env(safe-area-inset-bottom))
 
 tag outpost-gauge
 	value = 0
@@ -372,3 +430,6 @@ tag outpost-gauge
 		pos:relative w:102px h:56px d:grid ai:end jc:center fl:0 0 102px
 		canvas pos:absolute inset:0 s:100%
 		strong pos:relative zi:1 mb:4px c:var(--outpost-navy) fs:16px fw:750
+		@media(max-width: 560px)
+			w:84px h:48px fl:0 0 84px
+			strong fs:14px
