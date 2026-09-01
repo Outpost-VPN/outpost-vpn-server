@@ -702,6 +702,8 @@ tag outpost-protocols
 			.engine-title g:8px
 			.engine-title h3 fs:15px
 			.engine-version, .engine-connection fs:11px
+			.engine-actions gc:4 gr:1
+			.engine-connection gc:3 / -1 gr:2 g:3px fs:clamp(8px,2.5vw,10px) lh:1.2 flex-wrap:nowrap white-space:nowrap
 			.configure span d:none
 			.configure s:36px p:0
 			.toggle s:36px

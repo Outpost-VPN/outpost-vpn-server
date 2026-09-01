@@ -1,11 +1,16 @@
 import {intl, t} from './i18n.imba'
 import {fmt, localNetworkValues, routeActions, routeIcons, routeMatchers} from './context.imba'
 
+const glyphs = {DIRECT: 'arrow-right', PROXY: 'arrows-left-right', BLOCK: 'prohibit'}
+
 tag outpost-action-picker
 	value = 'DIRECT'
 	change = null
 	plain = false
+	compact = false
 	open = false
+
+	get glyph do glyphs[value] or 'prohibit'
 
 	def toggle
 		open = !open
@@ -17,45 +22,55 @@ tag outpost-action-picker
 		open = false
 		change(next) if change and next != value
 
-	<self .open=open .plain=plain>
+	<self .open=open .plain=plain .compact=compact>
 		if open
 			<global @click.outside=close @keydown.esc=close>
-		<button.trigger type="button" .direct=(value == 'DIRECT') .proxy=(value == 'PROXY') .block=(value == 'BLOCK') @click.stop=toggle aria-haspopup="menu" aria-expanded=open>
+		<button.trigger type="button" .direct=(value == 'DIRECT') .proxy=(value == 'PROXY') .block=(value == 'BLOCK') @click.stop=toggle aria-label=fmt.action(value) title=fmt.action(value) aria-haspopup="menu" aria-expanded=open>
+			<outpost-icon.glyph name=glyph>
 			<span.dot>
-			<span> fmt.action(value)
-			<outpost-icon name="caret-down">
+			<span.label> fmt.action(value)
+			<outpost-icon.caret name="caret-down">
 		if open
 			<div.menu role="menu" ease>
 				for item in routeActions
 					<button.option type="button" role="menuitem" .active=(item.id == value) .direct=(item.id == 'DIRECT') .proxy=(item.id == 'PROXY') .block=(item.id == 'BLOCK') @click.stop=choose(item.id)>
-						<span.dot>
-						<span> t(item.label)
+						<outpost-icon.option-glyph name=(glyphs[item.id] or 'prohibit')>
+						<span.option-label> t(item.label)
 						if item.id == value
-							<outpost-icon name="check">
+							<outpost-icon.selected name="check">
 
 	css self
 		d:block pos:relative miw:0
 		.trigger w:100% mih:34px d:grid gtc:8px minmax(0, 1fr) 13px ai:center g:7px p:0 9px bd:0 rd:8px ta:left fs:12px fw:750 cur:pointer tween:background-color 150ms ease, color 150ms ease
-		.trigger > span:nth-child(2) of:hidden text-overflow:ellipsis white-space:nowrap
-		.trigger > outpost-icon fs:13px tween:transform 150ms ease
-		&.open .trigger > outpost-icon transform:rotate(180deg)
+		.glyph d:none
+		.trigger > .label of:hidden text-overflow:ellipsis white-space:nowrap
+		.caret fs:13px tween:transform 150ms ease
+		&.open .caret transform:rotate(180deg)
 		.trigger.direct bgc:var(--outpost-success-soft) c:var(--outpost-success)
 		.trigger.proxy bgc:var(--outpost-auth-start) c:var(--outpost-brand)
 		.trigger.block bgc:red1 c:red6
 		.dot s:7px rd:50% bgc:currentColor
 		.menu pos:absolute t:calc(100% + 7px) r:0 zi:30 w:190px p:6px bd:1px solid var(--outpost-line) rd:11px bgc:white bxs:0 14px 34px black/14 ease:180ms cubic-bezier(.22,1,.36,1) o@off:0 y@off:-6px scale@off:.98 transform-origin:top right
-		.option w:100% mih:42px d:grid gtc:8px 1fr 18px ai:center g:10px p:0 10px bd:0 rd:8px bgc:white c:var(--outpost-text) ta:left fs:13px fw:650
+		.option w:100% mih:42px d:grid gtc:18px minmax(0, 1fr) 18px ai:center g:9px p:0 10px bd:0 rd:8px bgc:white c:var(--outpost-text) ta:left fs:13px fw:650
 		.option bgc@hover:var(--outpost-soft)
 		.option.active bgc:var(--outpost-soft)
-		.option > outpost-icon c:var(--outpost-brand) fs:15px
-		.option.direct .dot c:var(--outpost-success)
-		.option.proxy .dot c:var(--outpost-brand)
-		.option.block .dot c:red6
+		.option-label miw:0 white-space:nowrap
+		.option-glyph js:center fs:17px
+		.selected js:end c:var(--outpost-brand) fs:15px
+		.option.direct .option-glyph c:var(--outpost-success)
+		.option.proxy .option-glyph c:var(--outpost-brand)
+		.option.block .option-glyph c:red6
 		&.plain .trigger h:42px bd:1px solid var(--outpost-line) bgc:white c:var(--outpost-text)
 		&.plain .trigger bgc@hover:var(--outpost-soft)
 		&.plain .trigger.direct .dot c:var(--outpost-success)
 		&.plain .trigger.proxy .dot c:var(--outpost-brand)
 		&.plain .trigger.block .dot c:red6
+		@media(max-width: 680px)
+			&.compact .trigger s:34px mih:34px gtc:1fr jai:center g:0 p:0
+			&.compact .glyph d:block fs:18px
+			&.compact .trigger > .dot d:none
+			&.compact .trigger > .label d:none
+			&.compact .caret d:none
 
 tag outpost-matcher-picker
 	value = 'DOMAIN'
@@ -242,7 +257,7 @@ tag outpost-route-system
 				<strong> t('Локальная сеть')
 				<small> t('Системное правило · 3 частных диапазона')
 		<span.kind> 'IP / CIDR × 3'
-		<outpost-action-picker value=action change=change>
+		<outpost-action-picker compact=true value=action change=change>
 
 	css self
 		min-height:74px
@@ -268,13 +283,13 @@ tag outpost-route-system
 		.rule small mt:3px c:var(--outpost-muted) fs:10px
 		.kind c:var(--outpost-muted) fs:12px ta:center white-space:nowrap
 		@media(max-width: 680px)
-			grid-template-columns:22px 32px minmax(0, 1fr) 34px
+			grid-template-columns:22px 32px minmax(0,1fr) 34px
 			g:7px
 			p:10px 12px
-			.pin grid-column:1; grid-row:1 / 3
-			.number grid-column:2; grid-row:1 / 3
+			.pin grid-column:1; grid-row:1
+			.number grid-column:2; grid-row:1
 			.rule grid-column:3; grid-row:1
-			outpost-action-picker grid-column:3; grid-row:2; w:152px; mt:7px
+			outpost-action-picker grid-column:4; grid-row:1; w:34px; mt:0
 			.kind d:none
 
 tag outpost-route-row
@@ -334,7 +349,7 @@ tag outpost-route-row
 						<strong> t('Исключение для {value} · правило {index}', {value: exception.rule.value, index: exception.index + 1})
 						<span> t('Проверяется раньше, поэтому применяется действие «{action}».', {action: fmt.action(rule.action).toLowerCase!})
 		<span.kind> fixed? ? '' : label!
-		<outpost-action-picker value=rule.action change=(do(value) routes.update(rule.id, {action: value}))>
+		<outpost-action-picker compact=true value=rule.action change=(do(value) routes.update(rule.id, {action: value}))>
 		if !rule.locked
 			<button.remove type="button" disabled=busy @click.stop=routes.drop(rule.id) aria-label=t('Удалить правило')>
 				<outpost-icon name=(busy ? 'spinner-gap' : 'trash')>
@@ -450,14 +465,15 @@ tag outpost-route-row
 			font-size: 16px
 			@hover background: #FFF0EF; color: #D92D20
 		@media(max-width: 680px)
-			grid-template-columns: 22px 32px minmax(0, 1fr) 34px
+			grid-template-columns:22px 32px minmax(0,1fr) 34px 32px
+			&.system grid-template-columns:22px 32px minmax(0,1fr) 34px
 			gap: 7px
 			padding: 10px 12px
-			.handle grid-column: 1; grid-row: 1 / 3
-			.number grid-column: 2; grid-row: 1 / 3
+			.handle grid-column:1; grid-row:1
+			.number grid-column:2; grid-row:1
 			.rule grid-column: 3; grid-row: 1
-			outpost-action-picker grid-column: 3; grid-row: 2; width: 152px; margin-top: 7px
-			.remove grid-column: 4; grid-row: 1 / 3
+			outpost-action-picker grid-column:4; grid-row:1; width:34px; margin-top:0
+			.remove grid-column:5; grid-row:1
 			.kind display: none
 			.rule small display: none
 
@@ -636,9 +652,10 @@ tag outpost-ruleset-banner
 			.geo-control grid-column:2 miw:0
 		@media(max-width: 600px)
 			gtc:40px minmax(0,1fr) p:15px g:12px
-			.geo-mark s:40px fs:19px
-			.geo-control grid-column:1/-1 gtc:1fr
-			.outpost-button w:100%
+			.geo-mark s:40px fs:19px align-self:start
+			.geo-control gc:2 gtc:1fr justify-items:start ta:left g:10px
+			.geo-status ta:left
+			.outpost-button w:auto justify-self:start
 
 tag outpost-routes
 	store = null
@@ -955,3 +972,7 @@ tag outpost-routes
 			.rule-footer ai:stretch fld:column
 			.footer-actions d:grid gtc:1fr 1fr
 			.footer-actions .outpost-button p:0 10px
+		@media(max-width: 520px)
+			.footer-actions g:6px gtc:minmax(0,1.35fr) minmax(0,.9fr)
+			.footer-actions .outpost-button h:40px miw:0 g:5px p:0 7px fs:11px white-space:nowrap
+			.footer-actions .outpost-button .ph fs:14px

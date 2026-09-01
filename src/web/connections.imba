@@ -112,6 +112,12 @@ tag outpost-connections
 		const row = traffic(connection)
 		row ? row.upload + row.download : 0
 
+	get maximum
+		Math.max(...store.data.connections.map(do(connection) total(connection)), 1)
+
+	def scale connection
+		Math.max(0, Math.min(100, total(connection) / maximum * 100))
+
 	<self>
 		<div.page-top>
 			<div>
@@ -158,8 +164,9 @@ tag outpost-connections
 								<small>
 									<span.received> "↓ {fmt.bytes(traffic(connection)..download or 0)}"
 									<span.sent> "↑ {fmt.bytes(traffic(connection)..upload or 0)}"
+								<div.traffic-bar aria-hidden="true"><span [w:{scale(connection)}%]>
 							<div.row-actions>
-								<button.table-action.primary type="button" disabled=!!connection.suspended_at @click.stop=(do use(connection))>
+								<button.table-action.primary type="button" disabled=!!connection.suspended_at @click.stop=(do use(connection)) aria-label=t('Подписка') title=t('Подписка')>
 									<outpost-icon name=(connection.status == 'active' ? 'qr-code' : 'spinner-gap')>
 									<span> t('Подписка')
 								<div.connection-menu .open=(popup == connection.id) .above=above>
@@ -229,6 +236,7 @@ tag outpost-connections
 		.traffic small d:flex g:10px c:var(--outpost-muted) fs:10px fw:600 ws:nowrap
 		.traffic small .received c:var(--outpost-brand)
 		.traffic small .sent c:var(--outpost-warning)
+		.traffic-bar d:none
 		.row-actions d:flex ai:center jc:flex-end g:8px
 		.table-action mih:38px d:inline-flex jai:center g:8px px:14px bd:1px solid var(--outpost-line) rd:9px bgc:var(--outpost-white) c:var(--outpost-muted) fs:12px fw:700 ws:nowrap
 		.table-action bg@hover:var(--outpost-soft) c@hover:var(--outpost-brand)
@@ -272,7 +280,24 @@ tag outpost-connections
 		@media(max-width: 540px)
 			.page-top fld:row g:10px
 			.page-top > div miw:0
-			.page-top .header-action fl:0 0 42px
-			.connection-row gtc:28px 1fr
-			.row-actions gc:2 gr:auto jc:flex-start
+			.page-top .header-action fl:0 0 42px mt:28px
+			.summary flw:nowrap g:10px fs:12px
+			.summary div g:5px white-space:nowrap
+			.summary .ph fs:16px
+			.summary .separator d:none
+			.connection-row gtc:28px minmax(0,1fr) auto gtr:auto auto g:8px 10px px:12px py:10px
+			.identity gc:2 gr:1 g:8px
+			.identity outpost-avatar s:36px fl:0 0 36px
+			.name-button d:block w:100% of:hidden text-overflow:ellipsis white-space:nowrap
+			.connection-state maw:100% of:hidden text-overflow:ellipsis
+			.traffic gc:2 / 4 gr:2 d:grid gtc:auto minmax(0,1fr) ai:center g:6px 10px
+			.traffic small justify-self:end
+			.traffic-bar gc:1 / -1 d:block h:4px of:hidden rd:full bgc:var(--outpost-line)
+			.traffic-bar span h:100% d:block rd:full bgc:var(--outpost-brand)
+			.row-actions gc:3 gr:1 jc:flex-end
+			.table-action s:36px d:grid jai:center g:0 px:0
+			.table-action span d:none
+			.table-action .ph fs:15px
+			.menu-trigger s:36px
+			.menu-trigger .ph fs:18px
 			.chart-legend flw:wrap

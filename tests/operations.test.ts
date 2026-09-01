@@ -52,14 +52,14 @@ describe("confirmed operations", () => {
 
   test("requires a matching detached signature for application updates", () => {
     const operations = new OperationService(fixture.db);
-    const bundle = "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz";
-    const payload = { version: "0.1.1", bundle, signature: `${bundle}.minisig` };
+    const bundle = "/var/lib/outpost/incoming/outpost-0.2.0-beta.2-linux-amd64.tar.gz";
+    const payload = { version: "0.2.0-beta.2", bundle, signature: `${bundle}.minisig` };
     expect(operations.preview("update.apply", payload).preview).toMatchObject({
-      title: "Обновить Outpost до 0.1.1",
+      title: "Обновить Outpost до 0.2.0-beta.2",
       changes: ["Во время перезапуска панель ненадолго станет недоступна"],
     });
     expect(JSON.stringify(operations.preview("update.apply", payload).preview)).not.toContain("Minisign");
-    expect(() => operations.preview("update.apply", { version: "0.1.1", bundle }))
+    expect(() => operations.preview("update.apply", { version: "0.2.0-beta.2", bundle }))
       .toThrow("Подпись должна соответствовать");
     expect(() => operations.preview("update.apply", { ...payload, signature: "/tmp/release.minisig" }))
       .toThrow("Подпись должна соответствовать");
@@ -91,8 +91,8 @@ describe("confirmed operations", () => {
       delegated = request;
       return { ok: true };
     });
-    const bundle = "/var/lib/outpost/incoming/outpost-0.1.1-linux-amd64.tar.gz";
-    const payload = { version: "0.1.1", bundle, signature: `${bundle}.minisig` };
+    const bundle = "/var/lib/outpost/incoming/outpost-0.2.0-beta.2-linux-amd64.tar.gz";
+    const payload = { version: "0.2.0-beta.2", bundle, signature: `${bundle}.minisig` };
     const preview = operations.preview("update.apply", payload);
     const operation = operations.confirm(preview.confirmationId, "update.apply", payload);
     await Bun.sleep(5);

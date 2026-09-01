@@ -266,9 +266,11 @@ tag outpost-home-connections
 		@media(max-width: 720px)
 			.columns gtc:1fr 120px
 			.columns span:nth-child(2) d:none
-			.user gtc:1fr 120px
-			.usage d:none
-			.activity justify-self:end
+			.user gtc:minmax(0,1fr) auto gtr:auto auto cg:12px rg:7px py:10px
+			.connection gc:1 gr:1
+			.activity gc:2 gr:1 justify-self:end
+			.usage d:grid gc:1 / -1 gr:2 gtc:minmax(0,1fr) 70px g:10px pl:46px
+			.usage b fs:11px ta:right
 
 tag outpost-home
 	store = null
