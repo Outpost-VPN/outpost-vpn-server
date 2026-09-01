@@ -10,6 +10,7 @@ describe("admin navigation", () => {
     const store = await Bun.file(new URL("../src/web/store.imba", import.meta.url)).text();
     const home = await Bun.file(new URL("../src/web/home.imba", import.meta.url)).text();
     const connections = await Bun.file(new URL("../src/web/connections.imba", import.meta.url)).text();
+    const protocols = await Bun.file(new URL("../src/web/protocols.imba", import.meta.url)).text();
     const routes = await Bun.file(new URL("../src/web/routes.imba", import.meta.url)).text();
     const dialogs = await Bun.file(new URL("../src/web/dialogs.imba", import.meta.url)).text();
     const security = await Bun.file(new URL("../src/web/security.imba", import.meta.url)).text();
@@ -58,10 +59,27 @@ describe("admin navigation", () => {
     expect(routes).toContain("<outpost-ruleset-banner store=store>");
     expect(routes).toContain("'/api/v1/rulesets/refresh'");
     expect(routes).toContain("routes.rulesets.delivery");
+    expect(routes).toContain(".geo-control gc:2 gtc:1fr justify-items:start ta:left g:10px");
+    expect(routes).toContain("outpost-action-picker grid-column:4; grid-row:1; width:34px; margin-top:0");
+    expect(routes).toContain("PROXY: 'arrows-left-right'");
+    expect(routes).toContain("<outpost-icon.glyph name=glyph>");
+    expect(routes).toContain("<outpost-icon.option-glyph name=(glyphs[item.id] or 'prohibit')>");
+    expect(routes).toContain(".option-label miw:0 white-space:nowrap");
+    expect(routes).toContain("&.compact .glyph d:block fs:18px");
+    expect(routes).toContain("&.compact .trigger > .dot d:none");
+    expect(routes).toContain("&.compact .trigger > .label d:none");
+    expect(routes).toContain("&.compact .caret d:none");
+    expect(routes).toContain("&.system grid-template-columns:22px 32px minmax(0,1fr) 34px");
+    expect(routes).toContain(".footer-actions g:6px gtc:minmax(0,1.35fr) minmax(0,.9fr)");
+    expect(routes).toContain(".footer-actions .outpost-button h:40px miw:0 g:5px p:0 7px fs:11px white-space:nowrap");
     expect(routes).not.toContain("remove = null");
     expect(routes).not.toContain("remove=remove update=update");
+    expect(protocols).toContain(".engine-actions gc:4 gr:1");
+    expect(protocols).toContain(".engine-connection gc:3 / -1 gr:2 g:3px fs:clamp(8px,2.5vw,10px) lh:1.2 flex-wrap:nowrap white-space:nowrap");
     expect(home).toContain('Math.max(0, Math.min(100, usage(connection) / maximum * 100))');
     expect(home).toContain('<div.bar><span [w:{scale(connection)}%]>');
+    expect(home).toContain(".usage d:grid gc:1 / -1 gr:2 gtc:minmax(0,1fr) 70px");
+    expect(home).toContain("pl:46px");
     expect(home).not.toContain('style="width:{fmt.percent');
     expect(home).toContain("<span> t('Активность')");
     expect(home).toContain(".metrics gtc:repeat(3, minmax(0,1fr))");
@@ -80,6 +98,14 @@ describe("admin navigation", () => {
     expect(connections).toContain("above = trigger.bottom + height + 8 > window.innerHeight");
     expect(connections).toContain(".connection-menu.above menu t:auto b:calc(100% + 7px)");
     expect(connections).toContain(".connection-row miw:0 mih:86px px:20px rd:12px");
+    expect(connections).toContain(".summary flw:nowrap g:10px fs:12px");
+    expect(connections).toContain(".page-top .header-action fl:0 0 42px mt:28px");
+    expect(connections).toContain(".traffic gc:2 / 4 gr:2 d:grid");
+    expect(connections).toContain('<div.traffic-bar aria-hidden="true"><span [w:{scale(connection)}%]>');
+    expect(connections).toContain(".row-actions gc:3 gr:1 jc:flex-end");
+    expect(connections).toContain(".table-action s:36px d:grid jai:center g:0 px:0");
+    expect(connections).toContain(".table-action span d:none");
+    expect(connections).toContain("aria-label=t('Подписка') title=t('Подписка')");
     expect(connections).not.toContain("<details.connection-menu>");
     expect(connections).toContain('"/api/v1/connections/{connection.id}/suspend"');
     expect(connections).toContain('"/api/v1/connections/{connection.id}/resume"');
@@ -120,6 +146,10 @@ describe("admin navigation", () => {
     expect(journal).toContain("@observable revision = 0");
     expect(journal).toContain("@autorun def follow");
     expect(journal).toContain("return if current == seen");
+    expect(journal).toContain(".inspect d:block px:0");
+    expect(journal).toContain(".body py:14px px:12px");
+    expect(journal).toContain(".context time fl:0 0 100%");
+    expect(journal).toContain(".context i d:none");
   });
 
   test("keeps application update progress in the confirmation dialog across reloads", async () => {
@@ -146,6 +176,14 @@ describe("admin navigation", () => {
     expect(dialogs).toContain("store.hold = true");
     expect(dialogs).toContain("item.id == operation.id");
     expect(dialogs).toContain('<progress value=progress max="100" aria-label=stage>');
+    expect(dialogs).toContain(".connect-modal .modal-actions@!500 flw:nowrap g:6px");
+    expect(dialogs).toContain(".connect-modal .modal-actions .outpost-button@!500 h:42px miw:0 g:6px px:10px fs:13px white-space:nowrap");
+    expect(dialogs).toContain('<span.mobile-count aria-hidden="true"> "+{secondary.length}"');
+    expect(dialogs).toContain(".app-toolbar@!500 flw:nowrap ai:center g:6px p:10px 12px");
+    expect(dialogs).toContain(".app-choice span d@!500:none");
+    expect(dialogs).toMatch(/\n(\t+)<div\.platform-select>\n\1\t<button\.platform-trigger/);
+    expect(dialogs).toMatch(/\n(\t+)for item in primary\n\1\t<button\.app-choice/);
+    expect(dialogs).toMatch(/\n(\t+)<div\.more-picker>\n\1\t<button\.more-trigger/);
     expect(dialogs).toContain("stage = t(current.message) if current.message");
     expect(dialogs).toContain("window.location.reload!");
   });

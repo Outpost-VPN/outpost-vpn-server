@@ -32,7 +32,7 @@ curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/o
 Для field test конкретного pre-release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.1.0-rc.19 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.1 bash /tmp/outpost-install
 ```
 
 Bootstrap устанавливает `curl`, CA certificates и Minisign, определяет release, скачивает archive и signature с GitHub и проверяет встроенным public key до запуска release installer. Release installer повторно проверяет подпись, затем ставит Nginx, UFW, SQLite/age, pinned tunnel engines и актуальный Certbot из официального snap. Ubuntu 24.04 содержит Certbot 2.9, а IP certificates требуют Certbot 5.4+; поэтому apt-версия Certbot не используется.
@@ -80,8 +80,9 @@ Developer deploy также требует локальный Minisign key вн�
 Владелец обновляет установленный Outpost в разделе «Настройки панели». Кнопка
 «Проверить» читает публичные GitHub Releases из фиксированного репозитория.
 Канал «Стабильные версии» пропускает pre-release; канал «Кандидаты на релиз»
-также предлагает версии `-rc.*`. Установки текущего release candidate один раз
-автоматически переводятся в канал кандидатов, после чего выбор сохраняется.
+также предлагает предварительные версии `-beta.*` и `-rc.*`. Установки текущей
+предварительной версии один раз автоматически переводятся в канал кандидатов,
+после чего выбор сохраняется.
 
 После выбора версии сервер сам загружает archive и `.minisig` во временные файлы
 в `/var/lib/outpost/incoming`, проверяет точные имена, URL и размеры assets и
@@ -111,7 +112,7 @@ OUTPOST_REQUIRE_SIGNATURE=1 bun run release:linux
 
 Updater сначала проверяет detached Minisign signature ключом из уже доверенной установленной версии и только затем распаковывает archive и сверяет внутренний `SHA256SUMS`, включая `manifest.json`. Он оставляет минимум две предыдущие версии. После неуспешного readiness автоматически восстанавливаются code symlink и предмиграционный SQLite snapshot. Успешно применённые входящие archive и signature удаляются.
 
-GitHub workflow `Signed release` запускается только вручную из ветки `main` для уже существующего `v*` tag и делает checkout по точному `refs/tags/<tag>`. Tag обязан точно совпадать с версией в `package.json`. Build/test выполняются без ключа; отдельный job в environment `release`, ограниченном веткой `main`, получает private key, подписывает archive, повторно проверяет подпись и публикует immutable GitHub Release. Версии с дефисом, например `v0.1.0-rc.19`, помечаются как pre-release и не выбираются bootstrap-командой без явного `OUTPOST_VERSION`; web updater видит их только в канале кандидатов.
+GitHub workflow `Signed release` запускается только вручную из ветки `main` для уже существующего `v*` tag и делает checkout по точному `refs/tags/<tag>`. Tag обязан точно совпадать с версией в `package.json`. Build/test выполняются без ключа; отдельный job в environment `release`, ограниченном веткой `main`, получает private key, подписывает archive, повторно проверяет подпись и публикует immutable GitHub Release. Версии с дефисом, например `v0.2.0-beta.1`, помечаются как pre-release и не выбираются bootstrap-командой без явного `OUTPOST_VERSION`; web updater видит их только в канале кандидатов.
 
 Workflow `Signed rule-set bundle` работает отдельно от application releases. Он ежедневно получает официальные SagerNet SRS и release `dlc.dat` от `v2fly/domain-list-community`, проверяет upstream checksum, закрепляет commits/release и включает source/license metadata. Затем workflow подписывает `rulesets.json` и обновляет стабильный release `rulesets`. Установленный сервер проверяет manifest и GeoSite protobuf при production-запуске и раз в сутки, хранит активную и две предыдущие версии. До переключения bundle сервер проверяет опубликованные коды и прогревает нужные GeoSite-категории из staged-базы; при publish маршрутов новые категории также подготавливаются до записи revision. При выдаче подписки готовые категории раскрываются в обычные доменные правила, а клиентская загрузка GeoSite не требуется. Версия, время последней проверки, ошибка и ручное обновление доступны владельцу в Маршрутах; тот же запуск предоставляет owner API `POST /api/v1/rulesets/refresh`.
 

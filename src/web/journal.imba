@@ -284,8 +284,11 @@ tag outpost-journal-row
 			.entry gtc:34px 40px 28px minmax(0,1fr) g:9px px:10px
 			time fs:13px
 			.status s:28px fs:18px
-			.inspect gtc:34px 40px 28px minmax(0,1fr) g:9px px:10px
-			.body py:14px pr:12px
+			.inspect d:block px:0
+			.body py:14px px:12px
+			.context g:6px 10px
+			.context time fl:0 0 100%
+			.context i d:none
 			.facts > div gtc:1fr g:4px py:12px
 
 tag outpost-journal

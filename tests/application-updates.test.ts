@@ -8,10 +8,11 @@ const root = "https://github.com/Outpost-VPN/outpost-vpn-server/releases/downloa
 const index = "https://api.github.com/repos/Outpost-VPN/outpost-vpn-server/releases?per_page=100";
 
 describe("application release versions", () => {
-  test("orders release candidates and stable releases with SemVer precedence", () => {
+  test("orders beta, release candidates, and stable releases with SemVer precedence", () => {
     expect(compareVersions("0.1.0-rc.14", "0.1.0-rc.13")).toBe(1);
     expect(compareVersions("0.1.0", "0.1.0-rc.14")).toBe(1);
     expect(compareVersions("0.1.1-rc.1", "0.1.0")).toBe(1);
+    expect(compareVersions("0.2.0-beta.1", "0.1.0-rc.26")).toBe(1);
     expect(compareVersions("0.1.0-rc.2", "0.1.0-rc.10")).toBe(-1);
     expect(parseVersion("0.1.0-rc.01")).toBeNull();
     expect(parseVersion("v0.1.0")).toBeNull();

@@ -419,10 +419,10 @@ tag outpost-connect-modal
 									<div.app-screen>
 										<div.app-toolbar>
 											<div.platform-select>
-												<button.platform-trigger type="button" aria-label=t('connect.platform') aria-expanded=platformOpen @click=systems>
+												<button.platform-trigger type="button" aria-label=t('connect.platform') title=currentPlatform.name aria-expanded=platformOpen @click=systems>
 													<outpost-icon.platform-icon name=currentPlatform.icon>
 													<span.technical> currentPlatform.name
-													<outpost-icon name="caret-down">
+													<outpost-icon.toolbar-caret name="caret-down">
 												if platformOpen
 													<global @click.capture.outside=(platformOpen = false)>
 													<div.picker-popover>
@@ -434,16 +434,17 @@ tag outpost-connect-modal
 																	<outpost-icon.check name="check">
 											<div.app-strip role="tablist" aria-label=t('connect.apps')>
 												for item in primary
-													<button.app-choice type="button" role="tab" aria-selected=(current.id == item.id) .active=(current.id == item.id) @click=(do select(item))>
+													<button.app-choice type="button" role="tab" aria-label=item.name title=item.name aria-selected=(current.id == item.id) .active=(current.id == item.id) @click=(do select(item))>
 														<img src=item.icon alt="">
 														<span>
 															<strong.technical> item.name
 															<small> cost(item)
 											if secondary.length
 												<div.more-picker>
-													<button.more-trigger type="button" aria-expanded=moreOpen @click=more>
-														<span> t('connect.more_count', {count: secondary.length})
-														<outpost-icon name="caret-down">
+													<button.more-trigger type="button" aria-label=t('connect.more_count', {count: secondary.length}) title=t('connect.more_count', {count: secondary.length}) aria-expanded=moreOpen @click=more>
+														<span.more-label> t('connect.more_count', {count: secondary.length})
+														<span.mobile-count aria-hidden="true"> "+{secondary.length}"
+														<outpost-icon.toolbar-caret name="caret-down">
 													if moreOpen
 														<global @click.capture.outside=(moreOpen = false)>
 														<div.picker-popover>
@@ -571,6 +572,7 @@ tag outpost-connect-modal
 		.platform-select .platform-icon fs:17px c:var(--outpost-brand)
 		.picker-popover pos:absolute t:calc(100% + 7px) miw:170px p:6px inset-inline-start:0 bd:1px solid var(--outpost-line) rd:11px bgc:var(--outpost-white) bxs:0 16px 42px black/15 zi:25
 		.more-picker .picker-popover w:245px mah:min(235px,calc(92vh - 280px)) ofy:auto inset-inline-start:auto inset-inline-end:0
+		.more-trigger .mobile-count d:none
 		.picker-popover button w:100% d:flex ai:center g:9px mih:36px p:6px 8px bd:0 rd:7px bgc:transparent c:var(--outpost-muted) ff:inherit fs:11px ta:start cursor:pointer
 		.picker-popover button@hover, .picker-popover button.active bgc:var(--outpost-soft) c:var(--outpost-brand)
 		.picker-popover button > outpost-icon.check margin-inline-start:auto c:var(--outpost-brand)
@@ -668,9 +670,26 @@ tag outpost-connect-modal
 		.connect-tabs@!500 px:8px
 		.connect-tab@!500 g:6px px:8px fs:10px
 		.connect-tab outpost-icon@!500 fs:16px
+		.connect-modal .outpost-modal-footer@!500 px:14px
+		.connect-modal .modal-actions@!500 flw:nowrap g:6px
+		.connect-modal .modal-actions .outpost-button@!500 h:42px miw:0 g:6px px:10px fs:13px white-space:nowrap
 		.universal-screen@!500 p:22px 16px
 		.universal-copy h3@!500 fs:19px
 		.link-options@!500 gtc:1fr
+		.app-toolbar@!500 flw:nowrap ai:center g:6px p:10px 12px
+		.platform-select@!500 fl:0 0 46px
+		.more-picker@!500 fl:0 0 46px
+		.platform-trigger@!500 s:46px mih:46px d:grid jai:center g:0 p:0
+		.more-trigger@!500 s:46px mih:46px d:grid jai:center g:0 p:0
+		.platform-trigger .technical d@!500:none
+		.more-trigger .more-label d@!500:none
+		.toolbar-caret d@!500:none
+		.platform-trigger .platform-icon d@!500:block fs@!500:22px
+		.more-trigger .mobile-count d@!500:block fs@!500:12px fw@!500:800
+		.app-strip@!500 order:0 flex-basis:auto fl:1 1 auto d:flex g:6px ofx:auto
+		.app-choice@!500 s:46px mih:46px fl:0 0 46px d:grid gtc:1fr jai:center p:5px
+		.app-choice img@!500 s:34px
+		.app-choice span d@!500:none
 
 tag outpost-archive-modal
 	store = null
