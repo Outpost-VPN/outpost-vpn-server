@@ -1,5 +1,22 @@
 # Разработка
 
+## Версия Bun и macOS CLI
+
+Используйте Bun 1.4.2, закреплённый в `packageManager` и CI. На macOS arm64
+Bun 1.3.13 воспроизводимо создавал standalone executable с некорректной
+подписью и SIGKILL при запуске; сборка тем же кодом на 1.4.2 проходит.
+Проверка готового CLI:
+
+```bash
+bun run build:cli:mac
+codesign --verify --strict --verbose=2 dist/outpostctl-darwin-arm64
+dist/outpostctl-darwin-arm64 --help
+```
+
+`outpostctl-darwin-arm64` — локальный CLI/MCP bridge для Apple Silicon.
+Серверный пакет содержит отдельные Linux amd64 executable. Обновление сервера
+через панель не обновляет CLI на Mac.
+
 ## Команды
 
 ```bash
@@ -45,5 +62,8 @@ docs/design/             four accepted UI references
 - GitHub Actions подключаются только по полному commit SHA.
 
 ## Acceptance
+
+Настройки сетевых профилей, область применения по клиентам и MCP описаны в
+[CLIENT-NETWORK.md](CLIENT-NETWORK.md).
 
 Полная готовность v1 определяется не только CI, но и полевыми критериями из [STATUS.md](../STATUS.md). VM/VPS сценарии нельзя заменять моками в отчёте о готовности.

@@ -426,6 +426,7 @@ export class HttpApplication {
       subscriptionToken: token,
       engineOrder: this.system.engineOrder(),
       clientPlatform: detectPlatform(ctx.request.headers.get("user-agent") ?? ""),
+      network: this.system.networkSettings(),
     });
     const body = appId === "stash"
       ? `#SUBSCRIBED ${config.origin}/s/${token}/apps/stash\n${rendered.body}`
@@ -456,7 +457,7 @@ export class HttpApplication {
   private async linkRoutes(ctx: RequestContext, head = false) {
     const token = ctx.params.token!;
     this.connections.bySubscriptionToken(token);
-    const rendered = renderLinkRoutes(this.rulesets.materialize(this.routes.published()));
+    const rendered = renderLinkRoutes(this.rulesets.materialize(this.routes.published()), this.system.networkSettings());
     const version = this.db.setting("active_route_version", 0);
     return contentResponse(ctx.request, rendered.body, rendered.contentType, head, { "x-routes-version": String(version) });
   }

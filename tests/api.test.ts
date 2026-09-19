@@ -55,6 +55,32 @@ describe("HTTP API", () => {
     expect(connections.status).toBe(401);
   });
 
+  test("scoped settings writes immediately update existing subscription URLs and ETags", async () => {
+    const cookie = ownerCookie();
+    const created = await request("/api/v1/connections", cookie, "POST", { name: "Network test" });
+    const { connection } = await created.json();
+    const subscription = app.connections.subscription(connection.id);
+    const profileUrl = new URL(subscription!.url);
+    profileUrl.pathname += "/apps/everywhere";
+    const before = await app.fetch(new Request(profileUrl));
+    expect(before.status).toBe(200);
+    const read = app.auth.createApiToken("read settings", ["settings:read"]);
+    const write = app.auth.createApiToken("write settings", ["settings:write"]);
+    const routes = app.auth.createApiToken("routes", ["routes:write"]);
+    expect((await tokenRequest("/api/v1/settings", read.token)).status).toBe(200);
+    expect((await tokenRequest("/api/v1/settings", read.token, "PATCH", { network: { ipv6: true } })).status).toBe(403);
+    expect((await tokenRequest("/api/v1/settings", routes.token, "PATCH", { network: { ipv6: true } })).status).toBe(403);
+    const changed = await tokenRequest("/api/v1/settings", write.token, "PATCH", { network: { ipv6: true, blockQuic: false } });
+    expect(changed.status).toBe(200);
+    const after = await app.fetch(new Request(profileUrl, { headers: { "if-none-match": before.headers.get("etag")! } }));
+    expect(after.status).toBe(200);
+    expect(after.headers.get("etag")).not.toBe(before.headers.get("etag"));
+    expect(YAML.parse(await after.text()).ipv6).toBeTrue();
+    const invalid = await tokenRequest("/api/v1/settings", write.token, "PATCH", { network: { mihomo: { tlsPorts: [70000] } } });
+    expect(invalid.status).toBe(400);
+    expect(app.system.networkSettings().ipv6).toBeTrue();
+  });
+
   test("selects setup only for the forced IP surface and removes legacy setup pages", async () => {
     const ordinary = await app.fetch(new Request("http://localhost/"));
     const ipRoot = await app.fetch(new Request("http://localhost/", {

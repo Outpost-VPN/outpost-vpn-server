@@ -1,4 +1,5 @@
 import {trafficPeriods} from './context.imba'
+import './network-settings.imba'
 import {intl, language as currentLanguage, languages, setLanguage, t} from './i18n.imba'
 
 const clock = {
@@ -26,6 +27,7 @@ const preview = new URLSearchParams(window.location.search).get('preview')
 
 tag outpost-settings-select
 	value = ''
+	label = ''
 	items = []
 	change = null
 	searchable = false
@@ -81,7 +83,7 @@ tag outpost-settings-select
 	<self .open=open .above=above>
 		if open
 			<global @click.outside=close @keydown.esc=close @resize=align>
-		<button.trigger type="button" disabled=disabled @click.stop=toggle aria-haspopup="listbox" aria-expanded=open>
+		<button.trigger type="button" disabled=disabled @click.stop=toggle aria-label=(label or t(selected.label)) aria-haspopup="listbox" aria-expanded=open>
 			<span dir=(selected.ltr ? 'ltr' : null)> t(selected.label)
 			<outpost-icon name="caret-down">
 		if open
@@ -103,7 +105,7 @@ tag outpost-settings-select
 	css self
 		d:block pos:relative miw:0
 		&.open zi:90
-		.trigger w:100% h:42px d:grid gtc:minmax(0, 1fr) 14px ai:center g:8px p:0 12px bd:1px solid var(--outpost-line) rd:9px bgc:var(--outpost-white) c:var(--outpost-text) ta:left fs:13px fw:550 cur:pointer tween:border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease
+		.trigger w:100% h:42px box-sizing:border-box d:grid gtc:minmax(0, 1fr) 14px ai:center g:8px p:0 12px bd:1px solid var(--outpost-line) rd:9px bgc:var(--outpost-white) c:var(--outpost-text) ta:left fs:13px fw:550 cursor:pointer tween:border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease
 		.trigger bc@hover:var(--outpost-brand) bgc@hover:var(--outpost-soft)
 		.trigger@disabled cur:default o:.62
 		.trigger@disabled bc@hover:var(--outpost-line) bgc@hover:var(--outpost-white)
@@ -284,6 +286,7 @@ tag outpost-settings
 								<span> install
 						else
 							<span> summary
+			<outpost-network-settings.outpost-card store=store>
 			<div.content-grid>
 				<section.outpost-card.settings-card>
 					<h2> t('Параметры интерфейса')

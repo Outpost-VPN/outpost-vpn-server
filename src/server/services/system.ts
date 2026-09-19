@@ -2,7 +2,7 @@ import { readdirSync, statSync } from "node:fs";
 import { lookup } from "node:dns/promises";
 import { uptime } from "node:os";
 import { join } from "node:path";
-import { z } from "zod";
+import { networkDefaults, settingsPatchSchema, type NetworkSettings } from "../../shared/settings";
 import type { OutpostDatabase } from "../db/database";
 import { now } from "../db/database";
 import { config } from "../config";
@@ -12,13 +12,6 @@ import { JournalService, type JournalQuery } from "./journal";
 import { ApplicationUpdateService } from "./application-updates";
 
 const engineIds: EngineId[] = ["hysteria", "xray"];
-const interfaceSettingsInput = z.object({
-  compact: z.boolean().optional(),
-}).strict();
-const systemSettingsInput = z.object({
-  timezone: z.string().min(1).max(100).optional(),
-  updateChannel: z.enum(["stable", "candidate"]).optional(),
-}).strict();
 
 export class SystemService {
   readonly journal: JournalService;
@@ -168,16 +161,25 @@ export class SystemService {
         compact: interfaceSettings.compact ?? false,
       },
       system: { timezone: systemSettings.timezone ?? "UTC", updateChannel: channel },
+      network: this.networkSettings(),
     };
   }
 
-  updateSettings(value: { interface?: unknown; system?: unknown }, actor = "owner") {
+  networkSettings(): NetworkSettings {
+    return this.db.setting("network", networkDefaults);
+  }
+
+  updateSettings(value: unknown, actor = "owner") {
     const before = this.settings();
-    const nextInterface = value.interface === undefined ? null : interfaceSettingsInput.parse(value.interface);
-    const nextSystem = value.system === undefined ? null : systemSettingsInput.parse(value.system);
+    const { interface: nextInterface, system: nextSystem, network: nextNetwork } = settingsPatchSchema.parse(value);
     this.db.raw.transaction(() => {
       if (nextInterface) this.db.setSetting("interface", { ...before.interface, ...nextInterface });
       if (nextSystem) this.db.setSetting("system", { ...before.system, ...nextSystem });
+      if (nextNetwork) this.db.setSetting("network", {
+        ...before.network,
+        ...nextNetwork,
+        mihomo: { ...before.network.mihomo, ...nextNetwork.mihomo },
+      });
     })();
     if (nextSystem?.updateChannel !== undefined && nextSystem.updateChannel !== before.system.updateChannel) this.updates.reset();
     const after = this.settings();

@@ -1,6 +1,34 @@
 # Состояние Outpost v1
 
-Обновлено: 19 сентября 2026.
+Обновлено: 20 сентября 2026.
+
+## Beta 0.2.0-beta.3: настройки клиентской сети
+
+- В панели добавлена карточка «Сеть на устройствах»: IPv4/IPv6, QUIC и
+  дополнительные настройки Mihomo (режим DNS, распознавание доменов,
+  HTTP/TLS/QUIC ports). Тексты не выделяют отдельные клиентские приложения.
+- Общая SQLite-настройка `network`, migration 4 с сохранением прежних defaults,
+  partial PATCH через существующий settings API и MCP `settings_get` /
+  `settings_update`. Новые UI-токены включают соответствующие settings scopes;
+  права существующих токенов автоматически не расширяются.
+- Подписки читают настройки при каждом запросе; новый релиз для изменения
+  значений не нужен. Область применения и ограничения описаны в
+  [CLIENT-NETWORK.md](docs/CLIENT-NETWORK.md).
+- Проверены UI save/reload/validation, передача UI → реальный stdio MCP → UI,
+  права API, сохранение в базе, ETags и четыре варианта native-профилей для
+  Mihomo/sing-box/Xray. TypeScript, Imba build и Imba diagnostics проходят
+  (diagnostics запущены имеющимся Bimba 0.7.39 из соседнего website repo;
+  pinned Bimba 0.2.x пока не имеет `--typecheck`).
+- Bun закреплён на 1.4.2 в packageManager и workflows. На этом Mac Bun 1.3.13
+  создавал executable с некорректной подписью даже из однострочной программы;
+  Bun 1.4.2 устраняет воспроизведённый SIGKILL. macOS CI теперь проверяет
+  строгую codesign validation, запуск CLI и compiled-runtime release tests.
+- Полный локальный gate: TypeScript, production Imba build, 202 Bun tests /
+  3929 assertions без пропусков. macOS CLI проходит codesign и реальный stdio
+  MCP handshake с установленным wrapper; native validation трёх движков
+  принимает четыре набора сетевых параметров.
+- Полевой IPv6-тест нужен на сервере с рабочим IPv6 перед утверждением
+  совместимости такого сценария. Сервер с IPv4 сохраняет прежний профиль.
 
 ## Beta 0.2.0-beta.2: TLS-проверки Speedtest
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import YAML from "yaml";
+import { networkDefaults } from "../src/shared/settings";
 import {
   linksRenderer,
   mihomoRenderer,
@@ -38,6 +39,40 @@ const context: SubscriptionContext = {
 };
 
 describe("technology subscription renderers", () => {
+  test("dual stack removes only the automatic IPv6 block in all routing formats", () => {
+    const network = { ...networkDefaults, ipv6: true };
+    const dual = { ...context, network };
+    const mihomo = YAML.parse(mihomoRenderer.render(dual).body);
+    expect(mihomo.ipv6).toBeTrue();
+    expect(mihomo.dns.ipv6).toBeTrue();
+    expect(mihomo.rules).not.toContain("IP-CIDR6,::/0,REJECT,no-resolve");
+    expect(mihomo.rules).toContain("AND,((NETWORK,UDP),(DST-PORT,443)),REJECT");
+    const singBox = JSON.parse(singBoxRenderer.render(dual).body);
+    expect(singBox.inbounds[0].address).toContain("fdfe:dcba:9876::1/126");
+    expect(singBox.route.rules).not.toContainEqual({ ip_version: 6, action: "reject" });
+    expect(JSON.parse(xrayJsonRenderer.render(dual).body).routing.rules)
+      .not.toContainEqual({ type: "field", ip: ["::/0"], outboundTag: "block" });
+    expect(JSON.parse(renderLinkRoutes(context.routes, network).body).BlockIp).not.toContain("::/0");
+    const explicit = { ...context.routes[0]!, id: "block6", value: "2001:db8::/32", action: "BLOCK" as const };
+    expect(YAML.parse(mihomoRenderer.render({ ...dual, routes: [explicit, ...context.routes] }).body).rules)
+      .toContain("IP-CIDR6,2001:db8::/32,REJECT");
+  });
+
+  test("QUIC policy and Mihomo detection ports can change independently from IPv6", () => {
+    const network = { ...networkDefaults, blockQuic: false,
+      mihomo: { ...networkDefaults.mihomo, sniffing: false, dnsMode: "redir-host" as const, tlsPorts: [443, "8000-8100"] } };
+    const customized = { ...context, network };
+    const mihomo = YAML.parse(mihomoRenderer.render(customized).body);
+    expect(mihomo.rules).toContain("IP-CIDR6,::/0,REJECT,no-resolve");
+    expect(mihomo.rules).not.toContain("AND,((NETWORK,UDP),(DST-PORT,443)),REJECT");
+    expect(mihomo.sniffer.enable).toBeFalse();
+    expect(mihomo.sniffer.sniff.TLS.ports).toEqual([443, "8000-8100"]);
+    expect(mihomo.dns["enhanced-mode"]).toBe("redir-host");
+    expect(JSON.parse(singBoxRenderer.render(customized).body).route.rules)
+      .not.toContainEqual({ network: "udp", port: 443, action: "reject" });
+    expect(JSON.parse(xrayJsonRenderer.render(customized).body).routing.rules)
+      .not.toContainEqual({ type: "field", network: "udp", port: 443, outboundTag: "block" });
+  });
   test("five formats match their golden SHA-256 fingerprints", () => {
     const expected = {
       links: "ee90de33a4c5b6b1f8b62830c05dc51f33e19c045d417230974eee89648ed336",

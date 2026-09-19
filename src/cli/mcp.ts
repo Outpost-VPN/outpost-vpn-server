@@ -3,11 +3,30 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { version } from "../version";
 import { apiFromEnvironment, type OutpostApi } from "./api";
+import { settingsPatchSchema } from "../shared/settings";
 
 type Result = { content: Array<{ type: "text"; text: string }> };
 
 export async function runMcp(api: OutpostApi = apiFromEnvironment()) {
+  const server = createMcpServer(api);
+  await server.connect(new StdioServerTransport());
+}
+
+export function createMcpServer(api: OutpostApi) {
   const server = new McpServer({ name: "outpost", version });
+
+  server.registerTool("settings_get", {
+    title: "Настройки Outpost",
+    description: "Читает настройки панели и клиентских профилей: IPv6, QUIC, DNS mode и распознавание доменов Mihomo. Требует settings:read.",
+    annotations: { readOnlyHint: true },
+  }, async () => result(await api.get("/api/v1/settings")));
+
+  server.registerTool("settings_update", {
+    title: "Изменить настройки Outpost",
+    description: "Частично обновляет настройки в базе и новых ответах подписки без релиза и перезапуска служб. Требует settings:write. Клиенты должны обновить и применить подписку. IPv6 включайте при рабочем IPv6 на сервере. QUIC применяется к полным профилям; DNS mode и sniffing — только Mihomo. Отдельные URI не переносят эти настройки.",
+    inputSchema: settingsPatchSchema.shape,
+    annotations: { destructiveHint: false, idempotentHint: true },
+  }, async (input) => result(await api.patch("/api/v1/settings", input)));
 
   server.registerTool("outpost_status", {
     title: "Состояние Outpost",
@@ -104,8 +123,7 @@ export async function runMcp(api: OutpostApi = apiFromEnvironment()) {
     payload,
   })));
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  return server;
 }
 
 function result(value: unknown): Result {

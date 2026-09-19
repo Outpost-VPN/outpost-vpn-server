@@ -1205,12 +1205,12 @@ tag outpost-token-modal
 	copied = false
 
 	get permissions
-		return ['status:read','traffic:read','connections:read','routes:read','operations:read','system:read'] if access == 'read'
-		['status:read','traffic:read','connections:read','connections:write','connections:secret','connections:rotate','routes:read','routes:write','operations:read','operations:write','system:read']
+		return ['status:read','traffic:read','connections:read','routes:read','operations:read','system:read','settings:read'] if access == 'read'
+		['status:read','traffic:read','connections:read','connections:write','connections:secret','connections:rotate','routes:read','routes:write','operations:read','operations:write','system:read','settings:read','settings:write']
 
 	get summary
-		return t('Приложение или ИИ с этим токеном сможет просматривать состояние, трафик, подключения, маршруты и операции.') if access == 'read'
-		t('Приложение или ИИ с этим токеном сможет просматривать данные, получать секретные ссылки, перевыпускать подключения с подтверждением и управлять маршрутами и операциями.')
+		return t('network.token.read') if access == 'read'
+		t('network.token.manage')
 
 	def create
 		busy = true
