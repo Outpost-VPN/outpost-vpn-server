@@ -1,4 +1,5 @@
 import {intl, plural, t} from './i18n.imba'
+import './mcp.imba'
 
 const authn = {
 	decode: do(options)
@@ -178,6 +179,7 @@ tag outpost-access
 					<button.outpost-button.secondary.small type="button" @click=(do store.open('token'))>
 						<outpost-icon name="plus">
 						<span> t('Создать токен')
+				<outpost-mcp-connection>
 				if tokens.length
 					<div.token-rows>
 						for item in tokens

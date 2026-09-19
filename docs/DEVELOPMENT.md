@@ -1,21 +1,7 @@
 # Разработка
 
-## Версия Bun и macOS CLI
-
-Используйте Bun 1.4.2, закреплённый в `packageManager` и CI. На macOS arm64
-Bun 1.3.13 воспроизводимо создавал standalone executable с некорректной
-подписью и SIGKILL при запуске; сборка тем же кодом на 1.4.2 проходит.
-Проверка готового CLI:
-
-```bash
-bun run build:cli:mac
-codesign --verify --strict --verbose=2 dist/outpostctl-darwin-arm64
-dist/outpostctl-darwin-arm64 --help
-```
-
-`outpostctl-darwin-arm64` — локальный CLI/MCP bridge для Apple Silicon.
-Серверный пакет содержит отдельные Linux amd64 executable. Обновление сервера
-через панель не обновляет CLI на Mac.
+Bun 1.4.2 закреплён в `packageManager` и CI. Собираются Linux server и CLI;
+MCP работает в сервере по HTTPS и не требует desktop executable.
 
 ## Команды
 
@@ -27,7 +13,7 @@ bun run check           # TypeScript + Imba + Bun tests
 bun scripts/install-native-tools.ts
 bun run check:subscriptions-native
 bun run check:transports-integration
-bun run build            # server and CLIs
+bun run build            # Linux server and CLI
 cd agent && go test ./...
 shellcheck infra/scripts/apply-update infra/scripts/install infra/scripts/deploy-remote
 actionlint .github/workflows/*.yml
@@ -40,7 +26,7 @@ actionlint .github/workflows/*.yml
 ```text
 src/server/              API, SQLite, adapters and services
 src/web/                 Imba application
-src/cli/                 outpostctl and MCP server
+src/cli/                 server maintenance CLI
 agent/                   privileged Go helper
 infra/                   install/update/backup scripts and units
 tests/                   Bun unit/integration/golden tests

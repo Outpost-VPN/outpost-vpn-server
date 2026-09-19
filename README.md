@@ -7,8 +7,8 @@ traffic by connection without storing browsing history. Every connection has
 one credential generation and one link that may be shared by any number of
 people and physical devices.
 
-> **Status:** `0.2.0-beta.3` pre-release adds persistent client network settings
-> in the panel and MCP, including IPv6 and Mihomo domain detection. The remaining
+> **Status:** `0.2.0-beta.4` pre-release adds direct MCP over HTTPS with scoped API tokens,
+> without a local bridge or desktop binary. The remaining
 > end-to-end field gate is tracked in [STATUS.md](STATUS.md).
 
 ## Supported protocols
@@ -36,7 +36,8 @@ TCP/443 → Nginx → secret XHTTP path → Xray on localhost
 - The web interface is written in Imba and built with `bimba`.
 - The control plane uses Bun, TypeScript, and SQLite.
 - Privileged operations are handled by a minimal allowlisted Go agent.
-- `outpostctl` provides a CLI and a local MCP server.
+- MCP runs inside Outpost at `/api/v1/mcp`; [connect using HTTPS and a token](docs/MCP.md).
+- The Linux `outpostctl` provides server maintenance and recovery commands.
 - Nginx, Hysteria 2, and Xray run as separate systemd services.
 - Mutable settings and revisions live in SQLite, independently of release
   directories.
@@ -86,7 +87,7 @@ beside existing services or selecting alternative public ports is not supported.
 To install this beta instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.3 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.4 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,
@@ -113,7 +114,7 @@ pre-launch preview is available at
 - `src/web/` — Imba web interface.
 - `src/server/` — Bun/TypeScript API, SQLite storage, authentication, and
   services.
-- `src/cli/` — CLI and local MCP server.
+- `src/cli/` — server maintenance CLI.
 - `agent/` — minimal privileged Go agent.
 - `infra/` — Nginx and systemd configuration, installation, and update scripts.
 - `assets/` and `public/` — source and compiled web assets.

@@ -1,6 +1,6 @@
 {
   "name": "outpost-vpn-server",
-  "version": "0.2.0-beta.3",
+  "version": "0.2.0-beta.4",
   "packageManager": "bun@1.4.2",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -11,8 +11,7 @@
     "build": "bun run build:web && bun run build:server && bun run build:cli",
     "build:web": "bun run assets && bunx bimba src/web/app.imba --outdir public --minify",
     "build:server": "bun build src/server/index.ts --compile --target=bun-linux-x64-baseline --outfile dist/outpost",
-    "build:cli": "bun run build:cli:mac && bun run build:cli:linux",
-    "build:cli:mac": "bun build src/cli/index.ts --compile --target=bun-darwin-arm64 --outfile dist/outpostctl-darwin-arm64",
+    "build:cli": "bun run build:cli:linux",
     "build:cli:linux": "bun build src/cli/index.ts --compile --target=bun-linux-x64-baseline --outfile dist/outpostctl-linux-amd64",
     "release:linux": "bun scripts/release.ts",
     "release:rulesets": "bun scripts/rulesets.ts",

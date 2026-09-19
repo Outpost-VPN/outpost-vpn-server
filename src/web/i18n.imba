@@ -966,6 +966,39 @@ Object.assign dictionaries.fa, {
 	'network.saving': 'در حال ذخیره…'
 }
 
+Object.assign dictionaries["ru"], {
+	"mcp.title": "Прямое подключение MCP"
+	"mcp.hint": "Укажите этот адрес в приложении с поддержкой Streamable HTTP. Устанавливать отдельную программу Outpost на устройство не нужно."
+	"mcp.address": "Адрес MCP"
+	"mcp.copy": "Скопировать адрес MCP"
+	"mcp.copied": "Адрес скопирован"
+	"mcp.token": "Создайте токен и вставьте его в поле Bearer token. Если приложение запрашивает заголовок, используйте:"
+}
+Object.assign dictionaries["en"], {
+	"mcp.title": "Direct MCP connection"
+	"mcp.hint": "Use this address in an app that supports Streamable HTTP. No separate Outpost program needs to be installed on the device."
+	"mcp.address": "MCP address"
+	"mcp.copy": "Copy MCP address"
+	"mcp.copied": "Address copied"
+	"mcp.token": "Create a token and paste it into the Bearer token field. If the app asks for a header, use:"
+}
+Object.assign dictionaries["zh-CN"], {
+	"mcp.title": "直接连接 MCP"
+	"mcp.hint": "在支持 Streamable HTTP 的应用中填写此地址。无需在设备上安装单独的 Outpost 程序。"
+	"mcp.address": "MCP 地址"
+	"mcp.copy": "复制 MCP 地址"
+	"mcp.copied": "地址已复制"
+	"mcp.token": "创建令牌并将其粘贴到 Bearer token 字段。如果应用需要请求头，请使用："
+}
+Object.assign dictionaries["fa"], {
+	"mcp.title": "اتصال مستقیم MCP"
+	"mcp.hint": "این آدرس را در برنامه‌ای با پشتیبانی از Streamable HTTP وارد کنید. نیازی به نصب برنامهٔ جداگانهٔ Outpost روی دستگاه نیست."
+	"mcp.address": "آدرس MCP"
+	"mcp.copy": "کپی آدرس MCP"
+	"mcp.copied": "آدرس کپی شد"
+	"mcp.token": "یک توکن بسازید و آن را در فیلد Bearer token قرار دهید. اگر برنامه هدر می‌خواهد، از این مقدار استفاده کنید:"
+}
+
 export def t key, params = null
 	let message = dictionaries[current][key] or dictionaries.en[key] or ru[key] or key
 	if params

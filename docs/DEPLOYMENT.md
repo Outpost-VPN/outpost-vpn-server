@@ -32,7 +32,7 @@ curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/o
 Для field test конкретного pre-release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.3 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.4 bash /tmp/outpost-install
 ```
 
 Bootstrap устанавливает `curl`, CA certificates и Minisign, определяет release, скачивает archive и signature с GitHub и проверяет встроенным public key до запуска release installer. Release installer повторно проверяет подпись, затем ставит Nginx, UFW, SQLite/age, pinned tunnel engines и актуальный Certbot из официального snap. Ubuntu 24.04 содержит Certbot 2.9, а IP certificates требуют Certbot 5.4+; поэтому apt-версия Certbot не используется.
@@ -57,8 +57,7 @@ URL на уже подключённом постоянном домене. Дл
 
 ```bash
 bun install --frozen-lockfile
-bun run build:cli:mac
-./dist/outpostctl-darwin-arm64 deploy root@203.0.113.10
+bun src/cli/index.ts deploy root@203.0.113.10
 ```
 
 Developer deploy требует локальные Bun, Go, SSH, SCP и release signing key. Он запускает тот же IP-first installer и не является пользовательским installation surface.
@@ -105,7 +104,7 @@ OUTPOST_VERSION=0.1.1 \
 OUTPOST_AGENT_BINARY=dist/outpost-agent \
 OUTPOST_MINISIGN_SECRET_KEY="$HOME/.config/outpost/release.key" \
 OUTPOST_REQUIRE_SIGNATURE=1 bun run release:linux
-./dist/outpostctl-darwin-arm64 update root@SERVER \
+bun src/cli/index.ts update root@SERVER \
   --bundle release/outpost-0.1.1-linux-amd64.tar.gz \
   --signature release/outpost-0.1.1-linux-amd64.tar.gz.minisig
 ```
@@ -148,12 +147,10 @@ credentials из копии. Поэтому прежние subscription URLs и 
 
 ## MCP
 
-Создайте scoped API token в REST API и на локальном компьютере задайте:
+В разделе «Доступ → API / MCP» скопируйте HTTPS-адрес и создайте токен.
+Подключите приложение с поддержкой Streamable HTTP к
+`https://<домен>/api/v1/mcp`, указав токен в поле Bearer token или заголовке
+`Authorization: Bearer <token>`. Отдельная программа на компьютере не нужна.
 
-```bash
-export OUTPOST_URL=https://proxy.example.com
-export OUTPOST_TOKEN=...
-./dist/outpostctl-darwin-arm64 mcp
-```
-
-Публичный MCP-порт не используется. Повторное получение секретной ссылки подключения требует scope `connections:secret`. Перевыпуск credentials требует `connections:rotate` и выполняется только через `operation_preview`/`connection_rotate`, затем `operation_confirm` с неизменившимися action и payload.
+Инструменты, права и совместимость описаны в [MCP.md](MCP.md).
+Linux `outpostctl` остаётся служебной утилитой сервера; режим MCP удалён.

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createMcpServer } from "../src/cli/mcp";
-import { OutpostApi } from "../src/cli/api";
+import { createMcpServer } from "../src/server/mcp-tools";
+import { OutpostApi } from "../src/shared/api";
 import { HttpApplication } from "../src/server/http";
 import { database } from "./helpers";
 

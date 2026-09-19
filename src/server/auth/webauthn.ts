@@ -252,13 +252,8 @@ export class AuthService {
     const token = sessionToken || (authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined);
     if (!token) return null;
     if (authorization?.startsWith("Bearer ")) {
-      const api = this.db.raw.query<{ id: string; scopes_json: string; expires_at: string | null }, string>(`
-        SELECT id, scopes_json, expires_at FROM api_tokens WHERE token_hash = ? AND revoked_at IS NULL
-      `).get(hashToken(token));
-      if (api && (!api.expires_at || api.expires_at > now())) {
-        this.db.raw.query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").run(now(), api.id);
-        return { id: `token:${api.id}`, timezone: "UTC", language: "en" as Locale, scopes: JSON.parse(api.scopes_json) as string[] };
-      }
+      const api = this.authenticateApiToken(token);
+      if (api) return api;
     }
     const row = this.db.raw.query<{ id: string; owner_id: string; expires_at: string }, string>(`
       SELECT id, owner_id, expires_at FROM sessions WHERE token_hash = ?
@@ -266,6 +261,16 @@ export class AuthService {
     if (!row || row.expires_at <= now()) return null;
     this.db.raw.query("UPDATE sessions SET last_seen_at = ? WHERE id = ?").run(now(), row.id);
     return this.owner();
+  }
+
+  // Remote integrations accept API tokens only, without demo or session fallback.
+  authenticateApiToken(token: string) {
+    const api = this.db.raw.query<{ id: string; scopes_json: string; expires_at: string | null }, string>(`
+      SELECT id, scopes_json, expires_at FROM api_tokens WHERE token_hash = ? AND revoked_at IS NULL
+    `).get(hashToken(token));
+    if (!api || (api.expires_at && api.expires_at <= now())) return null;
+    this.db.raw.query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").run(now(), api.id);
+    return { id: `token:${api.id}`, timezone: "UTC", language: "en" as Locale, scopes: JSON.parse(api.scopes_json) as string[] };
   }
 
   logout(token?: string) {

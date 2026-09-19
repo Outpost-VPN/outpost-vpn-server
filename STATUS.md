@@ -2,6 +2,23 @@
 
 Обновлено: 20 сентября 2026.
 
+## Beta 0.2.0-beta.4: прямой MCP по HTTPS
+
+- MCP встроен в Outpost на `/api/v1/mcp`: Streamable HTTP, JSON-ответы,
+  Bearer API-токены, без локального моста и отдельных desktop-сборок.
+- Удалены `outpostctl mcp`, stdio transport, Mac build и macOS CI job.
+  Linux CLI сохранён для installer, migrations, update и recovery.
+- Endpoint использует общие API handlers: scope checks, validation, audit actor
+  и подтверждение операций не дублируются. Проверка ключа выполняется на каждом
+  запросе; cookie/demo fallback, чужие Origin/Host и тела больше 1 MiB отклоняются.
+- В «Доступ» и диалог готового токена добавлены адрес, копирование и инструкция
+  подключения на четырёх языках. Детали: [MCP.md](docs/MCP.md).
+- Локально проходят 207 Bun tests / 3984 assertions, TypeScript, production Imba
+  build и diagnostics. Проверен реальный HTTP SDK-клиент: initialization,
+  discovery, чтение/запись, перезапуск приложения, изоляция токенов, scopes,
+  expiry/revocation, transport headers, Origin/Host и лимит chunked body.
+  UI адрес и копирование проверены в превью.
+
 ## Beta 0.2.0-beta.3: настройки клиентской сети
 
 - В панели добавлена карточка «Сеть на устройствах»: IPv4/IPv6, QUIC и
@@ -67,7 +84,7 @@
 - immutable releases, migration snapshot и автоматический rollback обновления;
 - production web updater с stable/candidate channels, обнаружением GitHub Release и release notes, потоковой staging-загрузкой archive + Minisign, фиксированными asset URL/именами/размерами, подтверждением конкретной версии, persistent этапами операции и ожиданием целевой версии после restart;
 - переносимый age-backup из CLI и UI, restore на установке без владельца;
-- локальный stdio MCP с двухэтапным подтверждением опасных операций;
+- прямой HTTPS MCP с scoped Bearer-токенами и двухэтапным подтверждением опасных операций;
 - единое внутреннее именование `outpost` для служб, бинарников, CLI,
   каталогов данных, environment variables, cookie и UI-префиксов без
   legacy-алиасов;

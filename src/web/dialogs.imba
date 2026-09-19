@@ -1,3 +1,4 @@
+import './mcp.imba'
 import {basicSetup} from 'codemirror'
 import {EditorState} from '@codemirror/state'
 import {EditorView, keymap} from '@codemirror/view'
@@ -1250,6 +1251,7 @@ tag outpost-token-modal
 					<div.token-reminder.outpost-inline-note>
 						<outpost-icon name=(access == 'read' ? 'eye' : 'wrench')>
 						<span> summary
+					<outpost-mcp-connection>
 				<footer.outpost-modal-footer>
 					<div.modal-actions>
 						<button.outpost-button type="button" @click=store.close> t('Готово')
