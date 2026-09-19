@@ -61,8 +61,8 @@ Example `settings_update` arguments:
 }
 ```
 
-The locally installed `outpostctl mcp` must also be updated to expose the new
-tools. A server update alone does not update a desktop CLI binary.
+MCP is provided directly by the server over HTTPS. Updating Outpost updates its
+tools for connected clients; there is no desktop CLI to update. See [MCP.md](MCP.md).
 
 ## Validation references
 

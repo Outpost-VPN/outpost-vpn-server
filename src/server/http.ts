@@ -31,6 +31,7 @@ import { RuleSetService } from "./services/rulesets";
 import { DashboardEvents, type DashboardReason } from "./services/dashboard-events";
 import { metadata, type Locale } from "../shared/i18n";
 import { errorCode, languageCookie, localize, localizePresentation, requestLanguage } from "./i18n";
+import { handleMcp } from "./mcp";
 
 type Owner = { id: string; timezone: string; language: Locale; scopes?: string[] };
 type Handler = (context: RequestContext) => Response | Promise<Response>;
@@ -120,21 +121,24 @@ export class HttpApplication {
     return after;
   }
 
-  async fetch(request: Request) {
+  async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const requestId = crypto.randomUUID();
     let language = requestLanguage(request, url);
     const previewUrl = canonicalDemoUrl(request, url);
     if (previewUrl) return secure(Response.redirect(previewUrl, 302), requestId, language);
     try {
+      if (url.pathname === "/api/v1/mcp") {
+        return secure(await handleMcp(request, this.auth, (internal) => this.fetch(internal)), requestId, language);
+      }
       const endpoint = this.registry.find((route) => route.method === request.method && route.pattern.test(url));
       if (endpoint) {
         const result = endpoint.pattern.exec(url);
         const params = Object.fromEntries(Object.entries(result?.pathname.groups ?? {}).map(([key, value]) => [key, value ?? ""]));
-        const owner = this.auth.authenticate(cookie(request, "outpost_session"), request.headers.get("authorization") ?? undefined);
+        const owner: Owner | null = this.auth.authenticate(cookie(request, "outpost_session"), request.headers.get("authorization") ?? undefined);
         language = requestLanguage(request, url, owner);
         if (!endpoint.public && !owner) throw new ServiceError(401, "Сессия истекла — войдите снова");
-        if (!endpoint.public && owner && "scopes" in owner && !authorized(request.method, url.pathname, owner.scopes)) {
+        if (!endpoint.public && owner?.scopes && !authorized(request.method, url.pathname, owner.scopes)) {
           throw new ServiceError(403, "API token не имеет нужного scope");
         }
         const response = await endpoint.handler({

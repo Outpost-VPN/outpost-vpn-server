@@ -14,7 +14,7 @@ Pre-launch имеет одну задачу: принять постоянный
 
 После domain finalize сервер создаёт внутренний claim token с TTL 1 час, хранит только SHA-256 hash и возвращает его непосредственно тому же браузеру в переходе на `https://<domain>/admin/onboarding`. Claim повторно проверяется в начале и завершении WebAuthn registration и уничтожается после создания владельца. Это не install-time ссылка: до успешного finalize token не существует и в journal не записывается.
 
-После настройки IP certificate сохраняется и автоматически продлевается. Отдельный IP-vhost оставляет доступными только корень с предупреждением, setup-статику, read-only `GET /api/v1/setup` и ACME challenge; dashboard, WebAuthn, setup mutations, subscriptions и transports по IP не публикуются. Domain-vhost принудительно задаёт обычный surface независимо от клиентских заголовков. `outpostctl` остаётся server-local и automation interface для doctor, backup/restore, emergency recovery и stdio MCP, но не является обязательным GUI installer.
+После настройки IP certificate сохраняется и автоматически продлевается. Отдельный IP-vhost оставляет доступными только корень с предупреждением, setup-статику, read-only `GET /api/v1/setup` и ACME challenge; dashboard, WebAuthn, setup mutations, subscriptions и transports по IP не публикуются. Domain-vhost принудительно задаёт обычный surface независимо от клиентских заголовков. `outpostctl` остаётся server-local и automation interface для doctor, backup/restore, emergency recovery, но не является обязательным GUI installer.
 
 ## Данные
 
@@ -71,3 +71,8 @@ Raw editor хранит пользовательский template отдельн
 ## Обновления
 
 Код устанавливается в `/opt/outpost/releases/<version>`, активная версия выбирается symlink `/opt/outpost/current`. Данные и конфиги находятся за пределами release. Web updater получает metadata только из фиксированного GitHub-репозитория, отдельно выбирает stable/candidate channel, ограничивает имена и размеры assets, потоково пишет временные файлы и публикует их в incoming-каталоге только после проверки Minisign. Detached Minisign signature проверяется ключом из доверенной текущей версии до чтения manifest и распаковки; затем `SHA256SUMS` проверяет каждый файл release, включая manifest. Целевая версия связана с именем archive и manifest, downgrade отклоняется. Updater останавливает только control plane, делает SQLite checkpoint и snapshot, мигрирует новой CLI, переключает symlink и проверяет readiness. При ошибке возвращает предыдущие release и SQLite snapshot. Hysteria и Xray при обычном обновлении не останавливаются.
+
+MCP работает внутри HTTP-приложения на `/api/v1/mcp` через stateless Streamable HTTP
+с JSON-ответами. Bearer API-токен проверяется на каждом запросе; вызовы инструментов
+проходят через тот же scoped API, что и панель. Отдельного локального MCP-процесса нет.
+Подробности: [MCP.md](MCP.md).

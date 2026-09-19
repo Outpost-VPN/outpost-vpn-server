@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { OutpostApi } from "../src/cli/api";
+import { OutpostApi } from "../src/shared/api";
 
 describe("CLI API errors", () => {
   test("reads the current flat error envelope and keeps the legacy fallback", async () => {

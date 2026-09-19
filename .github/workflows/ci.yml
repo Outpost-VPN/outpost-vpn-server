@@ -49,18 +49,3 @@ jobs:
           cache-dependency-path: agent/go.sum
       - run: go test ./...
       - run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o ../dist/outpost-agent ./cmd/outpost-agent
-
-  cli-macos:
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: "1.4.2"
-      - run: bun install --frozen-lockfile
-      - run: bun run build:cli:mac
-      - name: Verify and run the macOS executable
-        run: |
-          codesign --verify --strict --verbose=2 dist/outpostctl-darwin-arm64
-          dist/outpostctl-darwin-arm64 --help
-          bun test tests/release.test.ts

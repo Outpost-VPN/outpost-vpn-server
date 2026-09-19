@@ -1,16 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { version } from "../version";
-import { apiFromEnvironment, type OutpostApi } from "./api";
+import type { OutpostApi } from "../shared/api";
 import { settingsPatchSchema } from "../shared/settings";
 
 type Result = { content: Array<{ type: "text"; text: string }> };
-
-export async function runMcp(api: OutpostApi = apiFromEnvironment()) {
-  const server = createMcpServer(api);
-  await server.connect(new StdioServerTransport());
-}
 
 export function createMcpServer(api: OutpostApi) {
   const server = new McpServer({ name: "outpost", version });

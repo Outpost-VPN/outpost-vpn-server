@@ -5,16 +5,12 @@ import { OutpostDatabase } from "../server/db/database";
 import { AuthService } from "../server/auth/webauthn";
 import { EngineConfigService } from "../server/adapters/engines";
 import { ConnectionService } from "../server/services/connections";
-import { OutpostApi, apiFromEnvironment } from "./api";
-import { runMcp } from "./mcp";
+import { OutpostApi } from "../shared/api";
 
 const [command = "help", ...args] = Bun.argv.slice(2);
 
 try {
   switch (command) {
-    case "mcp":
-      await runMcp();
-      break;
     case "doctor":
       await doctor(args);
       break;
@@ -161,8 +157,7 @@ outpostctl restore backup.age
 outpostctl bootstrap-reset [--database /var/lib/outpost/outpost.sqlite]
 outpostctl migrate [--database /var/lib/outpost/outpost.sqlite]
 outpostctl reconcile-engine-presets [--database /var/lib/outpost/outpost.sqlite]
-outpostctl mcp
 
-MCP/API: OUTPOST_URL and OUTPOST_TOKEN.
+API: OUTPOST_URL and OUTPOST_TOKEN.
 `);
 }
