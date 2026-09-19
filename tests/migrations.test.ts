@@ -10,10 +10,11 @@ import { database } from "./helpers";
 
 describe("clean prerelease schema", () => {
   test("keeps incremental owner language and connection suspension migrations", () => {
-    expect(migrations).toHaveLength(3);
+    expect(migrations).toHaveLength(4);
     expect(migrations[0]).toMatchObject({ version: 1, name: "initial" });
     expect(migrations[1]).toMatchObject({ version: 2, name: "owner-language" });
     expect(migrations[2]).toMatchObject({ version: 3, name: "connection-suspension" });
+    expect(migrations[3]).toMatchObject({ version: 4, name: "client-network-settings" });
 
     const fixture = database();
     try {
@@ -111,7 +112,7 @@ describe("clean prerelease schema", () => {
     try {
       expect(upgraded.raw.query<{ language: string }, []>("SELECT language FROM owners").get()?.language).toBe("zh-CN");
       expect(upgraded.setting("interface", {})).toEqual({ compact: true });
-      expect(upgraded.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM schema_migrations").get()?.version).toBe(3);
+      expect(upgraded.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM schema_migrations").get()?.version).toBe(4);
       expect(upgraded.raw.query<{ kind: string; status: string }, []>("SELECT kind, status FROM connection_sync_jobs WHERE id = 'job'").get())
         .toEqual({ kind: "activate", status: "completed" });
       expect(upgraded.raw.query("PRAGMA foreign_key_check").all()).toEqual([]);

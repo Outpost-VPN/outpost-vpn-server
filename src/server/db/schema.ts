@@ -1,3 +1,5 @@
+import { networkDefaults } from "../../shared/settings";
+
 export const migrations = [
   {
     version: 1,
@@ -341,6 +343,14 @@ export const migrations = [
         WHERE status IN ('pending', 'running', 'failed');
       CREATE INDEX connection_sync_jobs_due
         ON connection_sync_jobs(status, next_attempt_at, created_at);
+    `,
+  },
+  {
+    version: 4,
+    name: "client-network-settings",
+    sql: `
+      INSERT OR IGNORE INTO settings (key, value_json, updated_at)
+      VALUES ('network', '${JSON.stringify(networkDefaults)}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
     `,
   },
 ] as const;

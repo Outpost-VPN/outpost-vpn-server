@@ -7,9 +7,9 @@ traffic by connection without storing browsing history. Every connection has
 one credential generation and one link that may be shared by any number of
 people and physical devices.
 
-> **Status:** `0.2.0-beta.2` pre-release adds TLS hostname recovery for Speedtest
-> probes on port `8080`. The remaining end-to-end field gate is tracked in
-> [STATUS.md](STATUS.md).
+> **Status:** `0.2.0-beta.3` pre-release adds persistent client network settings
+> in the panel and MCP, including IPv6 and Mihomo domain detection. The remaining
+> end-to-end field gate is tracked in [STATUS.md](STATUS.md).
 
 ## Supported protocols
 
@@ -86,7 +86,7 @@ beside existing services or selecting alternative public ports is not supported.
 To install this beta instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.2 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.3 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,
@@ -94,7 +94,7 @@ updates, and recovery procedures.
 
 ### Run locally
 
-Local development requires Bun `1.3.13` and Go `1.25` or newer.
+Local development requires Bun `1.4.2` and Go `1.25` or newer.
 
 ```bash
 git clone https://github.com/Outpost-VPN/outpost-vpn-server.git

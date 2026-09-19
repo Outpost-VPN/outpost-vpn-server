@@ -1,4 +1,5 @@
 import YAML from "yaml";
+import { networkDefaults, type NetworkSettings } from "../../shared/settings";
 import { config } from "../config";
 import type { ClientRouteRule, Connection, ConnectionCredential, EngineId, SubscriptionFormat } from "../models";
 
@@ -9,6 +10,7 @@ export interface SubscriptionContext {
   subscriptionToken: string;
   engineOrder: readonly EngineId[];
   clientPlatform?: string;
+  network?: NetworkSettings;
 }
 
 export interface RenderedSubscription {
@@ -75,6 +77,7 @@ export const xrayRenderer: SubscriptionRenderer = {
 export const mihomoRenderer: SubscriptionRenderer = {
   id: "mihomo",
   render(context) {
+    const network = context.network ?? networkDefaults;
     const host = config.publicIp || config.domain;
     const credential = context.credentials;
     const rules = context.routes.filter(enabled);
@@ -121,12 +124,12 @@ export const mihomoRenderer: SubscriptionRenderer = {
       "allow-lan": false,
       mode: "rule",
       "log-level": "warning",
-      ipv6: false,
+      ipv6: network.ipv6,
       tun: { "auto-route": false, "auto-detect-interface": false },
       dns: {
         enable: true,
-        ipv6: false,
-        "enhanced-mode": "fake-ip",
+        ipv6: network.ipv6,
+        "enhanced-mode": network.mihomo.dnsMode,
         "fake-ip-filter": ["+.lan", "+.local"],
         "default-nameserver": ["77.88.8.8", "1.1.1.1"],
         "proxy-server-nameserver": ["system", "77.88.8.8"],
@@ -134,22 +137,22 @@ export const mihomoRenderer: SubscriptionRenderer = {
         "direct-nameserver": ["system", "77.88.8.8"],
       },
       sniffer: {
-        enable: true,
+        enable: network.mihomo.sniffing,
         "force-dns-mapping": true,
         "parse-pure-ip": true,
         "override-destination": true,
         sniff: {
-          HTTP: { ports: [80, "8080-8880"], "override-destination": true },
-          TLS: { ports: [443, 8080, 8443] },
-          QUIC: { ports: [443, 8443] },
+          HTTP: { ports: network.mihomo.httpPorts, "override-destination": true },
+          TLS: { ports: network.mihomo.tlsPorts },
+          QUIC: { ports: network.mihomo.quicPorts },
         },
       },
       proxies,
       "proxy-groups": [{ name: "PROXY", type: "fallback", url: "http://1.1.1.1", interval: 300, proxies: names }],
       rules: [
         ...rules.filter((rule) => !isCatchAll(rule)).map(mihomoRule),
-        MIHOMO_IPV6_REJECT_RULE,
-        MIHOMO_QUIC_REJECT_RULE,
+        ...(!network.ipv6 ? [MIHOMO_IPV6_REJECT_RULE] : []),
+        ...(network.blockQuic ? [MIHOMO_QUIC_REJECT_RULE] : []),
         ...rules.filter(isCatchAll).map(mihomoRule),
       ],
     };
@@ -163,6 +166,7 @@ export const mihomoRenderer: SubscriptionRenderer = {
 export const singBoxRenderer: SubscriptionRenderer = {
   id: "sing-box",
   render(context) {
+    const network = context.network ?? networkDefaults;
     const host = config.publicIp || config.domain;
     const rules = context.routes.filter(enabled);
     const sets = singBoxSets(rules);
@@ -175,7 +179,7 @@ export const singBoxRenderer: SubscriptionRenderer = {
         ],
         strategy: "prefer_ipv4",
       },
-      inbounds: [{ type: "tun", tag: "tun-in", address: ["172.19.0.1/30"], auto_route: true, strict_route: true }],
+      inbounds: [{ type: "tun", tag: "tun-in", address: network.ipv6 ? ["172.19.0.1/30", "fdfe:dcba:9876::1/126"] : ["172.19.0.1/30"], auto_route: true, strict_route: true }],
       outbounds: [
         {
           type: "hysteria2",
@@ -210,8 +214,8 @@ export const singBoxRenderer: SubscriptionRenderer = {
         rule_set: sets,
         rules: [
           ...rules.filter((rule) => !isCatchAll(rule)).map(singBoxRule),
-          SING_BOX_IPV6_REJECT_RULE,
-          SING_BOX_QUIC_REJECT_RULE,
+          ...(!network.ipv6 ? [SING_BOX_IPV6_REJECT_RULE] : []),
+          ...(network.blockQuic ? [SING_BOX_QUIC_REJECT_RULE] : []),
         ],
         final: catchAll(rules),
       },
@@ -223,6 +227,7 @@ export const singBoxRenderer: SubscriptionRenderer = {
 export const xrayJsonRenderer: SubscriptionRenderer = {
   id: "xray-json",
   render(context) {
+    const network = context.network ?? networkDefaults;
     const host = config.publicIp || config.domain;
     const rules = context.routes.filter(enabled);
     const outbounds = [
@@ -245,8 +250,8 @@ export const xrayJsonRenderer: SubscriptionRenderer = {
         balancers: [{ tag: "proxy", selector: ["proxy-"], strategy: { type: "leastPing" } }],
         rules: [
           ...rules.filter((rule) => !isCatchAll(rule)).map(xrayRule),
-          XRAY_IPV6_REJECT_RULE,
-          XRAY_QUIC_REJECT_RULE,
+          ...(!network.ipv6 ? [XRAY_IPV6_REJECT_RULE] : []),
+          ...(network.blockQuic ? [XRAY_QUIC_REJECT_RULE] : []),
           ...rules.filter(isCatchAll).map(xrayRule),
         ],
       },
@@ -263,10 +268,10 @@ export const renderers: Record<SubscriptionFormat, SubscriptionRenderer> = {
   links: linksRenderer,
 };
 
-export function renderLinkRoutes(rules: ClientRouteRule[]) {
+export function renderLinkRoutes(rules: ClientRouteRule[], network = networkDefaults) {
   return {
     contentType: "application/json; charset=utf-8",
-    body: JSON.stringify(incyRoutingProfile(rules.filter(enabled)), null, 2),
+    body: JSON.stringify(incyRoutingProfile(rules.filter(enabled), network), null, 2),
   };
 }
 
@@ -302,7 +307,7 @@ function catchAll(rules: ClientRouteRule[]) {
   return rule?.action === "DIRECT" ? "direct" : rule?.action === "BLOCK" ? "block" : "proxy";
 }
 
-function incyRoutingProfile(rules: ClientRouteRule[]) {
+function incyRoutingProfile(rules: ClientRouteRule[], network: NetworkSettings) {
   const groups = {
     DIRECT: { sites: [] as string[], ips: [] as string[] },
     PROXY: { sites: [] as string[], ips: [] as string[] },
@@ -332,7 +337,7 @@ function incyRoutingProfile(rules: ClientRouteRule[]) {
     ProxySites: groups.PROXY.sites,
     ProxyIp: groups.PROXY.ips,
     BlockSites: groups.BLOCK.sites,
-    BlockIp: [...groups.BLOCK.ips, "::/0"],
+    BlockIp: [...groups.BLOCK.ips, ...(!network.ipv6 ? ["::/0"] : [])],
     DomainStrategy: "IPIfNonMatch",
     FakeDNS: "false",
     useChunkFiles: true,

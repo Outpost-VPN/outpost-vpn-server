@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { config } from "../src/server/config";
+import { networkDefaults, type NetworkSettings } from "../src/shared/settings";
 import {
   mihomoRenderer,
   singBoxRenderer,
@@ -40,16 +41,25 @@ try {
     singBox: join(directory, "sing-box.json"),
     xray: join(directory, "xray.json"),
   };
-  writeFileSync(files.mihomo, mihomoRenderer.render(context).body);
-  writeFileSync(files.singBox, singBoxRenderer.render(context).body);
-  writeFileSync(files.xray, xrayJsonRenderer.render(context).body);
   const mihomoHome = join(directory, "mihomo-home");
   mkdirSync(mihomoHome);
 
-  await check(binary("OUTPOST_MIHOMO_BINARY", "mihomo"), ["-t", "-d", mihomoHome, "-f", files.mihomo]);
-  if (existsSync(join(mihomoHome, "GeoSite.dat"))) throw new Error("Mihomo downloaded GeoSite.dat for a materialized profile");
-  await check(binary("OUTPOST_SING_BOX_BINARY", "sing-box"), ["check", "-c", files.singBox]);
-  await check(binary("OUTPOST_XRAY_BINARY", "xray"), ["run", "-test", "-config", files.xray]);
+  const variants: NetworkSettings[] = [
+    networkDefaults,
+    { ...networkDefaults, ipv6: true, blockQuic: false },
+    { ...networkDefaults, mihomo: { ...networkDefaults.mihomo, dnsMode: "redir-host", tlsPorts: [443, "8000-8100"] } },
+    { ...networkDefaults, ipv6: true, mihomo: { ...networkDefaults.mihomo, sniffing: false } },
+  ];
+  for (const network of variants) {
+    const configured = { ...context, network };
+    writeFileSync(files.mihomo, mihomoRenderer.render(configured).body);
+    writeFileSync(files.singBox, singBoxRenderer.render(configured).body);
+    writeFileSync(files.xray, xrayJsonRenderer.render(configured).body);
+    await check(binary("OUTPOST_MIHOMO_BINARY", "mihomo"), ["-t", "-d", mihomoHome, "-f", files.mihomo]);
+    if (existsSync(join(mihomoHome, "GeoSite.dat"))) throw new Error("Mihomo downloaded GeoSite.dat for a materialized profile");
+    await check(binary("OUTPOST_SING_BOX_BINARY", "sing-box"), ["check", "-c", files.singBox]);
+    await check(binary("OUTPOST_XRAY_BINARY", "xray"), ["run", "-test", "-config", files.xray]);
+  }
   console.log(`Native subscription validation passed for ${config.domain}`);
 } finally {
   rmSync(directory, { recursive: true, force: true });
