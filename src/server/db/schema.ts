@@ -353,6 +353,28 @@ export const migrations = [
       VALUES ('network', '${JSON.stringify(networkDefaults)}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
     `,
   },
+  {
+    version: 5,
+    name: "owner-invitations",
+    sql: `
+      ALTER TABLE passkeys ADD COLUMN label TEXT;
+      ALTER TABLE sessions ADD COLUMN passkey_id TEXT;
+
+      CREATE TABLE owner_invitations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT,
+        revoked_at TEXT
+      );
+
+      CREATE INDEX owner_invitations_pending
+        ON owner_invitations(expires_at, created_at)
+        WHERE consumed_at IS NULL AND revoked_at IS NULL;
+    `,
+  },
 ] as const;
 
 export const defaultRoutes = [

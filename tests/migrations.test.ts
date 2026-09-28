@@ -10,11 +10,12 @@ import { database } from "./helpers";
 
 describe("clean prerelease schema", () => {
   test("keeps incremental owner language and connection suspension migrations", () => {
-    expect(migrations).toHaveLength(4);
+    expect(migrations).toHaveLength(5);
     expect(migrations[0]).toMatchObject({ version: 1, name: "initial" });
     expect(migrations[1]).toMatchObject({ version: 2, name: "owner-language" });
     expect(migrations[2]).toMatchObject({ version: 3, name: "connection-suspension" });
     expect(migrations[3]).toMatchObject({ version: 4, name: "client-network-settings" });
+    expect(migrations[4]).toMatchObject({ version: 5, name: "owner-invitations" });
 
     const fixture = database();
     try {
@@ -41,6 +42,9 @@ describe("clean prerelease schema", () => {
       expect(fixture.db.raw.query("PRAGMA foreign_key_check").all()).toEqual([]);
       const ownerColumns = fixture.db.raw.query<{ name: string }, []>("PRAGMA table_info(owners)").all().map((row) => row.name);
       expect(ownerColumns).toContain("language");
+      expect(tables).toContain("owner_invitations");
+      expect(fixture.db.raw.query<{ name: string }, []>("PRAGMA table_info(passkeys)").all().map((row) => row.name)).toContain("label");
+      expect(fixture.db.raw.query<{ name: string }, []>("PRAGMA table_info(sessions)").all().map((row) => row.name)).toContain("passkey_id");
     } finally {
       fixture.close();
     }
@@ -112,7 +116,7 @@ describe("clean prerelease schema", () => {
     try {
       expect(upgraded.raw.query<{ language: string }, []>("SELECT language FROM owners").get()?.language).toBe("zh-CN");
       expect(upgraded.setting("interface", {})).toEqual({ compact: true });
-      expect(upgraded.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM schema_migrations").get()?.version).toBe(4);
+      expect(upgraded.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM schema_migrations").get()?.version).toBe(5);
       expect(upgraded.raw.query<{ kind: string; status: string }, []>("SELECT kind, status FROM connection_sync_jobs WHERE id = 'job'").get())
         .toEqual({ kind: "activate", status: "completed" });
       expect(upgraded.raw.query("PRAGMA foreign_key_check").all()).toEqual([]);

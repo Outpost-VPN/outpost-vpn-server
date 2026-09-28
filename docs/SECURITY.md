@@ -12,6 +12,8 @@
 - root-agent валидирует action, service, engine и каждый filesystem path;
 - scoped token `status:read` видит только минимальный status endpoint; owner dashboard доступен только browser session владельца;
 - внутренние setup claim и owner-recovery token хранятся только как SHA-256 hash; claim повторно проверяется при старте и завершении WebAuthn registration и однократно потребляется после создания владельца;
+- одноразовые приглашения доверенных администраторов хранятся только как SHA-256 hash, действуют 24 часа и повторно проверяются после WebAuthn verification; отдельный passkey использует тот же owner account и даёт полный доступ к панели;
+- отзыв passkey завершает все связанные с ним сессии; сессии, созданные до миграции и не имеющие привязки к passkey, тоже завершаются при отзыве любого passkey;
 - публичная конфигурация недоступна до `active`; активация добавляет UUID в оба Xray inbound, а частичный успех исправляется полным recovery config;
 - отзыв завершается только после очистки движка; операции сохраняются в outbox, повторяются после рестарта и сериализуются с незавершённой активацией;
 - все ответы `/s/:token` используют `Cache-Control: no-store` и `Referrer-Policy: no-referrer`; format URLs и tokens не записываются в application/audit logs;

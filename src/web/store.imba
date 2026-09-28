@@ -6,12 +6,13 @@ def pathnow
 
 def canonical path
 	const value = path.length > 1 ? path.replace(/\/+$/, '') : path
-	const routes = ['/', '/connections', '/protocols', '/routes', '/journal', '/access', '/settings', '/login', '/onboarding']
+	const routes = ['/', '/connections', '/protocols', '/routes', '/journal', '/access', '/settings', '/login', '/onboarding', '/invite']
 	routes.includes(value) ? value : '/'
 
 def pagetitle path
 	return "Outpost · {t('title.onboarding')}" if path.startsWith('/onboarding')
 	return "Outpost · {t('title.login')}" if path.startsWith('/login')
+	return "Outpost · {t('invite.title')}" if path.startsWith('/invite')
 	return "Outpost · {t('title.access')}" if path == '/access'
 	return "Outpost · {t('title.settings')}" if path == '/settings'
 	return "Outpost · {t('connections.title')}" if path == '/connections'
@@ -72,7 +73,7 @@ export class Store
 				self.trap(event)
 
 	get live?
-		!path.startsWith('/login') and !path.startsWith('/onboarding')
+		!path.startsWith('/login') and !path.startsWith('/onboarding') and !path.startsWith('/invite')
 
 	def start
 		started = true

@@ -170,7 +170,7 @@ export class HttpApplication {
     this.post("/api/v1/setup/restore", true, async (ctx) => this.restoreBackup(ctx.request));
     this.post("/api/v1/auth/register/options", true, async (ctx) => {
       const body = await ctx.json();
-      return json(await this.auth.registrationOptions(body, ctx.owner?.id));
+      return json(await this.auth.registrationOptions(body, ctx.owner?.id, cookie(ctx.request, "outpost_session")));
     });
     this.post("/api/v1/auth/register/verify", true, async (ctx) => {
       const body = await ctx.json<{ challengeId: string; response: Parameters<AuthService["finishRegistration"]>[1] }>();
@@ -190,6 +190,16 @@ export class HttpApplication {
     this.get("/api/v1/security", false, (ctx) => {
       ownerOnly(ctx);
       return json(this.auth.security(cookie(ctx.request, "outpost_session")));
+    });
+    this.post("/api/v1/invitations", false, async (ctx) => {
+      ownerOnly(ctx);
+      const body = await ctx.json<{ name?: unknown }>();
+      return json(this.auth.createInvitation(body.name, actor(ctx)), 201, { "cache-control": "private, no-store" });
+    });
+    this.delete("/api/v1/invitations/:id", false, (ctx) => {
+      ownerOnly(ctx);
+      this.auth.revokeInvitation(ctx.params.id!, actor(ctx));
+      return empty();
     });
     this.delete("/api/v1/passkeys/:id", false, (ctx) => {
       ownerOnly(ctx);

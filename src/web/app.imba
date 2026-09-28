@@ -37,6 +37,8 @@ tag App
 			<outpost-onboarding store=store>
 		elif store.path.startsWith('/login')
 			<outpost-login store=store>
+		elif store.path.startsWith('/invite')
+			<outpost-invite store=store>
 		elif store.loading
 			<div.loading>
 				<outpost-icon name="spinner-gap">

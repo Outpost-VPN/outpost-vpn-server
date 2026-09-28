@@ -16,7 +16,8 @@ describe("admin navigation", () => {
     const security = await Bun.file(new URL("../src/web/security.imba", import.meta.url)).text();
     const avatars = await Bun.file(new URL("../src/web/avatar-picker.imba", import.meta.url)).text();
 
-    expect(store).toContain("['/', '/connections', '/protocols', '/routes', '/journal', '/access', '/settings', '/login', '/onboarding']");
+    expect(store).toContain("['/', '/connections', '/protocols', '/routes', '/journal', '/access', '/settings', '/login', '/onboarding', '/invite']");
+    expect(app).toContain("<outpost-invite store=store>");
     expect(app).not.toContain("path == '/setup'");
     expect(store).not.toContain("'/setup'");
     expect(auth).toContain("window.location.assign(onboarding)");
