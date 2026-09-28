@@ -349,21 +349,38 @@ tag outpost-setup
 				domain = result.domain
 				onboarding = result.onboardingUrl
 				move 2, 1
-				imba.commit!
-				# The root-agent schedules the control-plane restart two seconds after
-				# returning, so wait for the final domain/RP configuration to be live.
-				await new Promise do(resolve) window.setTimeout(resolve, 2500)
-				window.location.assign(onboarding)
-				return
 		catch issue
 			message = issue.message
 		finally
 			busy = false
 			imba.commit!
 
+	def wait_ready
+		# Domain finalization restarts the control plane after replying. The IP
+		# setup status remains available and reports when the new RP ID is live.
+		for attempt in [0 .. 14]
+			try
+				const response = await window.fetch('/api/v1/setup', {cache: 'no-store'})
+				if response.ok and (await response.json!).status == 'configured'
+					return true
+			catch
+				null
+			await new Promise do(resolve) window.setTimeout(resolve, attempt < 4 ? 1500 : 4000) if attempt < 14
+		false
+
 	def open_owner
+		return if busy
 		if onboarding
-			window.location.assign(onboarding)
+			busy = true
+			message = null
+			try
+				throw new Error(t('setup.ready.timeout')) unless await wait_ready!
+				window.location.assign(onboarding)
+			catch issue
+				message = issue.message
+			finally
+				busy = false
+				imba.commit!
 			return
 		store.goto("/onboarding?preview=setup&lang={window.encodeURIComponent(language!)}")
 
@@ -506,9 +523,11 @@ tag outpost-setup
 							<div.address>
 								<outpost-icon name="lock-key">
 								<strong.technical> "https://{domain}"
-						<button.outpost-button @click=open_owner>
-							<span> t('setup.ready.continue')
-							<outpost-icon name="arrow-right">
+						if message
+							<div.outpost-error role="alert"> message
+						<button.outpost-button type="button" disabled=busy @click=open_owner>
+							<span> busy ? t('setup.ready.wait') : t('setup.ready.continue')
+							<outpost-icon name=(busy ? 'spinner-gap' : 'arrow-right')>
 						<small.bootstrap>
 							<outpost-icon name="shield-check">
 							<span> t('setup.ready.owner')
