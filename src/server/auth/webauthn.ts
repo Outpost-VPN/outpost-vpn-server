@@ -17,17 +17,21 @@ import { ServiceError } from "../services/connections";
 import { JournalService, parseUserAgent } from "../services/journal";
 
 const registrationContext = z.object({
-  timezone: z.string().trim().min(1).max(80),
+  timezone: z.string().trim().min(1).max(80).optional(),
   language: z.enum(locales).optional(),
   claimToken: z.string().optional(),
   recoveryToken: z.string().optional(),
+  inviteToken: z.string().optional(),
 });
 
-const registrationChallengeContext = registrationContext.omit({ claimToken: true, recoveryToken: true }).extend({
+const registrationChallengeContext = registrationContext.omit({ claimToken: true, recoveryToken: true, inviteToken: true }).extend({
+  timezone: z.string().trim().min(1).max(80),
   language: z.enum(locales),
   ownerId: z.string().uuid(),
-  authority: z.enum(["claim", "recovery", "session"]),
+  authority: z.enum(["claim", "recovery", "session", "invite"]),
   tokenHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  invitationId: z.string().uuid().optional(),
+  sessionHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
 });
 type RegistrationChallengeContext = z.infer<typeof registrationChallengeContext>;
 
@@ -44,6 +48,13 @@ type PasskeyRow = {
   public_key: Uint8Array;
   counter: number;
   transports_json: string;
+};
+
+type InvitationRow = {
+  id: string;
+  name: string;
+  token_hash: string;
+  expires_at: string;
 };
 
 export class AuthService {
@@ -105,23 +116,30 @@ export class AuthService {
     return updated;
   }
 
-  async registrationOptions(input: unknown, authenticatedOwnerId?: string) {
+  async registrationOptions(input: unknown, authenticatedOwnerId?: string, sessionToken?: string) {
     if (config.setup) throw new ServiceError(409, "Сначала подключите постоянный домен");
     const context = registrationContext.parse(input);
     const owner = this.owner();
-    let authority: "claim" | "recovery" | "session";
+    let authority: "claim" | "recovery" | "session" | "invite";
     let grant: Grant | null = null;
+    let invitation: InvitationRow | null = null;
     if (!owner) {
       authority = "claim";
       grant = this.verifyGrant("claim", context.claimToken);
+    } else if (context.inviteToken) {
+      authority = "invite";
+      invitation = this.verifyInvitation(context.inviteToken);
     } else if (authenticatedOwnerId === owner.id) {
       authority = "session";
+      if (!sessionToken && !config.demo) throw new ServiceError(401, "Нужна действующая сессия владельца");
     } else {
       authority = "recovery";
       grant = this.verifyGrant("recovery", context.recoveryToken);
     }
     const ownerId = owner?.id ?? crypto.randomUUID();
-    const language = context.language ?? owner?.language ?? "en";
+    const timezone = authority === "invite" ? owner!.timezone : context.timezone ?? owner?.timezone;
+    if (!timezone) throw new ServiceError(400, "Укажите часовой пояс владельца");
+    const language = authority === "invite" ? owner!.language : context.language ?? owner?.language ?? "en";
     const passkeys = owner
       ? this.db.raw.query<{ id: string; transports_json: string }, string>("SELECT id, transports_json FROM passkeys WHERE owner_id = ?").all(owner.id)
       : [];
@@ -139,11 +157,13 @@ export class AuthService {
       },
     });
     const challengeId = this.storeChallenge("registration", options.challenge, {
-      timezone: context.timezone,
+      timezone,
       language,
       ownerId,
       authority,
-      tokenHash: grant?.hash,
+      tokenHash: grant?.hash ?? invitation?.token_hash,
+      invitationId: invitation?.id,
+      sessionHash: authority === "session" && sessionToken ? hashToken(sessionToken) : undefined,
     });
     return { challengeId, options };
   }
@@ -162,17 +182,17 @@ export class AuthService {
     if (!verification.verified || !verification.registrationInfo) throw new ServiceError(400, "Passkey не прошёл проверку");
     const info = verification.registrationInfo;
     const timestamp = now();
-    this.db.raw.transaction(() => {
+    const session = this.db.raw.transaction(() => {
       // Re-check after the asynchronous authenticator verification so two
       // browsers cannot both consume the same first-claim or recovery grant.
-      this.verifyRegistrationAuthority(context);
+      const invitation = this.verifyRegistrationAuthority(context);
       if (context.authority === "claim") {
         this.db.raw.query("INSERT INTO owners (id, timezone, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
           .run(context.ownerId, context.timezone, context.language, timestamp, timestamp);
       }
       this.db.raw.query(`
-        INSERT INTO passkeys (id, owner_id, public_key, counter, transports_json, device_type, backed_up, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO passkeys (id, owner_id, public_key, counter, transports_json, device_type, backed_up, created_at, label)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         info.credential.id,
         context.ownerId,
@@ -182,10 +202,13 @@ export class AuthService {
         info.credentialDeviceType,
         info.credentialBackedUp ? 1 : 0,
         timestamp,
+        invitation?.name ?? null,
       );
       this.consumeChallenge(challengeId);
       if (context.authority === "claim") this.db.setSetting(grantKeys.claim, null);
       if (context.authority === "recovery") this.db.setSetting(grantKeys.recovery, null);
+      if (invitation) this.db.raw.query("UPDATE owner_invitations SET consumed_at = ? WHERE id = ?").run(timestamp, invitation.id);
+      return this.createSession(context.ownerId, userAgent, info.credential.id);
     })();
     const auditId = this.db.audit({ actor: context.ownerId, action: "auth.passkey.register", resource: "passkey", resourceId: info.credential.id });
     this.journal.record("passkey.registered", {
@@ -194,7 +217,7 @@ export class AuthService {
       subjectType: "passkey",
       data: parseUserAgent(userAgent),
     });
-    return this.createSession(context.ownerId, userAgent);
+    return session;
   }
 
   async authenticationOptions() {
@@ -231,12 +254,13 @@ export class AuthService {
       requireUserVerification: true,
     });
     if (!verification.verified) throw new ServiceError(401, "Не удалось подтвердить passkey");
-    this.db.raw.transaction(() => {
-      this.db.raw.query("UPDATE passkeys SET counter = ?, last_used_at = ? WHERE id = ?")
+    const session = this.db.raw.transaction(() => {
+      const updated = this.db.raw.query("UPDATE passkeys SET counter = ?, last_used_at = ? WHERE id = ?")
         .run(verification.authenticationInfo.newCounter, now(), passkey.id);
+      if (!updated.changes) throw new ServiceError(401, "Passkey больше не зарегистрирован");
       this.consumeChallenge(challengeId);
+      return this.createSession(passkey.owner_id, userAgent, passkey.id);
     })();
-    const session = this.createSession(passkey.owner_id, userAgent);
     const auditId = this.db.audit({ actor: passkey.owner_id, action: "auth.login", resource: "session", resourceId: session.id });
     this.journal.record("auth.login_succeeded", {
       actor: passkey.owner_id,
@@ -282,12 +306,13 @@ export class AuthService {
     if (!owner) throw new ServiceError(404, "Владелец ещё не создан");
     const currentHash = sessionToken ? hashToken(sessionToken) : null;
     const passkeys = this.db.raw.query<{
-      id: string; device_type: string | null; backed_up: number; created_at: string; last_used_at: string | null;
+      id: string; label: string | null; device_type: string | null; backed_up: number; created_at: string; last_used_at: string | null;
     }, string>(`
-      SELECT id, device_type, backed_up, created_at, last_used_at
+      SELECT id, label, device_type, backed_up, created_at, last_used_at
       FROM passkeys WHERE owner_id = ? ORDER BY created_at DESC
     `).all(owner.id).map((row) => ({
       id: row.id,
+      label: row.label,
       deviceType: row.device_type,
       backedUp: Boolean(row.backed_up),
       createdAt: row.created_at,
@@ -306,7 +331,46 @@ export class AuthService {
       lastSeenAt: row.last_seen_at,
       userAgent: row.user_agent,
     }));
-    return { passkeys, sessions, tokens: this.apiTokens() };
+    return { passkeys, sessions, invitations: this.invitations(), tokens: this.apiTokens() };
+  }
+
+  createInvitation(name: unknown, actor = "owner") {
+    const owner = this.owner();
+    if (!owner) throw new ServiceError(404, "Владелец ещё не создан");
+    const cleanName = z.string().trim().min(1).max(80).parse(name);
+    if (this.invitations().length >= 20) throw new ServiceError(429, "Сначала отмените неиспользуемые приглашения");
+    const id = crypto.randomUUID();
+    const token = createToken();
+    const createdAt = now();
+    const expiresAt = addHours(24);
+    this.db.raw.query(`
+      INSERT INTO owner_invitations (id, name, token_hash, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, cleanName, hashToken(token), createdAt, expiresAt);
+    this.db.audit({ actor, action: "auth.invitation.create", resource: "owner_invitation", resourceId: id, after: { name: cleanName, expiresAt } });
+    return {
+      id,
+      name: cleanName,
+      expiresAt,
+      url: `${config.origin}${config.adminPath}/invite?token=${encodeURIComponent(token)}`,
+    };
+  }
+
+  invitations() {
+    return this.db.raw.query<{ id: string; name: string; created_at: string; expires_at: string }, string>(`
+      SELECT id, name, created_at, expires_at FROM owner_invitations
+      WHERE consumed_at IS NULL AND revoked_at IS NULL AND expires_at > ?
+      ORDER BY created_at DESC
+    `).all(now()).map((row) => ({ id: row.id, name: row.name, createdAt: row.created_at, expiresAt: row.expires_at }));
+  }
+
+  revokeInvitation(id: string, actor = "owner") {
+    const result = this.db.raw.query(`
+      UPDATE owner_invitations SET revoked_at = ?
+      WHERE id = ? AND consumed_at IS NULL AND revoked_at IS NULL
+    `).run(now(), id);
+    if (!result.changes) throw new ServiceError(404, "Приглашение не найдено");
+    this.db.audit({ actor, action: "auth.invitation.revoke", resource: "owner_invitation", resourceId: id });
   }
 
   revokePasskey(id: string, actor = "owner") {
@@ -314,8 +378,12 @@ export class AuthService {
     if (!owner) throw new ServiceError(404, "Владелец ещё не создан");
     const count = this.db.raw.query<{ count: number }, string>("SELECT COUNT(*) AS count FROM passkeys WHERE owner_id = ?").get(owner.id)?.count ?? 0;
     if (count <= 1) throw new ServiceError(409, "Нельзя удалить единственный passkey владельца");
-    const result = this.db.raw.query("DELETE FROM passkeys WHERE id = ? AND owner_id = ?").run(id, owner.id);
-    if (!result.changes) throw new ServiceError(404, "Passkey не найден");
+    this.db.raw.transaction(() => {
+      const result = this.db.raw.query("DELETE FROM passkeys WHERE id = ? AND owner_id = ?").run(id, owner.id);
+      if (!result.changes) throw new ServiceError(404, "Passkey не найден");
+      // Sessions created before this migration have no passkey attribution.
+      this.db.raw.query("DELETE FROM sessions WHERE owner_id = ? AND (passkey_id = ? OR passkey_id IS NULL)").run(owner.id, id);
+    })();
     const auditId = this.db.audit({ actor, action: "auth.passkey.revoke", resource: "passkey", resourceId: id });
     this.journal.record("passkey.revoked", { actor, auditId, subjectType: "passkey" });
   }
@@ -383,13 +451,13 @@ export class AuthService {
     this.journal.record("token.revoked", { actor, auditId, subjectType: "api_token", subjectId: id, data: { name: token?.name ?? "API" } });
   }
 
-  private createSession(ownerId: string, userAgent?: string) {
+  private createSession(ownerId: string, userAgent?: string, passkeyId?: string) {
     const token = createToken();
     const session = { id: crypto.randomUUID(), token, expiresAt: addHours(config.sessionHours) };
     this.db.raw.query(`
-      INSERT INTO sessions (id, owner_id, token_hash, expires_at, created_at, last_seen_at, user_agent)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(session.id, ownerId, hashToken(token), session.expiresAt, now(), now(), userAgent ?? null);
+      INSERT INTO sessions (id, owner_id, token_hash, expires_at, created_at, last_seen_at, user_agent, passkey_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(session.id, ownerId, hashToken(token), session.expiresAt, now(), now(), userAgent ?? null, passkeyId ?? null);
     return session;
   }
 
@@ -433,6 +501,25 @@ export class AuthService {
     }
   }
 
+  private verifyInvitation(token: string) {
+    const invitation = this.db.raw.query<InvitationRow, string>(`
+      SELECT id, name, token_hash, expires_at FROM owner_invitations
+      WHERE token_hash = ? AND consumed_at IS NULL AND revoked_at IS NULL
+    `).get(hashToken(token));
+    if (!invitation || invitation.expires_at <= now()) throw new ServiceError(403, "Приглашение недействительно или истекло");
+    return invitation;
+  }
+
+  private verifyInvitationHash(id?: string, hash?: string) {
+    if (!id || !hash) throw new ServiceError(403, "Приглашение недействительно или истекло");
+    const invitation = this.db.raw.query<InvitationRow, [string, string]>(`
+      SELECT id, name, token_hash, expires_at FROM owner_invitations
+      WHERE id = ? AND token_hash = ? AND consumed_at IS NULL AND revoked_at IS NULL
+    `).get(id, hash);
+    if (!invitation || invitation.expires_at <= now()) throw new ServiceError(403, "Приглашение недействительно или истекло");
+    return invitation;
+  }
+
   private verifyRegistrationAuthority(context: RegistrationChallengeContext) {
     const owner = this.owner();
     if (context.authority === "claim") {
@@ -442,6 +529,14 @@ export class AuthService {
     }
     if (!owner || owner.id !== context.ownerId) throw new ServiceError(401, "Нужна действующая сессия владельца");
     if (context.authority === "recovery") this.verifyGrantHash("recovery", context.tokenHash);
+    if (context.authority === "invite") return this.verifyInvitationHash(context.invitationId, context.tokenHash);
+    if (context.authority === "session" && !config.demo) {
+      const session = context.sessionHash && this.db.raw.query<{ id: string }, [string, string, string]>(`
+        SELECT id FROM sessions WHERE owner_id = ? AND token_hash = ? AND expires_at > ?
+      `).get(owner.id, context.sessionHash, now());
+      if (!session) throw new ServiceError(401, "Сессия владельца завершена");
+    }
+    return null;
   }
 
   private storeChallenge(kind: string, challenge: string, context: unknown) {

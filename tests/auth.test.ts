@@ -89,6 +89,89 @@ describe("owner security", () => {
   });
 });
 
+describe("owner invitations", () => {
+  let fixture: ReturnType<typeof database>;
+  let auth: AuthService;
+  let ownerId: string;
+
+  beforeEach(() => {
+    fixture = database();
+    auth = new AuthService(fixture.db, undefined, acceptedRegistration);
+    ownerId = crypto.randomUUID();
+    const created = new Date().toISOString();
+    fixture.db.raw.query("INSERT INTO owners (id, timezone, language, created_at, updated_at) VALUES (?, 'Europe/Moscow', 'ru', ?, ?)")
+      .run(ownerId, created, created);
+    fixture.db.raw.query(`
+      INSERT INTO passkeys (id, owner_id, public_key, counter, transports_json, created_at)
+      VALUES ('original', ?, ?, 0, '[]', ?)
+    `).run(ownerId, new Uint8Array([1, 2, 3]), created);
+  });
+
+  afterEach(() => fixture.close());
+
+  test("uses a single-use link to add a named passkey and revokes its sessions", async () => {
+    const invitation = auth.createInvitation("Оператор");
+    const token = new URL(invitation.url).searchParams.get("token")!;
+    const stored = fixture.db.raw.query<{ token_hash: string }, string>(
+      "SELECT token_hash FROM owner_invitations WHERE id = ?",
+    ).get(invitation.id)!;
+    expect(new URL(invitation.url).pathname).toBe("/admin/invite");
+    expect(stored.token_hash).toBe(hashToken(token));
+    expect(JSON.stringify(auth.security())).not.toContain(token);
+
+    const first = await auth.registrationOptions({ inviteToken: token, timezone: "Pacific/Honolulu", language: "en" });
+    const second = await auth.registrationOptions({ inviteToken: token });
+    const context = fixture.db.raw.query<{ context_json: string }, string>(
+      "SELECT context_json FROM webauthn_challenges WHERE id = ?",
+    ).get(first.challengeId)!;
+    expect(JSON.parse(context.context_json)).toMatchObject({
+      ownerId, timezone: "Europe/Moscow", language: "ru", authority: "invite",
+      invitationId: invitation.id, tokenHash: hashToken(token),
+    });
+    expect(context.context_json).not.toContain(token);
+
+    const session = await auth.finishRegistration(first.challengeId, {} as never);
+    expect(session.token).toBeTruthy();
+    expect(fixture.db.raw.query<{ label: string }, string>("SELECT label FROM passkeys WHERE id = ?").get("credential-1")?.label).toBe("Оператор");
+    expect(fixture.db.raw.query<{ passkey_id: string }, string>("SELECT passkey_id FROM sessions WHERE token_hash = ?").get(hashToken(session.token))?.passkey_id).toBe("credential-1");
+    expect(auth.security().invitations).toEqual([]);
+    await expect(auth.registrationOptions({ inviteToken: token })).rejects.toThrow("Приглашение недействительно");
+    await expect(auth.finishRegistration(second.challengeId, {} as never)).rejects.toThrow("Приглашение недействительно");
+
+    auth.revokePasskey("credential-1");
+    expect(auth.authenticate(session.token)).toBeNull();
+    expect(fixture.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM passkeys").get()?.count).toBe(1);
+  });
+
+  test("rejects revoked and expired invitations, including an already-started challenge", async () => {
+    const invitation = auth.createInvitation("Second admin");
+    const token = new URL(invitation.url).searchParams.get("token")!;
+    const start = await auth.registrationOptions({ inviteToken: token });
+    auth.revokeInvitation(invitation.id);
+    expect(auth.security().invitations).toEqual([]);
+    await expect(auth.finishRegistration(start.challengeId, {} as never)).rejects.toThrow("Приглашение недействительно");
+    await expect(auth.registrationOptions({ inviteToken: token })).rejects.toThrow("Приглашение недействительно");
+
+    const expiring = auth.createInvitation("Third admin");
+    const expiringToken = new URL(expiring.url).searchParams.get("token")!;
+    fixture.db.raw.query("UPDATE owner_invitations SET expires_at = ? WHERE id = ?")
+      .run(new Date(Date.now() - 1).toISOString(), expiring.id);
+    await expect(auth.registrationOptions({ inviteToken: expiringToken })).rejects.toThrow("Приглашение недействительно");
+  });
+
+  test("cannot finish an owner-session registration after that session is revoked", async () => {
+    const token = createToken();
+    const timestamp = new Date().toISOString();
+    fixture.db.raw.query(`
+      INSERT INTO sessions (id, owner_id, token_hash, expires_at, created_at, last_seen_at, passkey_id)
+      VALUES ('owner-session', ?, ?, ?, ?, ?, 'original')
+    `).run(ownerId, hashToken(token), new Date(Date.now() + 60_000).toISOString(), timestamp, timestamp);
+    const start = await auth.registrationOptions({ timezone: "Europe/Moscow" }, ownerId, token);
+    fixture.db.raw.query("DELETE FROM sessions WHERE id = 'owner-session'").run();
+    await expect(auth.finishRegistration(start.challengeId, {} as never)).rejects.toThrow("Сессия владельца завершена");
+  });
+});
+
 describe("WebAuthn challenge storage", () => {
   test("stores a claim proof instead of the raw claim token and prunes expired challenges", async () => {
     const fixture = database();

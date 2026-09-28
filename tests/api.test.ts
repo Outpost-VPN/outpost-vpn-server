@@ -55,6 +55,27 @@ describe("HTTP API", () => {
     expect(connections.status).toBe(401);
   });
 
+  test("only a browser owner can issue and revoke a single-use invitation", async () => {
+    const cookie = ownerCookie();
+    const apiToken = app.auth.createApiToken("settings", ["settings:write"]).token;
+    expect((await request("/api/v1/invitations", "", "POST", { name: "Operator" })).status).toBe(401);
+    expect((await tokenRequest("/api/v1/invitations", apiToken, "POST", { name: "Operator" })).status).toBe(403);
+
+    const created = await request("/api/v1/invitations", cookie, "POST", { name: "Operator" });
+    expect(created.status).toBe(201);
+    expect(created.headers.get("cache-control")).toBe("private, no-store");
+    const invitation = await created.json();
+    expect(invitation.url).toContain("/admin/invite?token=");
+    const security = await (await request("/api/v1/security", cookie)).json();
+    expect(security.invitations).toContainEqual(expect.objectContaining({ id: invitation.id, name: "Operator" }));
+    expect(JSON.stringify(security)).not.toContain(invitation.url);
+
+    const removed = await request(`/api/v1/invitations/${invitation.id}`, cookie, "DELETE");
+    expect(removed.status).toBe(204);
+    const token = new URL(invitation.url).searchParams.get("token");
+    expect((await request("/api/v1/auth/register/options", "", "POST", { inviteToken: token })).status).toBe(403);
+  });
+
   test("scoped settings writes immediately update existing subscription URLs and ETags", async () => {
     const cookie = ownerCookie();
     const created = await request("/api/v1/connections", cookie, "POST", { name: "Network test" });

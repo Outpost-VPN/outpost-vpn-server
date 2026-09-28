@@ -33,6 +33,9 @@ tag outpost-access
 	store = null
 	busy = null
 	dismissed = []
+	inviteName = ''
+	inviteUrl = null
+	inviteMessage = null
 
 	get raw do store.security or {passkeys: [], sessions: [], tokens: []}
 
@@ -57,6 +60,8 @@ tag outpost-access
 			{id: 'demo-monitor-3M7A', name: t('Мониторинг'), scopes: ['status:read', 'traffic:read'], created_at: new Date(Date.now! - 18 * 86400000).toISOString!, last_used_at: new Date(Date.now! - 26 * 3600000).toISOString!, demo: true}
 		]
 		items.filter do(item) !dismissed.includes(item.id)
+
+	get invitations do raw.invitations or []
 
 	def stamp value
 		return t('никогда') unless value
@@ -92,6 +97,47 @@ tag outpost-access
 	def passkey
 		store.selected = {mode: 'choice'}
 		store.open('passkey')
+
+	def invite
+		return if busy
+		busy = 'invitation'
+		inviteMessage = null
+		try
+			if store.data.auth.demo
+				inviteMessage = t('invite.demo')
+				return
+			const issued = await store.api('POST', '/api/v1/invitations', {name: inviteName})
+			inviteUrl = issued.url
+			inviteName = ''
+			await store.secure!
+		catch issue
+			inviteMessage = issue.message
+		finally
+			busy = null
+			imba.commit!
+
+	def copy
+		return unless inviteUrl
+		try
+			await window.navigator.clipboard.writeText(inviteUrl)
+			inviteMessage = t('invite.copied')
+		catch issue
+			inviteMessage = issue.message
+		imba.commit!
+
+	def cancel item
+		return if busy
+		busy = item.id
+		inviteMessage = null
+		try
+			await store.api('DELETE', "/api/v1/invitations/{item.id}")
+			await store.secure!
+			inviteUrl = null
+		catch issue
+			inviteMessage = issue.message
+		finally
+			busy = null
+			imba.commit!
 
 	def finish
 		return if busy or sessions.length < 2
@@ -155,6 +201,33 @@ tag outpost-access
 			<section.access-group>
 				<div.subhead>
 					<div>
+						<h3> t('invite.manage')
+						<p> t('invite.full_access')
+				<form.invite-form @submit.prevent=invite>
+					<input type="text" bind=inviteName maxlength="80" required placeholder=t('invite.name') aria-label=t('invite.name')>
+					<button.outpost-button.secondary.small type="submit" disabled=busy>
+						<outpost-icon name="plus">
+						<span> t('invite.create')
+				if inviteUrl
+					<div.invite-link>
+						<input type="text" value=inviteUrl readonly aria-label=t('invite.link')>
+						<button.outpost-button.secondary.small type="button" @click=copy> t('invite.copy')
+						<small> t('invite.once')
+				if inviteMessage
+					<p.invite-message role="status"> inviteMessage
+				if invitations.length
+					<div.rows>
+						for item in invitations
+							<div.access-row key=item.id>
+								<span.invite-icon><outpost-icon name="envelope-simple">
+								<div>
+									<strong> item.name
+									<small> t('invite.expires', {time: stamp(item.expiresAt)})
+								<span.used> t('invite.pending')
+								<button.icon-button type="button" disabled=busy @click=(do cancel(item)) aria-label=t('invite.revoke')><outpost-icon name="trash">
+			<section.access-group>
+				<div.subhead>
+					<div>
 						<h3> t('Активные сеансы')
 						<p> t('Браузеры, в которых выполнен вход')
 					if sessions.length > 1
@@ -208,6 +281,13 @@ tag outpost-access
 		.rows d:grid g:6px mt:10px
 		.access-row mih:64px d:grid gtc:42px minmax(0, 1fr) 180px 34px ai:center g:12px px:10px rd:9px bgc:var(--outpost-white)
 		.access-row > outpost-device-glyph s:38px
+		.invite-icon s:38px d:grid ja:center rd:9px bgc:var(--outpost-auth-start) c:var(--outpost-brand)
+		.invite-form d:flex g:10px mt:14px
+		.invite-form input, .invite-link input fl:1 min-width:0 p:10px 12px bd:1px solid var(--outpost-line) rd:8px bgc:white c:var(--outpost-text) fs:13px
+		.invite-form button fl:0 0 auto
+		.invite-link d:flex flex-wrap:wrap g:9px mt:12px
+		.invite-link small w:100% c:var(--outpost-muted) fs:11px
+		.invite-message mt:10px c:var(--outpost-brand) fs:12px
 		.access-row strong, .access-row small d:block
 		.access-row strong fs:13px
 		.access-row small mt:3px c:var(--outpost-muted) fs:11px

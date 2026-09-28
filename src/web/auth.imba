@@ -191,6 +191,56 @@ tag outpost-login
 		@media(max-width: 560px)
 			h1 fs:32px
 
+tag outpost-invite
+	store = null
+	busy = false
+	message = null
+
+	def join
+		return if busy
+		busy = true
+		message = null
+		try
+			const token = new URLSearchParams(window.location.search).get('token')
+			throw new Error(t('invite.invalid')) unless token
+			const start = await store.api('POST', '/api/v1/auth/register/options', {inviteToken: token})
+			const credential = await window.navigator.credentials.create({publicKey: webauthn.decode(start.options)})
+			throw new Error(t('invite.cancelled')) unless credential
+			await store.api('POST', '/api/v1/auth/register/verify', {challengeId: start.challengeId, response: webauthn.json(credential)})
+			window.history.replaceState({}, '', '/admin/invite')
+			store.goto('/')
+			await store.load!
+		catch issue
+			message = issue.message
+		finally
+			busy = false
+			imba.commit!
+
+	<self>
+		<outpost-auth-shell mode="login" store=store>
+			<section.invite-panel>
+				<span.badge> t('invite.badge')
+				<h1> t('invite.title')
+				<p> t('invite.description')
+				if message
+					<div.outpost-error role="alert"> message
+				<button.outpost-button type="button" disabled=busy @click=join>
+					<outpost-icon name=(busy ? 'spinner-gap' : 'fingerprint')>
+					<span> busy ? t('invite.working') : t('invite.accept')
+				<a href="/admin/login"> t('invite.login')
+
+	css self
+		.invite-panel maw:480px
+		.badge d:block mb:26px c:var(--outpost-brand) fs:12px fw:750 ls:.08em tt:uppercase
+		h1 c:var(--outpost-navy) fs:38px lh:1.14 ls:-.025em
+		p mt:14px c:var(--outpost-muted) fs:17px lh:1.6
+		.outpost-error mt:22px
+		.outpost-button w:100% mt:30px
+		.outpost-button outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
+		a d:block mt:18px ta:center c:var(--outpost-brand) fs:13px
+		@media(max-width: 560px)
+			h1 fs:32px
+
 tag outpost-setup
 	store = null
 	step = 0

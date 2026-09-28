@@ -1,14 +1,21 @@
 # Outpost
 
-Outpost is a self-hosted proxy management panel for one owner. It deploys and
+Outpost is a self-hosted proxy management panel for one owner account. It deploys and
 maintains two proxy stacks on a single domain, provides universal Mihomo,
 sing-box, and Xray subscriptions, publishes shared routing rules, and tracks
 traffic by connection without storing browsing history. Every connection has
 one credential generation and one link that may be shared by any number of
 people and physical devices.
 
-> **Status:** `0.2.0-beta.4` pre-release adds direct MCP over HTTPS with scoped API tokens,
-> without a local bridge or desktop binary. The remaining
+The owner can invite trusted administrators from **Access**. Each invitation is
+single-use, expires after 24 hours, and lets the recipient register a separate
+passkey with full owner access. The owner can cancel an unused invitation or
+revoke a passkey; revocation also ends sessions created with that passkey.
+Proxy users should receive individual connections and subscription links instead
+of panel access.
+
+> **Status:** `0.2.0-beta.5` pre-release adds invitations for trusted administrators
+> and direct MCP over HTTPS with scoped API tokens. The remaining
 > end-to-end field gate is tracked in [STATUS.md](STATUS.md).
 
 ## Supported protocols
@@ -87,7 +94,7 @@ beside existing services or selecting alternative public ports is not supported.
 To install this beta instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.4 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.5 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,
