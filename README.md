@@ -14,9 +14,8 @@ revoke a passkey; revocation also ends sessions created with that passkey.
 Proxy users should receive individual connections and subscription links instead
 of panel access.
 
-> **Status:** `0.2.0-beta.5` candidate adds invitations for trusted administrators.
-> The latest published `0.2.0-beta.4` pre-release adds direct MCP over HTTPS with scoped API tokens,
-> without a local bridge or desktop binary. The remaining
+> **Status:** `0.2.0-beta.5` pre-release adds invitations for trusted administrators
+> and direct MCP over HTTPS with scoped API tokens. The remaining
 > end-to-end field gate is tracked in [STATUS.md](STATUS.md).
 
 ## Supported protocols
@@ -95,7 +94,7 @@ beside existing services or selecting alternative public ports is not supported.
 To install this beta instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.4 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.5 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,
