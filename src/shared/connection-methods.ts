@@ -39,18 +39,29 @@ export function defaultMethods(order: readonly EngineId[] = engineIds, paths?: {
 }
 
 export const clientProfiles = {
-  mihomo: { protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
-  "mihomo-modern": { protocols: ["hysteria2", "xhttp", "grpc", "anytls", "trusttunnel", "amneziawg"], minimumCore: "Mihomo ≥1.19.32" },
-  "sing-box": { protocols: ["hysteria2", "grpc"], minimumCore: "" },
-  "sing-box-modern": { protocols: ["hysteria2", "grpc", "anytls", "naive"], minimumCore: "sing-box ≥1.14.3 · Naive/Cronet" },
-  "xray-json": { protocols: ["xhttp", "grpc"], minimumCore: "" },
-  xray: { protocols: ["xhttp", "grpc"], minimumCore: "" },
-  links: { protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
-  naive: { protocols: ["naive"], minimumCore: "NaiveProxy / sing-box ≥1.14.3" },
-  amneziawg: { protocols: ["amneziawg"], minimumCore: "AmneziaVPN ≥5.0.1.5 / AWG 3.1" },
-} satisfies Record<string, { protocols: readonly ProtocolId[]; minimumCore: string }>;
+  mihomo: { name: "Mihomo YAML", protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
+  "mihomo-modern": { name: "Mihomo · modern YAML", protocols: ["hysteria2", "xhttp", "grpc", "anytls", "trusttunnel", "amneziawg"], minimumCore: "Mihomo ≥1.19.32" },
+  "sing-box": { name: "sing-box JSON", protocols: ["hysteria2", "grpc"], minimumCore: "" },
+  "sing-box-modern": { name: "sing-box · modern JSON", protocols: ["hysteria2", "grpc", "anytls", "naive"], minimumCore: "sing-box ≥1.14.3", requirements: {naive: "Naive: Cronet"} },
+  "xray-json": { name: "Xray JSON", protocols: ["xhttp", "grpc"], minimumCore: "" },
+  xray: { name: "VLESS · Base64", protocols: ["xhttp", "grpc"], minimumCore: "" },
+  links: { name: "URI links", protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
+  naive: { name: "NaiveProxy JSON", protocols: ["naive"], minimumCore: "NaiveProxy / sing-box ≥1.14.3", requirements: {naive: "Naive: Cronet"} },
+  amneziawg: { name: "AmneziaWG .conf", protocols: ["amneziawg"], minimumCore: "AmneziaVPN ≥5.0.1.5 / AWG 3.1" },
+} satisfies Record<string, { name: string; protocols: readonly ProtocolId[]; minimumCore: string; requirements?: Partial<Record<ProtocolId, string>> }>;
 export type ClientProfile = keyof typeof clientProfiles;
 export const clientProfileFormat = (profile: ClientProfile) => profile.replace(/-modern$/, "");
+
+export function clientProfileRequirements(id: ClientProfile, selected?: readonly ProtocolId[]) {
+  const profile = clientProfiles[id];
+  const requirements = "requirements" in profile ? Object.entries(profile.requirements).filter(([protocol]) => !selected || selected.includes(protocol as ProtocolId)).map(([, requirement]) => requirement) : [];
+  return [profile.minimumCore, ...requirements].filter(Boolean).join(" · ");
+}
+
+export function methodClientProfiles(method: Pick<ConnectionMethod, "protocol">) {
+  return Object.entries(clientProfiles).filter(([, profile]) => (profile.protocols as readonly ProtocolId[]).includes(method.protocol))
+    .map(([id, profile]) => ({...profile, id: id as ClientProfile, minimumCore: clientProfileRequirements(id as ClientProfile, [method.protocol])}));
+}
 
 export function compatibleMethods(methods: readonly ConnectionMethod[], profile: ClientProfile, installed: readonly EngineId[]) {
   const supported: readonly string[] = clientProfiles[profile].protocols;

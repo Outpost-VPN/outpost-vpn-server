@@ -1,6 +1,6 @@
 import {protocols} from "../../shared/protocols";
 import type {EngineId} from "../../shared/engines";
-import { clientProfiles, compatibleMethods, type ConnectionMethod, type ClientProfile } from "../../shared/connection-methods";
+import { clientProfiles, clientProfileRequirements, compatibleMethods, type ConnectionMethod, type ClientProfile } from "../../shared/connection-methods";
 import type { Connection, SubscriptionFormat } from "../models";
 import { metadata, type Locale } from "../../shared/i18n";
 
@@ -151,9 +151,9 @@ export const advancedDefinitions: AdvancedDefinition[] = [
   { id: "sing-box-json", format: "sing-box" },
   { id: "xray-json", format: "xray-json" },
   { id: "mihomo-modern", format: "mihomo", name: "Mihomo · AnyTLS / TrustTunnel / AmneziaWG", minimumCore: clientProfiles["mihomo-modern"].minimumCore, clientProfile: "mihomo-modern" },
-  { id: "sing-box-modern", format: "sing-box", name: "sing-box · AnyTLS / Naive", minimumCore: clientProfiles["sing-box-modern"].minimumCore, clientProfile: "sing-box-modern" },
+  { id: "sing-box-modern", format: "sing-box", name: "sing-box · AnyTLS / Naive", minimumCore: clientProfileRequirements("sing-box-modern"), clientProfile: "sing-box-modern" },
   { id: "amneziawg-conf", format: "amneziawg", name: "AmneziaWG 3.1 · .conf", minimumCore: "AmneziaVPN ≥5.0.1.5 / AmneziaWG 3.1" },
-  { id: "naive-json", format: "naive", name: "NaiveProxy JSON", minimumCore: "NaiveProxy / sing-box ≥1.14.3" },
+  { id: "naive-json", format: "naive", name: "NaiveProxy JSON", minimumCore: clientProfileRequirements("naive") },
 ];
 
 export function application(id: string) {
@@ -198,12 +198,16 @@ export function catalog(baseUrl: string, platform?: string, language: Locale = "
 export function advanced(baseUrl: string, language: Locale = "en", available?: MethodAvailability) {
   const names = catalogCopy[language].advancedNames as Record<string, string>;
   const descriptions = catalogCopy[language].advancedDescriptions as Record<string, string>;
-  return advancedDefinitions.filter((item) => !available || compatibleMethods(available.methods, item.clientProfile ?? item.format, available.installed).length > 0).map((item) => ({
-    id: item.id,
-    name: names[item.id] ?? item.name,
-    description: descriptions[item.id] ?? `${catalogCopy[language].modernText} ${item.minimumCore}.`,
-    profileUrl: `${baseUrl}/advanced/${item.id}`,
-  }));
+  return advancedDefinitions.flatMap((item) => {
+    const profile = item.clientProfile ?? item.format;
+    const selected = available ? compatibleMethods(available.methods, profile, available.installed) : undefined;
+    if (selected?.length === 0) return [];
+    const requirements = clientProfileRequirements(profile, selected?.map((method) => method.protocol));
+    return [{id: item.id, name: names[item.id] ?? item.name,
+      description: descriptions[item.id] ?? `${catalogCopy[language].modernText} ${requirements}.`,
+      profileUrl: `${baseUrl}/advanced/${item.id}`,
+    }];
+  });
 }
 
 export function detectPlatform(userAgent: string) {

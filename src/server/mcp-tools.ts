@@ -123,6 +123,12 @@ export function createMcpServer(api: OutpostApi) {
     title: "Ядра Outpost", description: "Читает установленные и закреплённые версии ядер, checksum обновлений и серверные возможности. Требует engines:read.",
     annotations: {readOnlyHint:true},
   }, async () => result(await api.get("/api/v1/engines")));
+  server.registerTool("engines_check", {
+    title: "Проверить версии движков",
+    description: "Сверяет официальные GitHub releases движков. Требует engines:write; ничего не устанавливает и не меняет закреплённые версии. Более новый upstream может требовать обновления Outpost.",
+    annotations: {readOnlyHint: true},
+  }, async () => result(await api.post("/api/v1/engines/check")));
+
   server.registerTool("methods_get", {
     title: "Способы подключения", description: "Читает настроенные способы, их приоритет, серверные возможности и предлагаемые настройки. Требует engines:read.",
     annotations: {readOnlyHint:true},

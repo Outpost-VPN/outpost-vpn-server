@@ -1,6 +1,8 @@
 import {t} from './i18n.imba'
 import {deviceImages, fmt} from './context.imba'
 
+const engineIcons = {hysteria: '/assets/engines/hysteria.svg', xray: '/assets/engines/xray.svg', mihomo: '/assets/engines/mihomo.jpg', 'sing-box': '/assets/apps/sing-box.svg', amneziawg: '/assets/engines/amneziawg.svg'}
+
 const marks = {
 	brand: '/brand-mark.png'
 	success: '/brand-mark-success.png'
@@ -42,17 +44,12 @@ tag outpost-brand-mark
 tag outpost-engine-mark
 	kind = ''
 
-	<self .hysteria=(kind == 'hysteria') .xray=(kind == 'xray') aria-hidden="true">
-		<span.glyph> kind.slice(0, 1).toUpperCase!
+	<self aria-hidden="true">
+		<img src=engineIcons[kind] alt="">
 
-	css
-		position: relative
-		display: inline-grid
-		place-items: center
-		width: 34px
-		height: 34px
-		color: currentColor
-		.glyph display:block; color:currentColor; font-family:Arial,sans-serif; font-size:25px; font-weight:850; line-height:1; letter-spacing:0
+	css self
+		s:34px d:inline-grid ja:center
+		img s:100% object-fit:contain d:block
 
 tag outpost-logo
 	version = null
@@ -186,6 +183,9 @@ tag outpost-sidebar
 			<button.nav-item type="button" .active=active('/routes') @click=(do store.goto('/routes')) aria-label=t('nav.routes') aria-current=(active('/routes') ? 'page' : null)>
 				<outpost-icon name="path">
 				<span> t('nav.routes')
+			<button.nav-item type="button" .active=active('/engines') @click=(do store.goto('/engines')) aria-label=t('nav.engines') aria-current=(active('/engines') ? 'page' : null)>
+				<outpost-icon name="cpu">
+				<span> t('nav.engines')
 			<button.nav-item type="button" .active=active('/journal') @click=(do store.goto('/journal')) aria-label=t('system.log') aria-current=(active('/journal') ? 'page' : null)>
 				<outpost-icon name="book-open">
 				<span> t('system.log')
@@ -302,7 +302,7 @@ tag outpost-sidebar
 			left: 0
 			z-index: 50
 			display: grid
-			grid-template-columns: repeat(6, minmax(0, 1fr))
+			grid-template-columns: repeat(7, minmax(0, 1fr))
 			gap: 2px
 			padding: 6px 8px calc(6px + env(safe-area-inset-bottom))
 			border-right: 0
@@ -357,6 +357,8 @@ tag outpost-shell
 				<outpost-connections store=store>
 			elif store.path == '/routes'
 				<outpost-routes store=store>
+			elif store.path == '/engines'
+				<outpost-engines store=store>
 			elif store.path == '/protocols'
 				<outpost-protocols store=store>
 			elif store.path == '/journal'

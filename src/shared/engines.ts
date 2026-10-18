@@ -11,6 +11,8 @@ export const engineMetadata = Object.fromEntries(engineIds.map((id) => {
 }));
 export const engineServices = engineIds.map((id) => engines[id].service);
 export const requiredEngineIds = engineIds.filter((id) => !engines[id].optional);
+export const telemetryEngines: readonly EngineId[] = ["hysteria", "xray"];
+export const engineTracksTraffic = (id: EngineId) => telemetryEngines.includes(id);
 export const serviceNames = ["outpost", "nginx", ...engineServices];
 export const isEngine = (value: unknown): value is EngineId => typeof value === "string" && Object.hasOwn(engines, value);
 export const engineFile = (id: EngineId) => engines[id].file;

@@ -1,6 +1,6 @@
-import {engines} from '../shared/engines.ts'
+import {engines, engineTracksTraffic} from '../shared/engines.ts'
 import {protocols} from '../shared/protocols.ts'
-import {managedEdge, singletonEngine, methodFields} from '../shared/connection-methods.ts'
+import {managedEdge, singletonEngine, methodFields, methodClientProfiles} from '../shared/connection-methods.ts'
 import {t} from './i18n.imba'
 
 tag outpost-method-list
@@ -64,12 +64,14 @@ tag outpost-method-list
 							<code> method.settings.path
 					<div.state .enabled=method.enabled> status(method)
 					<button.configure type="button" @click=(do edit(method)) aria-label="{t('methods.edit')}: {method.name}" title=t('methods.edit')><outpost-icon name="gear-six">
+					<outpost-method-support method=method>
 			unless methods.length
 				<p.empty> t('methods.empty')
 		<p.note>
 			<outpost-icon name="info">
 			<span> t('methods.subscription_hint')
 		<p.note> t('methods.network_hint')
+		<p.note> t('methods.profile_hint')
 
 	css self
 		d:block
@@ -82,8 +84,9 @@ tag outpost-method-list
 		.priority d:flex ai:center g:3px c:var(--outpost-muted)
 		.priority span w:20px fs:13px
 		.priority button, .configure s:25px d:grid ja:center p:0 bd:0 rd:6px bgc:transparent c:var(--outpost-brand) cursor:pointer
-		.priority button:disabled c:var(--outpost-muted) o:.35 cursor:default
+		.priority button@disabled c:var(--outpost-muted) o:.35 cursor:default
 		.configure s:34px bd:1px solid var(--outpost-line)
+		outpost-method-support gc:2 / -1
 		h3 c:var(--outpost-navy) fs:15px fw:700
 		.identity p mt:5px fs:12px c:var(--outpost-muted)
 		.endpoint strong, .endpoint code d:block fs:12px
@@ -216,6 +219,7 @@ tag outpost-method-editor
 							<label.checkbox>
 								<input type="checkbox" bind=draft.enabled>
 								<span> t('methods.enabled_label')
+							<outpost-method-support method=draft>
 					<p.hint> t('methods.credentials_hint')
 					<p.hint> draft.engine == 'amneziawg' ? t('methods.peer_hint') : t('methods.apply_hint')
 				<footer.outpost-modal-footer>
@@ -237,3 +241,38 @@ tag outpost-method-editor
 		.fields p, .hint fs:12px c:var(--outpost-muted) lh:1.5
 		.hint mt:20px
 		.danger c:var(--outpost-danger)
+
+tag outpost-method-support
+	method = null
+
+	get profiles do methodClientProfiles(method)
+	get basic? do profiles.some do(profile) !profile.minimumCore
+	get tracked? do engineTracksTraffic(method.engine)
+
+	<self>
+		<span.traffic .limited=!tracked? title=t(tracked? ? 'methods.traffic_details' : 'methods.no_traffic_details')>
+			<outpost-icon name=(tracked? ? 'chart-line' : 'chart-line-down')>
+			<span> t(tracked? ? 'methods.traffic' : 'methods.no_traffic')
+		<details>
+			<summary> t(basic? ? 'methods.basic_profile' : 'methods.special_profile')
+			<p> t(tracked? ? 'methods.traffic_details' : 'methods.no_traffic_details')
+			<ul>
+				for profile in profiles
+					<li>
+						<strong> profile.name
+						<span> profile.minimumCore or t('methods.compatible_client')
+						if ['naive', 'amneziawg'].includes(profile.id)
+							<small> t('methods.native_profile')
+
+	css self
+		d:flex ai:baseline flex-wrap:wrap g:8px 20px fs:12px lh:1.5 c:var(--outpost-muted)
+		.traffic d:inline-flex ai:center g:5px
+		.traffic .ph fs:14px
+		.traffic.limited c:var(--outpost-muted)
+		details fl:1 1 220px
+		summary c:var(--outpost-brand) cursor:pointer w:fit-content
+		p mt:8px
+		ul list-style:none p:0 mt:8px d:grid g:7px
+		li d:flex flex-wrap:wrap g:3px 8px
+		strong c:var(--outpost-text) fw:600
+		small fl:1 1 100% fs:11px

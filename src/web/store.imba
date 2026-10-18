@@ -6,7 +6,7 @@ def pathnow
 
 def canonical path
 	const value = path.length > 1 ? path.replace(/\/+$/, '') : path
-	const routes = ['/', '/connections', '/protocols', '/routes', '/journal', '/access', '/settings', '/login', '/onboarding', '/invite']
+	const routes = ['/', '/connections', '/protocols', '/engines', '/routes', '/journal', '/access', '/settings', '/login', '/onboarding', '/invite']
 	routes.includes(value) ? value : '/'
 
 def pagetitle path
@@ -17,6 +17,7 @@ def pagetitle path
 	return "Outpost · {t('title.settings')}" if path == '/settings'
 	return "Outpost · {t('connections.title')}" if path == '/connections'
 	return "Outpost · {t('routes.title')}" if path == '/routes'
+	return "Outpost · {t('nav.engines')}" if path == '/engines'
 	return "Outpost · {t('nav.protocols')}" if path == '/protocols'
 	return "Outpost · {t('system.log')}" if path == '/journal'
 	"Outpost · {t('title.overview')}"

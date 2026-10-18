@@ -20,11 +20,11 @@ tag outpost-telemetry-note
 export def engineViews store
 	const versions = store.data.system.versions
 	const order = Object.keys(definitions)
-	order.map do(id, index)
+	order.map do(id)
 		const definition = definitions[id]
 		const version = versions.find do(item) item.engine == id
 		const installed = version..installed_version
-		{...definition, id: id, rank: index + 1, icon: 'shield', connection: engineCapabilities[id].map(do(protocol) protocols[protocol].name).join(' / '), transport: engineCapabilities[id].map(do(protocol) protocols[protocol].name).join(' / '), config: store.data.engineConfigs[id], facts: [], installed: installed, version: installed or '—', desired: version..desired_version, checksum: version..checksum}
+		{...definition, id: id, transport: engineCapabilities[id].map(do(protocol) protocols[protocol].name).join(' / '), config: store.data.engineConfigs[id], installed: installed, desired: version..desired_version, checksum: version..checksum, release: store.data.system.engineReleases[id]}
 
 export const routeActions = [
 	{id: 'DIRECT', label: 'Напрямую'}

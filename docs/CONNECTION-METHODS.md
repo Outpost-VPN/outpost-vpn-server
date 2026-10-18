@@ -11,6 +11,24 @@ identity, engine, protocol/transport, display name, enabled state, individual
 settings and position. Several methods can use one engine; the same protocol can
 have independent implementations on different engines and ports.
 
+The sidebar provides separate **Protocols** (`/admin/protocols`, configured
+connection methods) and **Engines** (`/admin/engines`, runtimes) pages. Russian UI
+uses «Движки». Each method displays telemetry coverage and expandable client/profile
+requirements using the shared capability model. Hysteria and Xray collect per-user
+totals per engine, without a method breakdown. Other engines currently have no
+Outpost traffic collector. A special profile is a configuration format, not a paid
+plan; native exports also identify their lack of Outpost routing rules. Cronet is
+required for Naive, not for an AnyTLS-only sing-box profile.
+
+**Check for new versions** queries the official projects' GitHub releases (source
+tags for bundled AmneziaWG), stores numeric check timestamps and reports partial
+failures per engine. `EngineInventory` owns both discovery state and installed
+versions. Discovery never changes installable pins or checksums: installation/update
+still uses versions included in the signed Outpost release and the existing
+operation preview/confirmation. A newer upstream version is shown with an explicit
+Outpost-update requirement. Local official logo sources are recorded in
+`assets/engines/SOURCES.md`.
+
 - `src/shared/connection-methods.ts` owns the input schema, verified server
   capabilities, settings defaults and client-profile capabilities.
 - `ConnectionMethodStore` owns the persisted `connection_methods` setting and
@@ -100,6 +118,7 @@ select the first compatible method and do not carry Outpost routing policy.
 ## API and MCP
 
 - `GET /api/v1/engines`: versions, runtime metadata and server capabilities.
+- `POST /api/v1/engines/check`: check official versions without installation.
 - `GET /api/v1/methods`: configured methods, capabilities and proposed settings.
 - `POST /api/v1/methods`: create using the shared input schema.
 - `PATCH /api/v1/methods/:id`: replace settings; engine/protocol identity stays fixed.
@@ -111,6 +130,8 @@ MCP exposes `engines_get`, `methods_get`, `method_create`, `method_update`,
 `method_delete` and `methods_reorder` through these same API endpoints. Engine
 installation/update/start/stop continues through operation preview/confirmation.
 MCP mutation descriptions identify the selected engine's interruption scope.
+`engines_check` exposes version discovery and requires `engines:write`; a read-only
+engine token cannot trigger network checks or mutate their cached state.
 
 ## Ingress, health and recovery
 

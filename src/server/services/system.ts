@@ -56,6 +56,7 @@ export class SystemService {
         { name: "VLESS gRPC", status: transportStatus(monitored.transports?.grpc), listen: "127.0.0.1:10001", secret: config.grpcService },
       ],
       versions,
+      engineReleases: this.db.engines.releaseChecks(),
       engines: engineMetadata,
       telemetryLimited: this.db.engines.limitedTelemetry,
       tls: {

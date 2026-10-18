@@ -1,5 +1,6 @@
 import type { OutpostDatabase } from "../db/database";
 import type { EngineId, PresenceStatus, TrafficPoint } from "../models";
+import {telemetryEngines} from "../../shared/engines";
 import { JournalService } from "./journal";
 
 export interface TelemetrySnapshot {
@@ -113,7 +114,7 @@ export class TrafficService {
       FROM traffic_samples ${filter}
       GROUP BY bucket_at ORDER BY bucket_at
     `).all(...params);
-    return { period, from: since, to: reference.toISOString(), totals, connections, series, coveredEngines: ["hysteria", "xray"] };
+    return { period, from: since, to: reference.toISOString(), totals, connections, series, coveredEngines: telemetryEngines };
   }
 
   compact(reference = new Date()) {

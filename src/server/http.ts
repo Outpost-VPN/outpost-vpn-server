@@ -330,7 +330,8 @@ export class HttpApplication {
       const limit = optionalPositiveInteger(ctx.url.searchParams.get("limit"));
       return json(this.journal.list({ scope, category, q, before, limit, language: ctx.language }));
     });
-    this.get("/api/v1/engines", false, () => json({versions: this.db.engines.versions(), definitions: engineMetadata, capabilities: this.methods.state().capabilities}));
+    this.get("/api/v1/engines", false, () => json({versions: this.db.engines.versions(), releases: this.db.engines.releaseChecks(), definitions: engineMetadata, capabilities: this.methods.state().capabilities}));
+    this.post("/api/v1/engines/check", false, async (ctx) => json(await this.db.engines.checkReleases(actor(ctx))));
     this.get("/api/v1/methods", false, () => json(this.methods.state()));
     this.post("/api/v1/methods", false, async (ctx) => {
       const body = await ctx.json();
