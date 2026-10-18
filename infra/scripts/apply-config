@@ -7,14 +7,18 @@ engine=${3:-}
 restart=${4:-1}
 
 case "$restart" in
-  0|1) ;;
+  0|1|validate-only|sync) ;;
   *) echo "Restart flag is not allowed" >&2; exit 1 ;;
 esac
 
+if test "$restart" = validate-only; then
+  test "$source_path" = "$target_path" || exit 1
+else
 case "$source_path:$target_path" in
   /var/lib/outpost/runtime/*:/etc/outpost/engines/*) ;;
   *) echo "Config path is not allowed" >&2; exit 1 ;;
 esac
+fi
 
 case "$engine:$target_path" in
   xray:/etc/outpost/engines/xray.json)
@@ -26,9 +30,33 @@ case "$engine:$target_path" in
     # Hysteria has no validate-only command. The application performs a strict
     # YAML/protected-block check; systemd health decides whether to rollback.
     ;;
+  amneziawg:/etc/outpost/engines/amneziawg.json)
+    service=outpost-amneziawg
+    native=$(mktemp)
+    trap 'rm -f "$native"' EXIT
+    /opt/outpost/current/bin/outpostctl awg-native "$source_path" >"$native"
+    ;;
+  mihomo:/etc/outpost/engines/mihomo.yaml)
+    service=outpost-mihomo
+    if test -x /opt/outpost/engines/mihomo/current/mihomo; then
+      /opt/outpost/engines/mihomo/current/mihomo -t -f "$source_path" -d /var/lib/outpost/mihomo
+    else
+      test "$restart" = 0 || exit 1
+    fi
+    ;;
+  sing-box:/etc/outpost/engines/sing-box.json)
+    service=outpost-sing-box
+    if test -x /opt/outpost/engines/sing-box/current/sing-box; then
+      /opt/outpost/engines/sing-box/current/sing-box check -c "$source_path"
+    else
+      test "$restart" = 0 || exit 1
+    fi
+    ;;
   *) echo "Engine target is not allowed" >&2; exit 1 ;;
 esac
 
+if test "$restart" = validate-only; then exit 0; fi
+if cmp -s "$source_path" "$target_path"; then exit 0; fi
 backup_path="${target_path}.previous"
 test ! -f "$target_path" || cp -a "$target_path" "$backup_path"
 install -o root -g outpost -m 0640 "$source_path" "${target_path}.tmp"
@@ -39,6 +67,12 @@ if test "$restart" = 0; then
   exit 0
 fi
 
+if test "$engine" = amneziawg && test "$restart" = sync; then
+  if /opt/outpost/engines/amneziawg/current/awg syncconf outpost-awg "$native"; then exit 0; fi
+  test ! -f "$backup_path" || cp -a "$backup_path" "$target_path"
+  echo "AmneziaWG peer synchronization failed" >&2
+  exit 1
+fi
 if ! systemctl restart "$service"; then
   test ! -f "$backup_path" || cp -a "$backup_path" "$target_path"
   systemctl restart "$service" || true
@@ -46,7 +80,7 @@ if ! systemctl restart "$service"; then
   exit 1
 fi
 
-test "$(systemctl is-active "$service")" = active || {
+/opt/outpost/current/infra/scripts/engine-health "$engine" || {
   test ! -f "$backup_path" || cp -a "$backup_path" "$target_path"
   systemctl restart "$service" || true
   echo "Engine did not become active; previous revision restored" >&2

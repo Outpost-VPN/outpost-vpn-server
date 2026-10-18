@@ -1,9 +1,14 @@
 #!/usr/bin/env bun
+import YAML from "yaml";
+import { enginePorts, engineHealth } from "../shared/protocols";
+import { amneziaNative } from "../server/adapters/amneziawg";
+import { engines, engineIds, isEngine } from "../shared/engines";
 import { accessSync, constants } from "node:fs";
 import { resolve } from "node:path";
 import { OutpostDatabase } from "../server/db/database";
 import { AuthService } from "../server/auth/webauthn";
 import { EngineConfigService } from "../server/adapters/engines";
+import { EngineRuntimeService } from "../server/services/engine-runtime";
 import { ConnectionService } from "../server/services/connections";
 import { OutpostApi } from "../shared/api";
 
@@ -11,6 +16,37 @@ const [command = "help", ...args] = Bun.argv.slice(2);
 
 try {
   switch (command) {
+    case "engine-health-ports": {
+      const id = args[0];
+      if (!isEngine(id)) throw new Error("Unknown engine");
+      let ports = engineHealth(id);
+      if (id === "mihomo" || id === "sing-box") {
+        const text = await Bun.file(`/etc/outpost/engines/${engines[id].file}`).text();
+        const profile = id === "mihomo" ? YAML.parse(text) : JSON.parse(text);
+        const listeners = id === "mihomo" ? profile.listeners : profile.inbounds;
+        if (!Array.isArray(listeners)) throw new Error("Managed listener array is missing");
+        if (!listeners.length) ports = id === "mihomo" ? ["9097/tcp"] : [];
+      }
+      if (ports.length) console.log(ports.join("\n"));
+      break;
+    }
+    case "awg-native": {
+      const path = args[0];
+      if (!path) throw new Error("Snapshot path is required");
+      process.stdout.write(amneziaNative(await Bun.file(path).json()));
+      break;
+    }
+    case "engine-info": {
+      const id = args[0];
+      if (!isEngine(id)) throw new Error("Unknown engine");
+      const pin = engines[id];
+      const url = `https://github.com/${pin.repository}/releases/download/${encodeURIComponent(pin.tag)}/${pin.asset}`;
+      console.log([pin.service, pin.file, pin.archive, pin.binary, pin.version, pin.sha256, url, enginePorts(id).join(","), engineHealth(id).join(",")].join("\n"));
+      break;
+    }
+    case "engine-list":
+      console.log(engineIds.filter((id) => args.includes("--all") || engines[id].optional === args.includes("--optional")).join("\n"));
+      break;
     case "doctor":
       await doctor(args);
       break;
@@ -32,6 +68,15 @@ try {
     case "migrate":
       migrate(args);
       break;
+    case "reconcile-runtime": {
+      const db = new OutpostDatabase();
+      try {
+        db.engines.recoverInstallations();
+        await new EngineConfigService(db).reconcilePresets(new ConnectionService(db).activeCredentials(), "system:restore", Object.fromEntries(engineIds.map((id) => [id, false])));
+        await new EngineRuntimeService(db).prepareRecovery();
+      } finally { db.close(); }
+      break;
+    }
     case "reconcile-engine-presets":
       await reconcileEnginePresets(args);
       break;

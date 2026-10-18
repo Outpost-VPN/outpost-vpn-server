@@ -4,56 +4,77 @@ set -euo pipefail
 engine=${1:-}
 version=${2:-}
 checksum=${3:-}
-
+mode=${4:-update}
 test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
-[[ "$engine" = hysteria || "$engine" = xray ]] || { echo "Unsupported engine" >&2; exit 1; }
-[[ "$version" =~ ^[0-9][0-9A-Za-z.-]{0,39}$ ]] || { echo "Invalid version" >&2; exit 1; }
-[[ "$checksum" =~ ^[0-9a-f]{64}$ ]] || { echo "Invalid checksum" >&2; exit 1; }
-
+[[ "$mode" = update || "$mode" = install-only ]] || exit 1
+mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "$engine")
+test "${#info[@]}" = 9 || { echo "Unknown engine" >&2; exit 1; }
+service=${info[0]}
+config_file=${info[1]}
+archive_format=${info[2]}
+binary=${info[3]}
+test "$version" = "${info[4]}" && test "$checksum" = "${info[5]}" || { echo "Engine does not match the release pin" >&2; exit 1; }
+url=${info[6]}
 root="/opt/outpost/engines/$engine"
 target="$root/$version"
 current="$root/current"
-previous=$(readlink -f "$current")
-update_tmp=$(mktemp -d "/var/lib/outpost/runtime/${engine}-update.XXXXXX")
+previous=$(readlink -f "$current" 2>/dev/null || true)
+was_active=0
+if systemctl is-active --quiet "$service"; then was_active=1; fi
+update_tmp=$(mktemp -d)
 trap 'rm -rf "$update_tmp"' EXIT
 
-test -n "$previous" && test -d "$previous" || { echo "Current engine installation is missing" >&2; exit 1; }
+# Never overwrite a version directory: only a verified, staged installation is
+# switched into service. A failed first installation has no previous symlink.
 test ! -e "$target" || { echo "$engine $version is already installed" >&2; exit 1; }
-
-if test "$engine" = hysteria; then
-  archive="$update_tmp/hysteria"
-  url="https://github.com/apernet/hysteria/releases/download/app%2Fv${version}/hysteria-linux-amd64"
-  service="hysteria-server"
-else
-  archive="$update_tmp/xray.zip"
-  url="https://github.com/XTLS/Xray-core/releases/download/v${version}/Xray-linux-64.zip"
-  service="xray"
+if test "$archive_format" != bundled; then
+  curl -fL --retry 3 -o "$update_tmp/archive" "$url"
+  printf '%s  %s\n' "$checksum" "$update_tmp/archive" | sha256sum -c -
 fi
-
-curl -fL --retry 3 -o "$archive" "$url"
-printf '%s  %s\n' "$checksum" "$archive" | sha256sum -c -
-
+mkdir "$update_tmp/stage"
+case "$archive_format" in
+  bundled)
+    bundle=/opt/outpost/current/infra/engines/amneziawg
+    test "$engine" = amneziawg
+    test "$(cat "$bundle/SOURCE_SHA256")" = "$checksum"
+    (cd "$bundle" && sha256sum -c SHA256SUMS)
+    cp -a "$bundle/." "$update_tmp/stage/"
+    ;;
+  binary) install -m 0755 "$update_tmp/archive" "$update_tmp/stage/$binary" ;;
+  gzip) gzip -dc "$update_tmp/archive" >"$update_tmp/stage/$binary" ;;
+  zip) unzip -tq "$update_tmp/archive" >/dev/null; unzip -q "$update_tmp/archive" -d "$update_tmp/stage" ;;
+  tar.gz) tar -xzf "$update_tmp/archive" --strip-components=1 -C "$update_tmp/stage" ;;
+  *) echo "Unsupported engine archive" >&2; exit 1 ;;
+esac
+test -f "$update_tmp/stage/$binary"
+chmod 0755 "$update_tmp/stage/$binary"
+install -d -m 0755 "$root"
+mv "$update_tmp/stage" "$target"
 rollback() {
-  ln -sfn "$previous" "$current"
+  if test -n "$previous" && test -d "$previous"; then
+    ln -sfn "$previous" "$current"
+    if test "$mode" = update && test "$was_active" = 1; then systemctl restart "$service" || true; fi
+  else
+    systemctl disable --now "$service" || true
+    rm -f "$current"
+  fi
   rm -rf "$target"
-  systemctl restart "$service" || true
-  echo "Engine update failed and was rolled back to $previous" >&2
+  echo "Engine installation failed; previous state restored" >&2
 }
 trap rollback ERR
-
-install -d -m 0755 "$target"
-if test "$engine" = hysteria; then
-  install -m 0755 "$archive" "$target/hysteria"
-else
-  unzip -tq "$archive" >/dev/null
-  unzip -q "$archive" -d "$target"
-  chmod 0755 "$target/xray"
-fi
-
 ln -sfn "$version" "$current"
-systemctl restart "$service"
-systemctl is-active --quiet "$service"
+if test "$mode" = update; then
+  # Validation is owned by apply-config for both profile edits and upgrades.
+  /opt/outpost/current/infra/scripts/apply-config "/etc/outpost/engines/$config_file" "/etc/outpost/engines/$config_file" "$engine" validate-only
+  if test "$was_active" = 1 || test ! -d "$previous"; then
+    systemctl restart "$service"
+    /opt/outpost/current/infra/scripts/engine-health "$engine"
+  fi
+  if [[ "$engine" = mihomo || "$engine" = sing-box || "$engine" = amneziawg ]]; then
+    IFS=',' read -r -a ports <<<"${info[7]}"
+    for port in "${ports[@]}"; do ufw allow "$port"; done
+    systemctl enable "$service"
+  fi
+fi
 trap - ERR
-
-find "$root" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | awk 'NR>3 {print $2}' | xargs -r rm -rf --
-echo "$engine updated to $version"
+printf '%s %s %s\n' "$engine" "$version" "$checksum"

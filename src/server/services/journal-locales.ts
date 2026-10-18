@@ -1,3 +1,4 @@
+import { engineName } from "../../shared/engines";
 import type { Locale } from "../../shared/i18n";
 
 type Data = Record<string, unknown>;
@@ -188,8 +189,4 @@ function interpolate(template: string, data: Data) {
     engine: engineName(data.engine),
   };
   return template.replace(/\{([^}]+)\}/g, (match, key) => values[key] === undefined ? match : String(values[key]));
-}
-
-function engineName(value: unknown) {
-  return value === "hysteria" ? "Hysteria 2" : value === "xray" ? "Xray" : String(value ?? "");
 }

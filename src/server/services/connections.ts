@@ -311,7 +311,7 @@ export class ConnectionService {
     const hysteria = rows.find((row) => row.engine === "hysteria");
     const xray = rows.find((row) => row.engine === "xray");
     if (!hysteria || !xray) throw new ServiceError(409, "Credentials подключения недоступны");
-    return { connectionId, generation: selected, hysteria: decryptSecret(hysteria), xray: decryptSecret(xray) };
+    return { connectionId, serial: connection.serial, generation: selected, hysteria: decryptSecret(hysteria), xray: decryptSecret(xray) };
   }
 
   activeCredentials() {
@@ -401,6 +401,7 @@ export class ConnectionService {
       };
     }
     const statuses = rows.map((row) => row.status);
+    if (this.db.engines.limitedTelemetry) statuses.push("unknown");
     const status: PresenceStatus = connection.suspended_at
       ? "offline"
       : statuses.includes("online")

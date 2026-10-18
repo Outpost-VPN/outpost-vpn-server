@@ -1,7 +1,11 @@
-import { createHash } from "node:crypto";
+import { amneziaSnapshot, amneziaNative } from "./amneziawg";
+import { createHash, createHmac } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
+import { engineIds, engines, engineFile, type EngineId } from "../../shared/engines";
+import { protocols } from "../../shared/protocols";
+import { protocolCredential } from "./protocol-credentials";
 import type { OutpostDatabase } from "../db/database";
 import type { ConnectionCredential, TrafficPoint } from "../models";
 import { config } from "../config";
@@ -11,6 +15,7 @@ import { ServiceError } from "../services/connections";
 import { JournalService } from "../services/journal";
 import {
   currentEnginePresetVersions,
+  defaultEngineTemplates,
   defaultHysteriaTemplate,
   defaultXrayTemplate,
   mergeEnginePreset,
@@ -28,7 +33,7 @@ export interface EngineContext {
 }
 
 export interface EngineAdapter {
-  readonly id: "hysteria" | "xray";
+  readonly id: EngineId;
   install(version: string): Promise<void>;
   upgrade(version: string): Promise<void>;
   render(template: string, context: EngineContext): string;
@@ -46,6 +51,9 @@ export interface EngineAdapter {
 
 const protectedBlocks = {
   hysteria: ["{{OUTPOST_AUTH_URL}}", "{{OUTPOST_STATS_LISTEN}}", "{{OUTPOST_STATS_SECRET}}", "{{OUTPOST_TLS_CERT}}", "{{OUTPOST_TLS_KEY}}"],
+  amneziawg: ["{{OUTPOST_AWG_SERVER}}", "{{OUTPOST_AWG_PEERS}}"],
+  mihomo: ["{{OUTPOST_LISTENERS}}", "{{OUTPOST_CONTROLLER_SECRET}}"],
+  "sing-box": ["{{OUTPOST_INBOUNDS}}"],
   xray: [
     "{{OUTPOST_XHTTP_USERS}}", "{{OUTPOST_GRPC_USERS}}", "{{OUTPOST_API}}",
     "{{OUTPOST_STATS}}", "{{OUTPOST_XHTTP_PATH}}", "{{OUTPOST_GRPC_SERVICE}}",
@@ -63,7 +71,7 @@ export function validateTemplate(engine: keyof typeof protectedBlocks, template:
       if (!rules.includes("reject(all, udp/443)")) {
         errors.push("Системное правило reject(all, udp/443) нельзя удалить");
       }
-    } else {
+    } else if (engine === "xray") {
       const outbounds = nestedArray(parsed, "outbounds");
       const rules = nestedArray(parsed, "routing", "rules");
       if (!outbounds.some((item) => matches(item, { protocol: "blackhole", tag: "block" }))) {
@@ -72,6 +80,21 @@ export function validateTemplate(engine: keyof typeof protectedBlocks, template:
       if (!rules.some((item) => matches(item, { type: "field", network: "udp", port: 443, outboundTag: "block" }))) {
         errors.push("Системное правило блокировки UDP/443 нельзя удалить или изменить");
       }
+    }
+    if (engine === "amneziawg" && (!matches(parsed, { server: "{{OUTPOST_AWG_SERVER}}", peers: "{{OUTPOST_AWG_PEERS}}" }) || Object.keys(parsed as object).length !== 2)) {
+      errors.push("Сетевые параметры AmneziaWG управляются Outpost");
+    }
+    if (engine === "mihomo") {
+      const rules = nestedArray(parsed, "rules");
+      if (!rules.includes("AND,((NETWORK,UDP),(DST-PORT,443)),REJECT")) errors.push("Системное правило блокировки UDP/443 нельзя удалить");
+      const value = parsed as Record<string, unknown>;
+      if (value.listeners !== "__OUTPOST_LISTENERS__" || value["external-controller"] !== "127.0.0.1:9097") errors.push("Системные listeners и локальный API нельзя изменить");
+      if (value.mode !== "rule" || value["mixed-port"] || value.port || value["socks-port"] || value.tun) errors.push("Дополнительные входящие интерфейсы запрещены");
+    }
+    if (engine === "sing-box") {
+      const value = parsed as Record<string, unknown>;
+      if (value.inbounds !== "{{OUTPOST_INBOUNDS}}") errors.push("Системный блок inbounds нельзя изменить");
+      if (!nestedArray(parsed, "route", "rules").some((item) => matches(item, { network: "udp", port: 443, action: "reject" }))) errors.push("Системное правило блокировки UDP/443 нельзя удалить");
     }
   } catch (error) {
     errors.push(`Не удалось разобрать шаблон: ${error instanceof Error ? error.message : String(error)}`);
@@ -116,6 +139,36 @@ export function renderXray(template: string, credentials: ConnectionCredential[]
   return rendered;
 }
 
+export function renderEngine(engine: EngineId, template: string, credentials: ConnectionCredential[] = []) {
+  if (engine === "hysteria") return renderHysteria(template);
+  if (engine === "xray") return renderXray(template, credentials);
+  assertTemplate(engine, template);
+  if (engine === "amneziawg") {
+    const snapshot = amneziaSnapshot(credentials);
+    amneziaNative(snapshot);
+    return JSON.stringify(snapshot, null, 2);
+  }
+  const certificate = `/etc/letsencrypt/live/${config.domain}/fullchain.pem`;
+  const key = `/etc/letsencrypt/live/${config.domain}/privkey.pem`;
+  if (engine === "mihomo") {
+    const profile = parseEngineTemplate(engine, template) as Record<string, unknown>;
+    profile.secret = createHmac("sha256", config.hysteriaStatsSecret).update("outpost:mihomo-controller:v1").digest("base64url");
+    profile.listeners = credentials.length ? [
+      { name: "anytls", type: "anytls", listen: "0.0.0.0", port: protocols.anytls.port, certificate, "private-key": key,
+        users: Object.fromEntries(credentials.map((credential) => { const user = protocolCredential(credential, "anytls"); return [user.username, user.password]; })) },
+      { name: "trusttunnel", type: "trusttunnel", listen: "0.0.0.0", port: protocols.trusttunnel.port, certificate, "private-key": key,
+        network: ["tcp"], users: credentials.map((credential) => protocolCredential(credential, "trusttunnel")) },
+    ] : [];
+    return YAML.stringify(profile);
+  }
+  const profile = parseEngineTemplate(engine, template) as Record<string, unknown>;
+  profile.inbounds = credentials.length ? [{ type: "naive", tag: "naive", listen: "0.0.0.0", listen_port: protocols.naive.port, network: "tcp",
+    users: credentials.map((credential) => protocolCredential(credential, "naive")),
+    tls: { enabled: true, certificate_path: certificate, key_path: key },
+  }] : [];
+  return JSON.stringify(profile, null, 2);
+}
+
 export class EngineConfigService {
   private journal: JournalService;
 
@@ -123,18 +176,18 @@ export class EngineConfigService {
     this.journal = journal ?? new JournalService(db);
   }
 
-  state(engine?: "hysteria" | "xray") {
-    const names: Array<"hysteria" | "xray"> = engine ? [engine] : ["hysteria", "xray"];
+  state(engine?: EngineId) {
+    const names = engine ? [engine] : engineIds;
     return Object.fromEntries(names.map((name) => [name, this.engineState(name)]));
   }
 
-  preview(engine: "hysteria" | "xray", template: string, credentials: ConnectionCredential[] = []) {
+  preview(engine: EngineId, template: string, credentials: ConnectionCredential[] = []) {
     const check = validateTemplate(engine, template);
     if (!check.valid) return { ...check, rendered: null, hash: null };
     try {
-      const rendered = engine === "hysteria" ? renderHysteria(template) : renderXray(template, credentials);
+      const rendered = renderEngine(engine, template, credentials);
       const active = this.active(engine);
-      const baseline = active?.template ?? (engine === "xray" ? defaultXrayTemplate : defaultHysteriaTemplate);
+      const baseline = active?.template ?? defaultEngineTemplates[engine];
       const previous = this.renderStored(engine, baseline, credentials);
       return { valid: true, errors: [], rendered, hash: renderedHash(rendered), diff: lineDiff(previous, rendered) };
     } catch (error) {
@@ -162,13 +215,13 @@ export class EngineConfigService {
     const id = crypto.randomUUID();
     const timestamp = now();
     const runtimeDir = join(config.dataDir, "runtime");
-    const source = join(runtimeDir, `${engine}-config-${id}.${engine === "xray" ? "json" : "yaml"}`);
+    const source = join(runtimeDir, `${id}-${engineFile(engine)}`);
     mkdirSync(runtimeDir, { recursive: true, mode: 0o750 });
     writeFileSync(source, preview.rendered, { mode: 0o640 });
-    const target = join(config.configDir, "engines", engine === "xray" ? "xray.json" : "hysteria.yaml");
+    const target = join(config.configDir, "engines", engineFile(engine));
     const result = config.demo
       ? { ok: true, demo: true }
-      : await callAgent({ action: "config.apply", payload: { source, target, engine, restart } });
+      : await callAgent({ action: "config.apply", payload: { source, target, engine, restart: restart && this.db.engines.has(engine) } });
     this.db.raw.transaction(() => {
       this.db.raw.query("UPDATE engine_configs SET active = 0 WHERE engine = ?").run(engine);
       this.db.raw.query(`
@@ -194,7 +247,7 @@ export class EngineConfigService {
     return { ...this.engineState(engine), result };
   }
 
-  async rollback(engine: "hysteria" | "xray", version: number, credentials: ConnectionCredential[], actor = "owner") {
+  async rollback(engine: EngineId, version: number, credentials: ConnectionCredential[], actor = "owner") {
     const row = this.db.raw.query<{ template: string; preset_version: number }, [string, number]>(
       "SELECT template, preset_version FROM engine_configs WHERE engine = ? AND version = ?",
     ).get(engine, version);
@@ -220,10 +273,11 @@ export class EngineConfigService {
   async reconcilePresets(
     credentials: ConnectionCredential[],
     actor = "system:update",
-    restart: Record<EngineName, boolean> = { hysteria: true, xray: true },
+    restart: Partial<Record<EngineName, boolean>> = {},
   ) {
     const results: Record<EngineName, unknown> = {} as Record<EngineName, unknown>;
-    for (const engine of ["hysteria", "xray"] as const) {
+    for (const engine of engineIds) {
+      if (engines[engine].optional && !this.db.engines.has(engine)) { results[engine] = { status: "not-installed" }; continue; }
       const active = this.active(engine);
       const currentVersion = currentEnginePresetVersions[engine];
       if (active && active.preset_version >= currentVersion) {
@@ -233,7 +287,7 @@ export class EngineConfigService {
       const upgrade = active
         ? mergeEnginePreset(engine, active.template, active.preset_version)
         : {
-            template: engine === "hysteria" ? defaultHysteriaTemplate : defaultXrayTemplate,
+            template: defaultEngineTemplates[engine],
             fromVersion: 0,
             toVersion: currentVersion,
             conflicts: [],
@@ -258,7 +312,7 @@ export class EngineConfigService {
         "engine.config_applied",
         undefined,
         currentVersion,
-        restart[engine],
+        restart[engine] ?? !engines[engine].optional,
       );
       results[engine] = {
         status: "applied",
@@ -270,7 +324,7 @@ export class EngineConfigService {
     return { ok: true, engines: results };
   }
 
-  private engineState(engine: "hysteria" | "xray") {
+  private engineState(engine: EngineId) {
     const active = this.active(engine);
     const revisions = this.db.raw.query<{
       id: string; version: number; preset_version: number; rendered_hash: string; active: number; created_at: string;
@@ -281,7 +335,7 @@ export class EngineConfigService {
     return {
       engine,
       activeVersion: active?.version ?? 0,
-      template: active?.template ?? (engine === "xray" ? defaultXrayTemplate : defaultHysteriaTemplate),
+      template: active?.template ?? defaultEngineTemplates[engine],
       presetVersion: active?.preset_version ?? currentEnginePresetVersions[engine],
       preset: this.presetState(engine, active),
       revisions,
@@ -306,14 +360,14 @@ export class EngineConfigService {
     };
   }
 
-  private active(engine: "hysteria" | "xray") {
+  private active(engine: EngineId) {
     return this.db.raw.query<{
       id: string; version: number; preset_version: number; template: string; rendered_hash: string; created_at: string;
     }, string>("SELECT id, version, preset_version, template, rendered_hash, created_at FROM engine_configs WHERE engine = ? AND active = 1").get(engine);
   }
 
-  private renderStored(engine: "hysteria" | "xray", template: string, credentials: ConnectionCredential[]) {
-    try { return engine === "hysteria" ? renderHysteria(template) : renderXray(template, credentials); }
+  private renderStored(engine: EngineId, template: string, credentials: ConnectionCredential[]) {
+    try { return renderEngine(engine, template, credentials); }
     catch { return null; }
   }
 }

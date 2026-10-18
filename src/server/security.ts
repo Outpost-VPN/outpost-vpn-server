@@ -1,4 +1,5 @@
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { config } from "./config";
 
@@ -10,6 +11,7 @@ export type SecretBox = {
 
 export function loadMasterKey(path = config.masterKeyPath): Buffer {
   if (!existsSync(path)) {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     writeFileSync(path, randomBytes(32), { mode: 0o600, flag: "wx" });
   }
   chmodSync(path, 0o600);

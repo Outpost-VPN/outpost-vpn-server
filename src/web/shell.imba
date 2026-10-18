@@ -43,7 +43,7 @@ tag outpost-engine-mark
 	kind = ''
 
 	<self .hysteria=(kind == 'hysteria') .xray=(kind == 'xray') aria-hidden="true">
-		<span.glyph> kind == 'hysteria' ? 'H' : 'X'
+		<span.glyph> kind.slice(0, 1).toUpperCase!
 
 	css
 		position: relative
@@ -140,7 +140,7 @@ tag outpost-sidebar
 	get serverIssue
 		return t('Данные не удалось обновить: {error}', {error: store.stale}) if store.stale
 		return null unless store.data and store.data.system
-		const failed = store.data.system.services.find do(item) item.status != 'active'
+		const failed = store.data.system.services.find do(item) !['active', 'not-installed'].includes(item.status)
 		return t('{service} не отвечает', {service: fmt.serviceName(failed.name)}) if failed
 		const transport = store.data.system.transports and store.data.system.transports.find do(item) item.status == 'inactive'
 		return t('{transport} не слушает localhost', {transport: transport.name}) if transport

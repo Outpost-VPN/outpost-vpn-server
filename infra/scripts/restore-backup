@@ -41,25 +41,42 @@ valid_ipv4 "$current_public_ip" || { echo "Current public IPv4 is invalid" >&2; 
 [[ "$current_version" =~ ^[0-9][0-9A-Za-z.-]{0,39}$ ]] || { echo "Current Outpost version is invalid" >&2; exit 1; }
 [[ "$current_admin_path" =~ ^/[a-zA-Z0-9._~-]{1,64}$ ]] || { echo "Current admin path is invalid" >&2; exit 1; }
 
+declare -a optional_ids=() optional_services=() optional_files=() optional_active=()
+declare -a engine_members=()
+while IFS= read -r engine; do
+  mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "$engine")
+  engine_members+=("config/engines/${info[1]}")
+done < <(/opt/outpost/current/bin/outpostctl engine-list --all)
+while IFS= read -r engine; do
+  mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "$engine")
+  optional_ids+=("$engine"); optional_services+=("${info[0]}"); optional_files+=("${info[1]}")
+done < <(/opt/outpost/current/bin/outpostctl engine-list --optional)
+
 restore_tmp=$(mktemp -d /var/lib/outpost/restore.XXXXXX)
 armed=0
 cleanup() {
   local status=$?
   set +e
   if test "$armed" -eq 1; then
-    systemctl stop outpost hysteria-server xray nginx >/dev/null 2>&1 || true
+    systemctl stop outpost hysteria-server xray nginx "${optional_services[@]}" >/dev/null 2>&1 || true
     rm -f -- /var/lib/outpost/outpost.sqlite-wal /var/lib/outpost/outpost.sqlite-shm
     install -o outpost -g outpost -m 0600 "$restore_tmp/current.sqlite" /var/lib/outpost/outpost.sqlite
     install -o outpost -g outpost -m 0600 "$restore_tmp/current.master.key" /var/lib/outpost/master.key
     install -o root -g outpost -m 0640 "$restore_tmp/current.outpost.env" /etc/outpost/outpost.env
     install -o root -g outpost -m 0640 "$restore_tmp/current.hysteria.yaml" /etc/outpost/engines/hysteria.yaml
     install -o root -g outpost -m 0640 "$restore_tmp/current.xray.json" /etc/outpost/engines/xray.json
+    for file in "${optional_files[@]}"; do
+      if test -f "$restore_tmp/current.engines/$file"; then install -o root -g outpost -m 0640 "$restore_tmp/current.engines/$file" "/etc/outpost/engines/$file"; else rm -f "/etc/outpost/engines/$file"; fi
+    done
     install -o root -g root -m 0644 "$restore_tmp/current.nginx.conf" /etc/nginx/sites-available/outpost
     nginx -t >/dev/null 2>&1 || true
     test "$nginx_was_active" -eq 0 || systemctl start nginx >/dev/null 2>&1 || true
     test "$outpost_was_active" -eq 0 || systemctl start outpost >/dev/null 2>&1 || true
     test "$xray_was_active" -eq 0 || systemctl start xray >/dev/null 2>&1 || true
     test "$hysteria_was_active" -eq 0 || systemctl start hysteria-server >/dev/null 2>&1 || true
+    for index in "${!optional_services[@]}"; do
+      test "${optional_active[$index]}" = 0 || systemctl start "${optional_services[$index]}" >/dev/null 2>&1 || true
+    done
   fi
   rm -rf "$restore_tmp"
   test "$mode" != "--consume" || rm -f "$archive"
@@ -81,7 +98,11 @@ tar -tf "$plain_archive" >"$members"
 while IFS= read -r member; do
   case "$member" in
     manifest.json|outpost.sqlite|master.key|nginx.conf|config/|config/outpost.env|config/engines/|config/engines/hysteria.yaml|config/engines/xray.json) ;;
-    *) echo "Unexpected backup entry: $member" >&2; exit 1 ;;
+    *)
+      allowed=0
+      for expected in "${engine_members[@]}"; do test "$member" != "$expected" || allowed=1; done
+      test "$allowed" = 1 || { echo "Unexpected backup entry: $member" >&2; exit 1; }
+      ;;
   esac
 done <"$members"
 test -z "$(sort "$members" | uniq -d)" || { echo "Backup contains duplicate entries" >&2; exit 1; }
@@ -164,20 +185,29 @@ cp /var/lib/outpost/master.key "$restore_tmp/current.master.key"
 cp /etc/outpost/outpost.env "$restore_tmp/current.outpost.env"
 cp /etc/outpost/engines/hysteria.yaml "$restore_tmp/current.hysteria.yaml"
 cp /etc/outpost/engines/xray.json "$restore_tmp/current.xray.json"
+cp -a /etc/outpost/engines "$restore_tmp/current.engines"
+for service in "${optional_services[@]}"; do
+  if systemctl is-active --quiet "$service"; then optional_active+=(1); else optional_active+=(0); fi
+done
 cp /etc/nginx/sites-available/outpost "$restore_tmp/current.nginx.conf"
 armed=1
 
-systemctl stop outpost hysteria-server xray nginx
+systemctl stop outpost hysteria-server xray nginx "${optional_services[@]}"
 rm -f -- /var/lib/outpost/outpost.sqlite-wal /var/lib/outpost/outpost.sqlite-shm
 install -o outpost -g outpost -m 0600 "$restore_tmp/outpost.sqlite" /var/lib/outpost/outpost.sqlite
 install -o outpost -g outpost -m 0600 "$restore_tmp/master.key" /var/lib/outpost/master.key
 install -o root -g outpost -m 0640 "$restore_tmp/outpost.env" /etc/outpost/outpost.env
 install -o root -g outpost -m 0640 "$restore_tmp/config/engines/hysteria.yaml" /etc/outpost/engines/hysteria.yaml
 install -o root -g outpost -m 0640 "$restore_tmp/config/engines/xray.json" /etc/outpost/engines/xray.json
+for file in "${optional_files[@]}"; do
+  if test -f "$restore_tmp/config/engines/$file"; then install -o root -g outpost -m 0640 "$restore_tmp/config/engines/$file" "/etc/outpost/engines/$file"; else rm -f "/etc/outpost/engines/$file"; fi
+done
 install -o root -g root -m 0644 "$restore_tmp/nginx.current" /etc/nginx/sites-available/outpost
 
 OUTPOST_DATABASE=/var/lib/outpost/outpost.sqlite /opt/outpost/current/bin/outpostctl migrate
 nginx -t
+systemctl start outpost-agent
+/opt/outpost/current/infra/scripts/outpostctl reconcile-runtime
 systemctl start nginx outpost-agent outpost xray hysteria-server
 for service in nginx outpost outpost-agent xray hysteria-server; do systemctl is-active --quiet "$service"; done
 for _ in {1..30}; do
@@ -186,5 +216,12 @@ for _ in {1..30}; do
 done
 curl -fsS http://127.0.0.1:8181/readyz >/dev/null
 
+for index in "${!optional_services[@]}"; do
+  installed=$(sqlite3 /var/lib/outpost/outpost.sqlite "SELECT COALESCE(installed_version, '') FROM engine_versions WHERE engine = '${optional_ids[$index]}';")
+  if test "${optional_active[$index]}" = 1 && test -n "$installed" && test -x "/opt/outpost/engines/${optional_ids[$index]}/current/$(/opt/outpost/current/bin/outpostctl engine-info "${optional_ids[$index]}" | sed -n '4p')"; then
+    systemctl start "${optional_services[$index]}"
+    /opt/outpost/current/infra/scripts/engine-health "${optional_ids[$index]}"
+  fi
+done
 armed=0
 echo "Backup restored and services started. Existing clients continue to work when the original domain points to this server."

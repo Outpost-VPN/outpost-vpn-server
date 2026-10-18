@@ -20,8 +20,8 @@ const baseUrl = "https://proxy.example/s/token";
 const locales: Locale[] = ["ru", "en", "zh-CN", "fa"];
 
 describe("versioned application catalog", () => {
-  test("catalog v3 is complete and every application has explicit pricing", () => {
-    expect(catalogVersion).toBe(3);
+  test("catalog v4 is complete and every application has explicit pricing", () => {
+    expect(catalogVersion).toBe(4);
     expect(new Set(applications.map((app) => app.id)).size).toBe(applications.length);
     for (const app of applications) {
       expect(app.platforms.length).toBeGreaterThan(0);
@@ -70,7 +70,7 @@ describe("versioned application catalog", () => {
       expect(apps).toHaveLength(applications.length);
       expect(apps.every((app) => app.description.length > 0)).toBeTrue();
       const raw = advanced(baseUrl, locale);
-      expect(raw).toHaveLength(4);
+      expect(raw).toHaveLength(8);
       expect(raw.every((item) => item.name && item.description && item.profileUrl)).toBeTrue();
     }
   });

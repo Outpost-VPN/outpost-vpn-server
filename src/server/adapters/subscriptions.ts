@@ -1,3 +1,6 @@
+import { amneziaClient, amneziaProxy } from "./amneziawg";
+import { protocols, legacyProtocols, type ProtocolId } from "../../shared/protocols";
+import { protocolCredential } from "./protocol-credentials";
 import YAML from "yaml";
 import { networkDefaults, type NetworkSettings } from "../../shared/settings";
 import { config } from "../config";
@@ -10,6 +13,8 @@ export interface SubscriptionContext {
   subscriptionToken: string;
   engineOrder: readonly EngineId[];
   clientPlatform?: string;
+  protocols?: readonly ProtocolId[];
+  enabledEngines?: readonly EngineId[];
   network?: NetworkSettings;
 }
 
@@ -23,6 +28,21 @@ export interface SubscriptionRenderer {
   readonly id: SubscriptionFormat;
   render(context: SubscriptionContext): RenderedSubscription;
 }
+
+function includesProtocol(context: SubscriptionContext, id: ProtocolId) {
+  return (context.protocols ?? legacyProtocols).includes(id)
+    && (context.enabledEngines ?? ["hysteria", "xray"]).includes(protocols[id].engine);
+}
+
+export const naiveRenderer: SubscriptionRenderer = {
+  id: "naive",
+  render(context) {
+    const user = protocolCredential(context.credentials, "naive");
+    return output(JSON.stringify({ listen: "socks://127.0.0.1:1080",
+      proxy: `https://${encodeURIComponent(user.username)}:${encodeURIComponent(user.password)}@${config.domain}:${protocols.naive.port}`,
+    }, null, 2) + "\n", "application/json; charset=utf-8");
+  },
+};
 
 const MIHOMO_QUIC_REJECT_RULE = "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT";
 const MIHOMO_IPV6_REJECT_RULE = "IP-CIDR6,::/0,REJECT,no-resolve";
@@ -117,6 +137,15 @@ export const mihomoRenderer: SubscriptionRenderer = {
         network: "grpc",
         "grpc-opts": { "grpc-service-name": config.grpcService },
       }],
+      amneziawg: includesProtocol(context, "amneziawg") ? [amneziaProxy(credential, context.connection.serial, host)] : [],
+      mihomo: [
+        ...(includesProtocol(context, "anytls") ? [{ name: "AnyTLS", type: "anytls", server: host, port: protocols.anytls.port,
+          password: protocolCredential(credential, "anytls").password, sni: config.domain, "skip-cert-verify": false,
+          "client-fingerprint": "chrome", udp: true }] : []),
+        ...(includesProtocol(context, "trusttunnel") ? [{ name: "TrustTunnel", type: "trusttunnel", server: host, port: protocols.trusttunnel.port,
+          ...protocolCredential(credential, "trusttunnel"), sni: config.domain, "skip-cert-verify": false,
+          "client-fingerprint": "chrome", udp: true, quic: false }] : []),
+      ],
     });
     const names = proxies.map((proxy) => proxy.name);
     const profile = {
@@ -170,6 +199,18 @@ export const singBoxRenderer: SubscriptionRenderer = {
     const host = config.publicIp || config.domain;
     const rules = context.routes.filter(enabled);
     const sets = singBoxSets(rules);
+    const transports = ordered<Record<string, unknown>>(context.engineOrder, {
+      hysteria: [{ type: "hysteria2", tag: "hysteria2", server: host, server_port: 443,
+        password: context.credentials.hysteria.password, tls: { enabled: true, server_name: config.domain } }],
+      xray: [{ type: "vless", tag: "vless-grpc", server: host, server_port: 443, uuid: context.credentials.xray.id,
+        tls: { enabled: true, server_name: config.domain, utls: { enabled: true, fingerprint: "chrome" } },
+        transport: { type: "grpc", service_name: config.grpcService } }],
+      mihomo: includesProtocol(context, "anytls") ? [{ type: "anytls", tag: "anytls", server: host, server_port: protocols.anytls.port,
+        password: protocolCredential(context.credentials, "anytls").password,
+        tls: { enabled: true, server_name: config.domain, utls: { enabled: true, fingerprint: "chrome" } } }] : [],
+      "sing-box": includesProtocol(context, "naive") ? [{ type: "naive", tag: "naive", server: host, server_port: protocols.naive.port,
+        ...protocolCredential(context.credentials, "naive"), tls: { enabled: true, server_name: config.domain } }] : [],
+    });
     const profile = {
       log: { level: "warn", timestamp: true },
       dns: {
@@ -181,27 +222,11 @@ export const singBoxRenderer: SubscriptionRenderer = {
       },
       inbounds: [{ type: "tun", tag: "tun-in", address: network.ipv6 ? ["172.19.0.1/30", "fdfe:dcba:9876::1/126"] : ["172.19.0.1/30"], auto_route: true, strict_route: true }],
       outbounds: [
-        {
-          type: "hysteria2",
-          tag: "hysteria2",
-          server: host,
-          server_port: 443,
-          password: context.credentials.hysteria.password,
-          tls: { enabled: true, server_name: config.domain },
-        },
-        {
-          type: "vless",
-          tag: "vless-grpc",
-          server: host,
-          server_port: 443,
-          uuid: context.credentials.xray.id,
-          tls: { enabled: true, server_name: config.domain, utls: { enabled: true, fingerprint: "chrome" } },
-          transport: { type: "grpc", service_name: config.grpcService },
-        },
+        ...transports,
         {
           type: "urltest",
           tag: "proxy",
-          outbounds: singBoxOrder(context.engineOrder),
+          outbounds: transports.map((transport) => transport.tag),
           url: "https://www.gstatic.com/generate_204",
           interval: "5m",
           tolerance: 50,
@@ -265,6 +290,10 @@ export const renderers: Record<SubscriptionFormat, SubscriptionRenderer> = {
   "sing-box": singBoxRenderer,
   xray: xrayRenderer,
   "xray-json": xrayJsonRenderer,
+  naive: naiveRenderer,
+  amneziawg: { id: "amneziawg", render(context) {
+    return output(amneziaClient(context.credentials, context.connection.serial, config.publicIp || config.domain), "text/plain; charset=utf-8", { "content-disposition": "attachment; filename=outpost-amneziawg.conf" });
+  } },
   links: linksRenderer,
 };
 
@@ -279,16 +308,13 @@ function output(body: string, contentType: string, headers: Record<string, strin
   return { body, contentType, headers: { "cache-control": "private, no-store", ...headers } };
 }
 
-function ordered<T>(order: readonly EngineId[], values: { hysteria: T | T[]; xray: T | T[] }) {
+function ordered<T>(order: readonly EngineId[], values: Partial<Record<EngineId, T | T[]>>) {
   return order.flatMap((engine) => {
     const value = values[engine];
-    return Array.isArray(value) ? value : [value];
+    return value === undefined ? [] : Array.isArray(value) ? value : [value];
   });
 }
 
-function singBoxOrder(order: readonly EngineId[]) {
-  return ordered(order, { hysteria: "hysteria2", xray: "vless-grpc" });
-}
 
 function enabled(rule: ClientRouteRule) {
   return Boolean(rule.enabled);

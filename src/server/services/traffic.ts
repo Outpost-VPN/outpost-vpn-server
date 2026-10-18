@@ -113,7 +113,7 @@ export class TrafficService {
       FROM traffic_samples ${filter}
       GROUP BY bucket_at ORDER BY bucket_at
     `).all(...params);
-    return { period, from: since, to: reference.toISOString(), totals, connections, series };
+    return { period, from: since, to: reference.toISOString(), totals, connections, series, coveredEngines: ["hysteria", "xray"] };
   }
 
   compact(reference = new Date()) {
@@ -252,7 +252,7 @@ export class TrafficService {
         });
         continue;
       }
-      const unknown = rows.some((row) => row.status === "unknown");
+      const unknown = this.db.engines.limitedTelemetry || rows.some((row) => row.status === "unknown");
       if (
         !unknown && connection.last_seen_at && !connection.absence_notified_at
         && reference.getTime() - new Date(connection.last_seen_at).getTime() >= 24 * 60 * 60 * 1000

@@ -1,9 +1,9 @@
 # Outpost
 
 Outpost is a self-hosted proxy management panel for one owner account. It deploys and
-maintains two proxy stacks on a single domain, provides universal Mihomo,
+maintains proxy runtimes with optional transports, provides universal Mihomo,
 sing-box, and Xray subscriptions, publishes shared routing rules, and tracks
-traffic by connection without storing browsing history. Every connection has
+Hysteria/Xray traffic by connection without storing browsing history. Every connection has
 one credential generation and one link that may be shared by any number of
 people and physical devices.
 
@@ -25,10 +25,15 @@ Outpost currently supports:
 - **Hysteria 2** on `UDP/443` as the primary connection.
 - **VLESS over XHTTP and TLS**, powered by Xray-core, as the preferred TCP fallback.
 - **VLESS over gRPC and TLS** as the compatibility TCP fallback.
+- **AnyTLS** on `TCP/1443` and **TrustTunnel HTTP/2** on `TCP/2443`, through optional Mihomo.
+- **Naive HTTP/2** on `TCP/3443`, through optional sing-box.
+- **AmneziaWG 3.1** on `UDP/51820`, through an optional userspace runtime.
 
-All TCP transports share public `TCP/443` through Nginx. Subscription renderers
+The VLESS transports share public `TCP/443` through Nginx. Subscription renderers
 produce Mihomo YAML, sing-box JSON, Xray URI base64, full Xray JSON, and a plain
-link list.
+link list. New transports use opt-in advanced profiles; native Naive JSON and
+AmneziaWG `.conf` exports are also available. See [protocol expansion](docs/PROTOCOL-EXPANSION.md)
+for client requirements, ports, validation and remaining release/field work.
 
 ## Architecture
 
@@ -45,11 +50,11 @@ TCP/443 → Nginx → secret XHTTP path → Xray on localhost
 - Privileged operations are handled by a minimal allowlisted Go agent.
 - MCP runs inside Outpost at `/api/v1/mcp`; [connect using HTTPS and a token](docs/MCP.md).
 - The Linux `outpostctl` provides server maintenance and recovery commands.
-- Nginx, Hysteria 2, and Xray run as separate systemd services.
+- Nginx and each installed proxy runtime run as separate systemd services.
 - Mutable settings and revisions live in SQLite, independently of release
   directories.
-- Connection activation, rotation, and archival are synchronized with Xray through a
-  persistent SQLite outbox.
+- Connection activation, rotation, suspension and archival are synchronized with
+  installed runtimes through a persistent SQLite outbox.
 - Signed GeoIP/Geosite bundles include SRS files and a verified GeoSite
   database. The server prepares published GeoSite categories before a route
   revision or database version becomes active, then expands them into ordinary

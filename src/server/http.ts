@@ -1,3 +1,5 @@
+import type { ProtocolId } from "../shared/protocols";
+import { engines, isEngine, type EngineId } from "../shared/engines";
 import { ZodError } from "zod";
 import QRCode from "qrcode";
 import { chmod, mkdir, unlink } from "node:fs/promises";
@@ -84,7 +86,13 @@ export class HttpApplication {
       const result = await this.connectionSync.rotate(connectionId, operationActor);
       if (result.state !== "ready") throw new Error(result.error ?? "Не удалось перевыпустить подключение");
       return { ok: true, connectionId, generation: result.connection.generation };
-    });
+    }, async (engine) => {
+      if (!isEngine(engine) || !engines[engine].optional) return;
+      const installed = this.db.engines.has(engine);
+      if (installed) return this.engines.reconcile(engine);
+      const stored = this.engineConfigs.state(engine)[engine]!;
+      return this.engineConfigs.apply(engine, stored.template, this.activeCredentials(), "system:install", "engine.config_applied", undefined, undefined, false);
+    }, (task) => this.connectionSync.reconcile(task));
     this.system = new SystemService(db, this.journal);
     this.monitoring = new MonitoringService(db, this.journal, undefined, undefined, { setup: config.setup });
     this.operations.subscribe(() => this.dashboardEvents.publish("operations"));
@@ -335,20 +343,20 @@ export class HttpApplication {
 
     this.get("/api/v1/engines/configurations", false, () => json(this.engineConfigs.state()));
     this.post("/api/v1/engines/configurations/preview", false, async (ctx) => {
-      const body = await ctx.json<{ engine: "hysteria" | "xray"; template: string }>();
+      const body = await ctx.json<{ engine: EngineId; template: string }>();
       return json(this.engineConfigs.preview(engineName(body.engine), engineTemplate(body.template), this.activeCredentials()));
     });
     this.post("/api/v1/engines/configurations/apply", false, async (ctx) => {
-      const body = await ctx.json<{ engine: "hysteria" | "xray"; template: string }>();
-      return json(await this.engineConfigs.apply(engineName(body.engine), engineTemplate(body.template), this.activeCredentials(), actor(ctx)));
+      const body = await ctx.json<{ engine: EngineId; template: string }>();
+      return json(await this.connectionSync.reconcile(() => this.engineConfigs.apply(engineName(body.engine), engineTemplate(body.template), this.activeCredentials(), actor(ctx))));
     });
     this.post("/api/v1/engines/configurations/:engine/rollback/:version", false, async (ctx) => {
-      return json(await this.engineConfigs.rollback(
+      return json(await this.connectionSync.reconcile(() => this.engineConfigs.rollback(
         engineName(ctx.params.engine!),
         Number(ctx.params.version),
         this.activeCredentials(),
         actor(ctx),
-      ));
+      )));
     });
 
     this.get("/api/v1/operations", false, (ctx) => json({ operations: localizePresentation(this.operations.list(), ctx.language) }));
@@ -425,19 +433,24 @@ export class HttpApplication {
   private async advancedProfile(ctx: RequestContext, head = false) {
     const item = advancedDefinition(ctx.params.target!);
     if (!item) throw new ServiceError(404, "Профиль не найден");
-    return this.profile(ctx, item.format, head);
+    return this.profile(ctx, item.format, head, undefined, item.protocols);
   }
 
-  private async profile(ctx: RequestContext, format: SubscriptionFormat, head: boolean, appId?: string) {
+  private async profile(ctx: RequestContext, format: SubscriptionFormat, head: boolean, appId?: string, protocols?: readonly ProtocolId[]) {
     const token = ctx.params.token!;
     const connection = this.connections.bySubscriptionToken(token);
     const credentials = this.connections.credentials(connection.id);
     const routes = this.rulesets.materialize(this.routes.published());
+    const enabledEngines = this.db.engines.installed();
+    if (format === "amneziawg" && !enabledEngines.includes("amneziawg")) throw new ServiceError(409, "Сначала установите AmneziaWG в разделе протоколов");
+    if (format === "naive" && !enabledEngines.includes("sing-box")) throw new ServiceError(409, "Сначала установите sing-box в разделе протоколов");
     const rendered = renderers[format].render({
       connection,
       credentials,
       routes,
       subscriptionToken: token,
+      protocols,
+      enabledEngines,
       engineOrder: this.system.engineOrder(),
       clientPlatform: detectPlatform(ctx.request.headers.get("user-agent") ?? ""),
       network: this.system.networkSettings(),
@@ -821,7 +834,7 @@ function optionalPositiveInteger(value: string | null) {
 }
 
 function engineName(value: string) {
-  if (value !== "hysteria" && value !== "xray") throw new ServiceError(404, "Движок не найден");
+  if (!isEngine(value)) throw new ServiceError(404, "Движок не найден");
   return value;
 }
 

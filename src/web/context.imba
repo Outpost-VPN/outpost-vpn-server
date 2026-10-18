@@ -1,6 +1,29 @@
+import {engineTransport} from '../shared/protocols.ts'
+import {engines as definitions, serviceName} from '../shared/engines.ts'
 import {avatarUrl} from './avatar-picker.imba'
 import {intl, t} from './i18n.imba'
 import YAML from 'yaml'
+
+tag outpost-telemetry-note
+	store = null
+
+	<self .visible=store.data.system.telemetryLimited role="note">
+		<outpost-icon name="info">
+		<span> t('engines.telemetry_limited')
+
+	css self
+		d:none ai:flex-start g:9px m:16px 0 p:11px 14px rd:9px bgc:var(--outpost-section) c:var(--outpost-muted) fs:12px lh:1.5
+		&.visible d:flex
+		outpost-icon fl:0 0 auto mt:2px
+
+export def protocols store
+	const versions = store.data.system.versions
+	const order = store.data.system.engineOrder or Object.keys(definitions)
+	order.map do(id, index)
+		const definition = definitions[id]
+		const version = versions.find do(item) item.engine == id
+		const installed = version..installed_version
+		{...definition, id: id, rank: index + 1, icon: 'shield', connection: engineTransport(id), transport: engineTransport(id), config: store.data.engineConfigs[id], facts: [], installed: installed, version: installed or '—', desired: version..desired_version, checksum: version..checksum}
 
 export const routeActions = [
 	{id: 'DIRECT', label: 'Напрямую'}
@@ -55,9 +78,7 @@ export const fmt = {
 	matcher: do(matcher)
 		const labels = {DOMAIN: t('Точный домен'), SUFFIX: t('Доменный суффикс'), IP_CIDR: 'IP / CIDR', GEOSITE: 'Geosite', GEOIP: 'GeoIP'}
 		labels[matcher]
-	serviceName: do(name)
-		const names = {'outpost': 'Outpost', nginx: 'Nginx', 'hysteria-server': 'Hysteria 2', xray: 'Xray'}
-		names[name] or name
+	serviceName: do(name) serviceName(name)
 	serviceIcon: do(name)
 		return 'activity' if name == 'hysteria-server'
 		return 'shield-check' if name == 'xray'

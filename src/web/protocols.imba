@@ -1,3 +1,5 @@
+import {protocols} from './context.imba'
+import {engineIds} from '../shared/engines.ts'
 import {intl, t} from './i18n.imba'
 
 tag outpost-protocols-overview
@@ -5,20 +7,13 @@ tag outpost-protocols-overview
 	checking = false
 	checked = false
 
-	get engines
-		const versions = store.data.system.versions
-		const hysteria = versions.find do(item) item.engine == 'hysteria'
-		const xray = versions.find do(item) item.engine == 'xray'
-		[
-			{id: 'hysteria', name: 'Hysteria 2', icon: 'wave-sine', service: 'hysteria-server', connection: t('UDP 443 · основной'), version: hysteria..installed_version or hysteria..desired_version or '—', config: store.data.engineConfigs.hysteria}
-			{id: 'xray', name: 'Xray', icon: 'shield', service: 'xray', connection: 'VLESS · XHTTP · TCP 443', version: xray..installed_version or xray..desired_version or '—', config: store.data.engineConfigs.xray}
-		]
+	get engines do protocols(store)
 
 	get healthy?
-		engines.every do(engine) working(engine)
+		engines.every do(engine) !engine.installed or working(engine)
 
 	get current?
-		store.data.system.versions.every do(version) version.installed_version == version.desired_version
+		store.data.system.versions.filter(do(version) version.installed_version).every do(version) version.installed_version == version.desired_version
 
 	get revisions
 		let rows = []
@@ -89,12 +84,12 @@ tag outpost-protocols-overview
 						<strong> engine.name
 					<span.engine-status .pending=!working(engine)>
 						<outpost-icon name="circle-fill">
-						<span> working(engine) ? t('system.active') : t('system.unknown')
+						<span> !engine.installed ? t('engines.not_installed') : working(engine) ? t('system.active') : t('system.unknown')
 					<span.engine-version> engine.version
 					<span.engine-connection> engine.connection
 					<span.engine-revision> revision(engine)
 					<button.configure type="button" @click=edit(engine)> t('engines.configure')
-					<button.restart type="button" @click=(do restart(engine)) aria-label=t('Перезапустить {engine}', {engine: engine.name}) title=t('Перезапустить {engine}', {engine: engine.name})>
+					<button.restart type="button" disabled=!engine.installed @click=(do restart(engine)) aria-label=t('Перезапустить {engine}', {engine: engine.name}) title=t('Перезапустить {engine}', {engine: engine.name})>
 						<outpost-icon name="arrows-clockwise">
 		<div.engine-lower>
 			<section.outpost-card.update-card>
@@ -450,42 +445,9 @@ tag outpost-protocols
 	notice = null
 
 	get services do store.data.system.services
-	get order do store.data.system.engineOrder or ['hysteria', 'xray']
+	get order do store.data.system.engineOrder or engineIds
 
-	get engines
-		const versions = store.data.system.versions
-		const values = {
-			hysteria: {
-				id: 'hysteria'
-				name: 'Hysteria 2'
-				service: 'hysteria-server'
-				transport: 'UDP 443'
-				format: 'YAML'
-				config: store.data.engineConfigs.hysteria
-				facts: [
-					{label: t('Протокол'), value: 'Hysteria 2'}
-					{label: t('Аутентификация'), value: t('пароль')}
-					{label: 'Obfs', value: 'Salamander'}
-				]
-			}
-			xray: {
-				id: 'xray'
-				name: 'Xray'
-				service: 'xray'
-				transport: 'TCP 443'
-				format: 'JSON'
-				config: store.data.engineConfigs.xray
-				facts: [
-					{label: t('Протокол'), value: 'VLESS'}
-					{label: t('Транспорт'), value: 'XHTTP'}
-					{label: t('Защита'), value: 'TLS'}
-					{label: t('Фрагментация'), value: 'ClientHello'}
-				]
-			}
-		}
-		order.map do(id, index)
-			const version = versions.find do(item) item.engine == id
-			{...values[id], rank: index + 1, installed: version..installed_version or version..desired_version or '—', desired: version..desired_version, checksum: version..checksum}
+	get engines do protocols(store)
 
 	def service name
 		services.find(do(item) item.name == name) or {name: name, status: 'unknown'}
@@ -504,7 +466,12 @@ tag outpost-protocols
 		store.confirmation = await store.api('POST', '/api/v1/operations/preview', {action: 'engine.update', payload: payload})
 		store.open('confirm')
 
+	def caption engine
+		return "{t('settings.update.install')} {engine.name}" unless engine.installed
+		working(engine) ? t('Остановить {engine}', {engine: engine.name}) : t('Запустить {engine}', {engine: engine.name})
+
 	def toggle engine
+		return update(engine) unless engine.installed
 		const action = working(engine) ? 'service.stop' : 'service.start'
 		const payload = {service: engine.service}
 		store.selected = {payload: payload}
@@ -600,7 +567,7 @@ tag outpost-protocols
 						<span> state == 'error' ? t('Не удалось сохранить') : state == 'saving' ? t('Сохраняем порядок…') : t('Порядок сохранён')
 			<div.engine-list>
 				for engine in engines
-					<article.engine-row key=engine.id .failed=!working(engine) .dragging=(drag == engine.id) .over=(over == engine.id and drag != engine.id) data-id=engine.id>
+					<article.engine-row key=engine.id .failed=(engine.installed and !working(engine)) .dragging=(drag == engine.id) .over=(over == engine.id and drag != engine.id) data-id=engine.id>
 						<button.handle type="button" @touch.moved(5px,'y')=touch(engine,e) @keydown=(do(e) key(engine,e)) aria-label=t('Перетащить {engine}. Стрелки вверх и вниз меняют приоритет', {engine: engine.name})>
 							<outpost-icon name="dots-six-vertical">
 						<span.rank> engine.rank
@@ -610,7 +577,7 @@ tag outpost-protocols
 								<div.engine-title>
 									<h3> engine.name
 								<p.engine-version>
-									<span> t('Версия {version}', {version: engine.installed})
+									<span> engine.installed ? t('Версия {version}', {version: engine.installed}) : t('engines.not_installed')
 									if engine.desired and engine.desired != engine.installed
 										<span.bullet> '·'
 										<button type="button" @click=update(engine) title=t('Обновить до {version}', {version: engine.desired})>
@@ -625,11 +592,13 @@ tag outpost-protocols
 							<button.configure type="button" @click=edit(engine) aria-label=t('Настроить {engine} — {format}', {engine: engine.name, format: engine.format}) title=t('Настроить {engine}', {engine: engine.name})>
 								<outpost-icon name="gear-six">
 								<span> engine.format
-							<button.toggle type="button" .stop=working(engine) .start=!working(engine) @click=toggle(engine) aria-label=(working(engine) ? t('Остановить {engine}', {engine: engine.name}) : t('Запустить {engine}', {engine: engine.name})) title=(working(engine) ? t('Остановить {engine}', {engine: engine.name}) : t('Запустить {engine}', {engine: engine.name}))>
-								<outpost-icon name=(working(engine) ? 'pause' : 'play')>
+							<button.toggle type="button" .stop=working(engine) .start=!working(engine) @click=toggle(engine) aria-label=caption(engine) title=caption(engine)>
+								<outpost-icon name=(!engine.installed ? 'download-simple' : working(engine) ? 'pause' : 'play')>
 			<footer.order-note>
 				<outpost-icon name="info">
 				<span> t('Новый порядок появится при следующем обновлении подписки')
+		<p.proxy-notice> t('engines.client_profiles')
+		<outpost-telemetry-note store=store>
 		<outpost-connection-guide>
 
 	css self

@@ -1,3 +1,4 @@
+import { engines, engineIds, serviceNames } from "../../shared/engines";
 import { readFileSync, statfsSync } from "node:fs";
 import { cpus, freemem, loadavg, totalmem } from "node:os";
 import { connect as tcpConnect, isIP } from "node:net";
@@ -7,7 +8,7 @@ import type { OutpostDatabase } from "../db/database";
 import type { JournalSeverity } from "../models";
 import { JournalService } from "./journal";
 
-const monitoredServices = ["outpost", "nginx", "hysteria-server", "xray"] as const;
+const monitoredServices = serviceNames;
 const setupServices = ["outpost", "nginx"] as const;
 const setupMonitorKeys = [
   "service:hysteria-server", "service:xray", "service:vless-xhttp", "service:vless-grpc",
@@ -96,7 +97,7 @@ export class MonitoringService {
     const memoryTotal = snapshot.metrics?.memory.total ?? 0;
     const memoryUsed = snapshot.metrics?.memory.used ?? 0;
     this.db.setSetting("monitor_snapshot", {
-      services: monitoredServices.map((name) => ({ name, status: services[name] ? "active" : "inactive" })),
+      services: monitoredServices.map((name) => ({ name, status: this.db.engines.missingService(name) ? "not-installed" : services[name] ? "active" : "inactive" })),
       transports: snapshot.transports ?? previous.transports,
       tls: {
         status: tls === null ? "unknown" : tls === "healthy" ? "valid" : tls,
@@ -122,7 +123,7 @@ export class MonitoringService {
     const snapshot = this.db.setting<Record<string, unknown>>("monitor_snapshot", {});
     this.db.setSetting("monitor_snapshot", {
       ...snapshot,
-      services: monitoredServices.map((name) => ({ name, status: services[name] ? "active" : "inactive" })),
+      services: monitoredServices.map((name) => ({ name, status: this.db.engines.missingService(name) ? "not-installed" : services[name] ? "active" : "inactive" })),
       checkedAt: observedAt,
     });
   }
@@ -160,7 +161,7 @@ export class MonitoringService {
   }
 
   private expectedServices() {
-    return this.setup ? setupServices : monitoredServices;
+    return this.setup ? [...setupServices] : monitoredServices.filter((name) => !this.db.engines.missingService(name));
   }
 
   private observeThreshold(

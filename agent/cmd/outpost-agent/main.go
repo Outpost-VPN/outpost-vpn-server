@@ -127,6 +127,17 @@ func execute(request policy.Request) (string, error) {
 			request.Payload["restoreId"].(string),
 			passphrase,
 		)
+	case "config.sync":
+		engine := request.Payload["engine"].(string)
+		definition := policy.Engines[engine]
+		restart := "0"
+		if _, err := run("systemctl", "is-active", "--quiet", definition.Service); err == nil {
+			restart = "1"
+			if engine == "amneziawg" {
+				restart = "sync"
+			}
+		}
+		return run("/opt/outpost/current/infra/scripts/apply-config", request.Payload["source"].(string), "/etc/outpost/engines/"+definition.File, engine, restart)
 	case "config.apply":
 		restart := "1"
 		if value, ok := request.Payload["restart"].(bool); ok && !value {

@@ -13,7 +13,12 @@ trap 'rm -rf "$backup_tmp"' EXIT
 sqlite3 /var/lib/outpost/outpost.sqlite 'PRAGMA wal_checkpoint(TRUNCATE);'
 sqlite3 /var/lib/outpost/outpost.sqlite ".backup '$backup_tmp/outpost.sqlite'"
 install -m 0600 /var/lib/outpost/master.key "$backup_tmp/master.key"
-cp -a /etc/outpost "$backup_tmp/config"
+install -d -m 0700 "$backup_tmp/config/engines"
+install -m 0600 /etc/outpost/outpost.env "$backup_tmp/config/outpost.env"
+while IFS= read -r engine; do
+  mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "$engine")
+  test ! -f "/etc/outpost/engines/${info[1]}" || install -m 0600 "/etc/outpost/engines/${info[1]}" "$backup_tmp/config/engines/${info[1]}"
+done < <(/opt/outpost/current/bin/outpostctl engine-list --all)
 install -m 0600 /etc/nginx/sites-available/outpost "$backup_tmp/nginx.conf"
 printf '{"format":1,"createdAt":"%s"}\n' "$(date -u +%FT%TZ)" >"$backup_tmp/manifest.json"
 

@@ -208,3 +208,24 @@ func TestNoArbitraryAction(t *testing.T) {
 		t.Fatal("arbitrary action accepted")
 	}
 }
+
+func TestOptionalEngineCatalog(t *testing.T) {
+	for id, engine := range Engines {
+		request := Request{Action: "config.apply", Payload: map[string]any{"engine": id, "source": "/var/lib/outpost/runtime/profile", "target": "/etc/outpost/engines/" + engine.File, "restart": false}}
+		if err := Validate(request); err != nil {
+			t.Fatalf("catalog engine %s rejected: %v", id, err)
+		}
+		request.Payload["target"] = "/etc/outpost/engines/wrong.json"
+		if Validate(request) == nil {
+			t.Fatalf("wrong target accepted for %s", id)
+		}
+		request = Request{Action: "config.sync", Payload: map[string]any{"engine": id, "source": "/var/lib/outpost/runtime/profile"}}
+		if err := Validate(request); (err == nil) != engine.Optional {
+			t.Fatalf("sync policy differs from catalog for %s", id)
+		}
+	}
+	outside := Request{Action: "config.sync", Payload: map[string]any{"engine": "amneziawg", "source": "/etc/shadow"}}
+	if Validate(outside) == nil {
+		t.Fatal("sync accepted a source outside the runtime directory")
+	}
+}

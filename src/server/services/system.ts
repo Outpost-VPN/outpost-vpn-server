@@ -6,12 +6,11 @@ import { networkDefaults, settingsPatchSchema, type NetworkSettings } from "../.
 import type { OutpostDatabase } from "../db/database";
 import { now } from "../db/database";
 import { config } from "../config";
-import type { EngineId } from "../models";
+import { engineIds, engines, serviceNames, type EngineId } from "../../shared/engines";
 import { ServiceError } from "./connections";
 import { JournalService, type JournalQuery } from "./journal";
 import { ApplicationUpdateService } from "./application-updates";
 
-const engineIds: EngineId[] = ["hysteria", "xray"];
 
 export class SystemService {
   readonly journal: JournalService;
@@ -39,10 +38,8 @@ export class SystemService {
       transports?: { xhttp?: boolean; grpc?: boolean };
       checkedAt?: string;
     }>("monitor_snapshot", {});
-    const services = monitored.services ?? ["outpost", "nginx", "hysteria-server", "xray"].map((name) => ({ name, status: "unknown" }));
-    const versions = this.db.raw.query<{ engine: string; installed_version: string | null; desired_version: string; checksum: string }, []>(
-      "SELECT engine, installed_version, desired_version, checksum FROM engine_versions ORDER BY engine",
-    ).all();
+    const services = this.db.engines.services(monitored.services);
+    const versions = this.db.engines.versions();
     const database = safeSize(config.databasePath);
     const backups = listBackups();
     const address = await resolve();
@@ -60,6 +57,8 @@ export class SystemService {
       ],
       versions,
       engineOrder: this.engineOrder(),
+      engines,
+      telemetryLimited: this.db.engines.limitedTelemetry,
       tls: {
         status: monitored.tls?.status ?? "unknown",
         domain: config.domain,
@@ -93,8 +92,7 @@ export class SystemService {
       transports?: { xhttp?: boolean; grpc?: boolean };
       checkedAt?: string;
     }>("monitor_snapshot", {});
-    const services = monitored.services ?? ["outpost", "nginx", "hysteria-server", "xray"]
-      .map((name) => ({ name, status: "unknown" }));
+    const services = this.db.engines.services(monitored.services);
     const rulesets = this.db.setting<{ status: string; activeVersion: string | null; checkedAt: string | null; lastError: string | null }>(
       "rulesets",
       { status: "idle", activeVersion: null, checkedAt: null, lastError: null },
@@ -105,7 +103,7 @@ export class SystemService {
     ];
     return {
       version: config.version,
-      healthy: services.every((service) => service.status === "active")
+      healthy: services.every((service) => ["active", "not-installed"].includes(service.status))
         && transports.every((transport) => transport.status !== "inactive")
         && monitored.tls?.status === "valid",
       services,

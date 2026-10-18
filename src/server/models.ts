@@ -1,8 +1,9 @@
 export type RouteAction = "DIRECT" | "PROXY" | "BLOCK";
 export type RouteMatcher = "DOMAIN" | "SUFFIX" | "IP_CIDR" | "GEOSITE" | "GEOIP";
 export type ClientRouteMatcher = Exclude<RouteMatcher, "GEOSITE"> | "DOMAIN_KEYWORD" | "DOMAIN_REGEX";
-export type SubscriptionFormat = "mihomo" | "sing-box" | "xray" | "xray-json" | "links";
-export type EngineId = "hysteria" | "xray";
+export type SubscriptionFormat = "mihomo" | "sing-box" | "xray" | "xray-json" | "links" | "naive" | "amneziawg";
+export type { EngineId } from "../shared/engines";
+import type { EngineId } from "../shared/engines";
 export type ConnectionStatus = "provisioning" | "active" | "rotating" | "archiving" | "archived";
 export type PresenceStatus = "online" | "offline" | "unknown";
 export type JournalCategory = "connections" | "routes" | "engines" | "maintenance" | "security" | "system";
@@ -81,6 +82,7 @@ export interface RouteRule {
 export type ClientRouteRule = Omit<RouteRule, "matcher"> & { matcher: ClientRouteMatcher };
 
 export interface ConnectionCredential {
+  serial?: number;
   connectionId: string;
   generation: number;
   hysteria: {

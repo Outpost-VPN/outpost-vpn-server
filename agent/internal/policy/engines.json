@@ -1,0 +1,136 @@
+{
+  "hysteria": {
+    "name": "Hysteria 2",
+    "service": "hysteria-server",
+    "file": "hysteria.yaml",
+    "format": "YAML",
+    "optional": false,
+    "version": "2.13.0",
+    "sha256": "907ba8c9693edb104b20582681fb7dc15639d5b64a9cbb616a7b539190a86691",
+    "repository": "HyNetworks/hysteria",
+    "tag": "app/v2.13.0",
+    "asset": "hysteria-linux-amd64",
+    "archive": "binary",
+    "binary": "hysteria",
+    "protocols": {
+      "hysteria2": {
+        "name": "Hysteria 2",
+        "port": 443,
+        "networks": [
+          "udp"
+        ]
+      }
+    }
+  },
+  "xray": {
+    "name": "Xray",
+    "service": "xray",
+    "file": "xray.json",
+    "format": "JSON",
+    "optional": false,
+    "version": "26.10.17",
+    "sha256": "ecdd54eccd24c4c21a8f00968e7dbf7f5996da92383d2321170b560dc4a95158",
+    "repository": "XTLS/Xray-core",
+    "tag": "v26.10.17",
+    "asset": "Xray-linux-64.zip",
+    "archive": "zip",
+    "binary": "xray",
+    "prerelease": true,
+    "protocols": {
+      "xhttp": {
+        "name": "VLESS XHTTP",
+        "port": 443,
+        "networks": [
+          "tcp"
+        ]
+      },
+      "grpc": {
+        "name": "VLESS gRPC",
+        "port": 443,
+        "networks": [
+          "tcp"
+        ]
+      }
+    },
+    "health": [
+      "10000/tcp",
+      "10001/tcp"
+    ]
+  },
+  "mihomo": {
+    "name": "Mihomo",
+    "service": "outpost-mihomo",
+    "file": "mihomo.yaml",
+    "format": "YAML",
+    "optional": true,
+    "version": "1.19.32",
+    "sha256": "306f81e723e60ce6b828899a6fe83e1d00e9ecefb2dc8d4d849312a5bc00efdc",
+    "repository": "MetaCubeX/mihomo",
+    "tag": "v1.19.32",
+    "asset": "mihomo-linux-amd64-v1-v1.19.32.gz",
+    "archive": "gzip",
+    "binary": "mihomo",
+    "protocols": {
+      "anytls": {
+        "name": "AnyTLS",
+        "port": 1443,
+        "networks": [
+          "tcp"
+        ]
+      },
+      "trusttunnel": {
+        "name": "TrustTunnel",
+        "port": 2443,
+        "networks": [
+          "tcp"
+        ]
+      }
+    }
+  },
+  "sing-box": {
+    "name": "sing-box",
+    "service": "outpost-sing-box",
+    "file": "sing-box.json",
+    "format": "JSON",
+    "optional": true,
+    "version": "1.14.3",
+    "sha256": "e2bdf179c15a3652955dc44867e33ca0965c9c9b91b34267dcc5a5d639a5feee",
+    "repository": "SagerNet/sing-box",
+    "tag": "v1.14.3",
+    "asset": "sing-box-1.14.3-linux-amd64.tar.gz",
+    "archive": "tar.gz",
+    "binary": "sing-box",
+    "protocols": {
+      "naive": {
+        "name": "Naive",
+        "port": 3443,
+        "networks": [
+          "tcp"
+        ]
+      }
+    }
+  },
+  "amneziawg": {
+    "name": "AmneziaWG 3.1",
+    "service": "outpost-amneziawg",
+    "file": "amneziawg.json",
+    "format": "JSON",
+    "optional": true,
+    "version": "3.1.20260828",
+    "sha256": "10bf7458e090bf52f87df27adcd3904a60e4d17fab844d9415e46379147f1ab4",
+    "repository": "amnezia-vpn/amneziawg-go",
+    "tag": "v3.1.20260828",
+    "asset": "bundled",
+    "archive": "bundled",
+    "binary": "amneziawg-go",
+    "protocols": {
+      "amneziawg": {
+        "name": "AmneziaWG 3.1",
+        "port": 51820,
+        "networks": [
+          "udp"
+        ]
+      }
+    }
+  }
+}

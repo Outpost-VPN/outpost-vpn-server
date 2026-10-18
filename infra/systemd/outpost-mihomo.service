@@ -1,0 +1,26 @@
+[Unit]
+Description=Outpost AnyTLS and TrustTunnel (Mihomo)
+After=network-online.target outpost.service
+Wants=network-online.target
+ConditionPathExists=/opt/outpost/engines/mihomo/current/mihomo
+
+[Service]
+Type=simple
+User=root
+Environment=SAFE_PATHS=/etc/outpost:/etc/letsencrypt
+StateDirectory=outpost/mihomo
+ExecStart=/opt/outpost/engines/mihomo/current/mihomo -d /var/lib/outpost/mihomo -f /etc/outpost/engines/mihomo.yaml
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/etc/outpost /etc/letsencrypt /opt/outpost/engines
+ReadWritePaths=/var/lib/outpost/mihomo
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

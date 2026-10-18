@@ -1,3 +1,4 @@
+import { engineIds } from "../src/shared/engines";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { SystemService } from "../src/server/services/system";
 import { database } from "./helpers";
@@ -42,12 +43,12 @@ describe("system settings", () => {
 
   test("persists engine priority as the subscription source of truth", () => {
     const system = new SystemService(fixture.db);
-    expect(system.engineOrder()).toEqual(["hysteria", "xray"]);
+    expect(system.engineOrder()).toEqual(engineIds);
 
-    system.updateEngineOrder(["xray", "hysteria"], "owner");
+    system.updateEngineOrder(["xray", ...engineIds.filter((id) => id !== "xray")], "owner");
 
-    expect(new SystemService(fixture.db).engineOrder()).toEqual(["xray", "hysteria"]);
-    expect(fixture.db.setting<string[]>("engine_order", [])).toEqual(["xray", "hysteria"]);
+    expect(new SystemService(fixture.db).engineOrder()).toEqual(["xray", ...engineIds.filter((id) => id !== "xray")]);
+    expect(fixture.db.setting<string[]>("engine_order", [])).toEqual(["xray", ...engineIds.filter((id) => id !== "xray")]);
   });
 
   test("rejects missing, duplicate and unknown engines", () => {

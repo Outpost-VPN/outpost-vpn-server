@@ -18,6 +18,8 @@
     "assets": "bun scripts/assets.ts",
     "check": "bunx tsc --noEmit && bun run build:web && bun test",
     "check:subscriptions-native": "bun scripts/validate-subscriptions.ts",
+    "check:additional-transports": "bun scripts/integration-additional-transports.ts",
+    "check:amneziawg": "bun scripts/integration-amneziawg.ts",
     "check:transports-integration": "bun scripts/integration-transports.ts",
     "test": "bun test",
     "test:agent": "cd agent && go test ./...",

@@ -1,3 +1,4 @@
+import type { ProtocolId } from "../../shared/protocols";
 import type { Connection, SubscriptionFormat } from "../models";
 import { metadata, type Locale } from "../../shared/i18n";
 
@@ -34,9 +35,12 @@ export type AppDefinition = {
 export type AdvancedDefinition = {
   id: string;
   format: SubscriptionFormat;
+  name?: string;
+  minimumCore?: string;
+  protocols?: ProtocolId[];
 };
 
-export const catalogVersion = 3;
+export const catalogVersion = 4;
 export const platforms: { id: AppPlatform; label: string }[] = [
   { id: "macos", label: "macOS" },
   { id: "ios", label: "iOS" },
@@ -146,6 +150,10 @@ export const advancedDefinitions: AdvancedDefinition[] = [
   { id: "mihomo-yaml", format: "mihomo" },
   { id: "sing-box-json", format: "sing-box" },
   { id: "xray-json", format: "xray-json" },
+  { id: "mihomo-modern", format: "mihomo", name: "Mihomo · AnyTLS / TrustTunnel / AmneziaWG", minimumCore: "Mihomo ≥1.19.32", protocols: ["hysteria2", "xhttp", "grpc", "anytls", "trusttunnel", "amneziawg"] },
+  { id: "sing-box-modern", format: "sing-box", name: "sing-box · AnyTLS / Naive", minimumCore: "sing-box ≥1.14.3", protocols: ["hysteria2", "grpc", "anytls", "naive"] },
+  { id: "amneziawg-conf", format: "amneziawg", name: "AmneziaWG 3.1 · .conf", minimumCore: "AmneziaVPN ≥5.0.1.5 / AmneziaWG 3.1" },
+  { id: "naive-json", format: "naive", name: "NaiveProxy JSON", minimumCore: "NaiveProxy / sing-box ≥1.14.3" },
 ];
 
 export function application(id: string) {
@@ -190,8 +198,8 @@ export function advanced(baseUrl: string, language: Locale = "en") {
   const descriptions = catalogCopy[language].advancedDescriptions as Record<string, string>;
   return advancedDefinitions.map((item) => ({
     id: item.id,
-    name: names[item.id],
-    description: descriptions[item.id],
+    name: names[item.id] ?? item.name,
+    description: descriptions[item.id] ?? `${catalogCopy[language].modernText} ${item.minimumCore}.`,
     profileUrl: `${baseUrl}/advanced/${item.id}`,
   }));
 }
@@ -265,23 +273,27 @@ function escape(value: unknown) {
 
 const catalogCopy = {
   ru: {
+    modernText: "Новые транспорты требуют установки соответствующих движков на сервере и актуального ядра клиента. Минимум:",
     title: "Настройка подключения", heading: "Подключите своё устройство", subtitle: "Выберите операционную систему и проверенное приложение. Способ обновления маршрутов виден сразу.", auto: "Авто", appsFor: "Приложения для", operatingSystem: "Операционная система", more: "Ещё приложения", advanced: "Для опытных", advancedText: "Сырые профили для ручного импорта. Отдельные URI не содержат маршрутов Outpost.", add: "Открыть в приложении", copy: "Скопировать профиль", copyLink: "Скопировать ссылку", openQr: "Открыть QR-код", install: "Установить", available: "Доступно для", automatic: "Маршруты обновляются автоматически", manual: "Маршруты обновляются вручную", exact: "Точный порядок маршрутов", limited: "Маршруты сгруппированы по действиям", client: { opening: "Открываем приложение…", copied: "Ссылка скопирована — вставьте её в приложение", copyFailed: "Не удалось скопировать ссылку" },
     descriptions: { everywhere: "Самый простой Apple-клиент; профиль обновляется вручную.", incy: "Бесплатный Apple-клиент с обновляемой подпиской.", stash: "Точное автоматическое обновление маршрутов на iPhone и iPad.", "clash-verge": "Популярный настольный клиент Mihomo.", "clash-party": "Компактный Mihomo-клиент для компьютера.", "clash-meta": "Проверенный Mihomo-клиент для Android.", flclash: "Лёгкий кроссплатформенный Mihomo-клиент.", happ: "Простой бесплатный кроссплатформенный клиент.", "sing-box-android": "Официальный клиент sing-box для Android.", "sing-box-apple": "Официальный клиент sing-box для macOS.", "sing-box-desktop": "Официальный профиль sing-box для компьютера.", v2rayn: "Полная обновляемая конфигурация Xray.", v2rayng: "Полная обновляемая конфигурация Xray для Android." },
     advancedNames: { "vless-links": "Ссылки подключений", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "Отдельные URI не содержат маршрутов.", "mihomo-yaml": "Полный профиль Mihomo для ручного импорта.", "sing-box-json": "Полный профиль sing-box для ручного импорта.", "xray-json": "Полная конфигурация Xray для ручного импорта." },
   },
   en: {
+    modernText: "New transports require their server engines to be installed and an up-to-date client core. Minimum:",
     title: "Connection setup", heading: "Connect your device", subtitle: "Choose an operating system and a verified app. Route update behavior is shown up front.", auto: "Auto", appsFor: "Apps for", operatingSystem: "Operating system", more: "More apps", advanced: "For advanced users", advancedText: "Raw profiles for manual import. Individual URIs do not contain Outpost routes.", add: "Open in app", copy: "Copy profile", copyLink: "Copy link", openQr: "Open QR code", install: "Install", available: "Available for", automatic: "Routes update automatically", manual: "Routes update manually", exact: "Exact route order", limited: "Routes grouped by action", client: { opening: "Opening the app…", copied: "Link copied—paste it into the app", copyFailed: "Could not copy the link" },
     descriptions: { everywhere: "The simplest Apple client; refresh the profile manually.", incy: "A free Apple client with an updating subscription.", stash: "Exact automatic route updates on iPhone and iPad.", "clash-verge": "A popular Mihomo desktop client.", "clash-party": "A compact Mihomo desktop client.", "clash-meta": "A proven Mihomo client for Android.", flclash: "A lightweight cross-platform Mihomo client.", happ: "A simple free cross-platform client.", "sing-box-android": "The official sing-box client for Android.", "sing-box-apple": "The official sing-box client for macOS.", "sing-box-desktop": "The official sing-box desktop profile.", v2rayn: "A complete updating Xray configuration.", v2rayng: "A complete updating Xray configuration for Android." },
     advancedNames: { "vless-links": "Connection links", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "Individual URIs do not contain routes.", "mihomo-yaml": "Complete Mihomo profile for manual import.", "sing-box-json": "Complete sing-box profile for manual import.", "xray-json": "Complete Xray configuration for manual import." },
   },
   "zh-CN": {
+    modernText: "新传输需要安装对应服务端引擎并更新客户端内核。最低版本：",
     title: "连接设置", heading: "连接您的设备", subtitle: "选择操作系统和经过验证的应用。路由更新方式会直接显示。", auto: "自动", appsFor: "适用于", operatingSystem: "操作系统", more: "更多应用", advanced: "高级选项", advancedText: "用于手动导入的原始配置。单独 URI 不包含 Outpost 路由。", add: "在应用中打开", copy: "复制配置", copyLink: "复制链接", openQr: "打开 QR 码", install: "安装", available: "可用于", automatic: "路由自动更新", manual: "路由需手动更新", exact: "精确的路由顺序", limited: "路由按操作分组", client: { opening: "正在打开应用…", copied: "链接已复制，请粘贴到应用中", copyFailed: "无法复制链接" },
     descriptions: { everywhere: "最简单的 Apple 客户端；配置需手动更新。", incy: "支持更新订阅的免费 Apple 客户端。", stash: "在 iPhone 和 iPad 上精确自动更新路由。", "clash-verge": "流行的 Mihomo 桌面客户端。", "clash-party": "轻巧的 Mihomo 桌面客户端。", "clash-meta": "经过验证的 Android Mihomo 客户端。", flclash: "轻量级跨平台 Mihomo 客户端。", happ: "简单免费的跨平台客户端。", "sing-box-android": "官方 sing-box Android 客户端。", "sing-box-apple": "官方 sing-box macOS 客户端。", "sing-box-desktop": "官方 sing-box 桌面配置。", v2rayn: "完整且可更新的 Xray 配置。", v2rayng: "适用于 Android 的完整可更新 Xray 配置。" },
     advancedNames: { "vless-links": "连接链接", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "单独 URI 不包含路由。", "mihomo-yaml": "用于手动导入的完整 Mihomo 配置。", "sing-box-json": "用于手动导入的完整 sing-box 配置。", "xray-json": "用于手动导入的完整 Xray 配置。" },
   },
   fa: {
+    modernText: "انتقال‌های جدید به نصب موتور سرور و هستهٔ به‌روز کلاینت نیاز دارند. حداقل:",
     title: "راه‌اندازی اتصال", heading: "دستگاه خود را متصل کنید", subtitle: "سیستم‌عامل و یک برنامهٔ بررسی‌شده را انتخاب کنید. روش به‌روزرسانی مسیرها همان ابتدا نمایش داده می‌شود.", auto: "خودکار", appsFor: "برنامه‌ها برای", operatingSystem: "سیستم‌عامل", more: "برنامه‌های بیشتر", advanced: "برای کاربران حرفه‌ای", advancedText: "پروفایل‌های خام برای ورود دستی. URIهای جداگانه شامل مسیرهای Outpost نیستند.", add: "باز کردن در برنامه", copy: "کپی پروفایل", copyLink: "کپی پیوند", openQr: "باز کردن کد QR", install: "نصب", available: "در دسترس برای", automatic: "مسیرها خودکار به‌روزرسانی می‌شوند", manual: "مسیرها دستی به‌روزرسانی می‌شوند", exact: "ترتیب دقیق مسیرها", limited: "مسیرها بر اساس عمل گروه‌بندی می‌شوند", client: { opening: "در حال باز کردن برنامه…", copied: "پیوند کپی شد؛ آن را در برنامه جای‌گذاری کنید", copyFailed: "کپی پیوند انجام نشد" },
     descriptions: { everywhere: "ساده‌ترین کلاینت Apple؛ پروفایل دستی به‌روزرسانی می‌شود.", incy: "کلاینت رایگان Apple با اشتراک قابل به‌روزرسانی.", stash: "به‌روزرسانی خودکار و دقیق مسیرها در iPhone و iPad.", "clash-verge": "کلاینت محبوب دسکتاپ Mihomo.", "clash-party": "کلاینت جمع‌وجور دسکتاپ Mihomo.", "clash-meta": "کلاینت آزموده‌شدهٔ Mihomo برای Android.", flclash: "کلاینت سبک و چندسکویی Mihomo.", happ: "کلاینت ساده، رایگان و چندسکویی.", "sing-box-android": "کلاینت رسمی sing-box برای Android.", "sing-box-apple": "کلاینت رسمی sing-box برای macOS.", "sing-box-desktop": "پروفایل رسمی دسکتاپ sing-box.", v2rayn: "پیکربندی کامل و قابل به‌روزرسانی Xray.", v2rayng: "پیکربندی کامل و قابل به‌روزرسانی Xray برای Android." },
     advancedNames: { "vless-links": "پیوندهای اتصال", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "URIهای جداگانه شامل مسیرها نیستند.", "mihomo-yaml": "پروفایل کامل Mihomo برای ورود دستی.", "sing-box-json": "پروفایل کامل sing-box برای ورود دستی.", "xray-json": "پیکربندی کامل Xray برای ورود دستی." },
   },
-} satisfies Record<Locale, { title: string; heading: string; subtitle: string; auto: string; appsFor: string; operatingSystem: string; more: string; advanced: string; advancedText: string; add: string; copy: string; copyLink: string; openQr: string; install: string; available: string; automatic: string; manual: string; exact: string; limited: string; client: Record<string, string>; descriptions: Record<string, string>; advancedNames: Record<string, string>; advancedDescriptions: Record<string, string> }>;
+} satisfies Record<Locale, { modernText: string; title: string; heading: string; subtitle: string; auto: string; appsFor: string; operatingSystem: string; more: string; advanced: string; advancedText: string; add: string; copy: string; copyLink: string; openQr: string; install: string; available: string; automatic: string; manual: string; exact: string; limited: string; client: Record<string, string>; descriptions: Record<string, string>; advancedNames: Record<string, string>; advancedDescriptions: Record<string, string> }>;

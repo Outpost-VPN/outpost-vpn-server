@@ -2,6 +2,13 @@ import { accept, locale, resolve, type Locale } from "../shared/i18n";
 
 const messages: Record<Locale, Record<string, string>> = {
   en: {
+    "Файлы движка будут проверены по SHA-256": "Engine files will be verified with SHA-256",
+    "Работающий движок перезапустится; остановленный останется остановленным": "A running engine will restart; a stopped engine will remain stopped",
+    "Выбранный движок будет установлен и запущен": "The selected engine will be installed and started",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "Creates outpost-awg, IPv4 forwarding and NAT for 10.78.0.0/16",
+    "Сначала установите движок": "Install the engine first",
+    "Сначала установите sing-box в разделе протоколов": "Install sing-box in Protocols first",
+    "Сначала установите AmneziaWG в разделе протоколов": "Install AmneziaWG in Protocols first",
     "Сессия истекла — войдите снова": "Your session has expired. Sign in again.",
     "API token не имеет нужного scope": "The API token does not have the required scope.",
     "Действие доступно только владельцу панели": "This action is available only to the panel owner.",
@@ -52,6 +59,13 @@ const messages: Record<Locale, Record<string, string>> = {
   },
   ru: {},
   "zh-CN": {
+    "Файлы движка будут проверены по SHA-256": "将使用 SHA-256 验证引擎文件",
+    "Работающий движок перезапустится; остановленный останется остановленным": "运行中的引擎将重启；已停止的引擎保持停止",
+    "Выбранный движок будет установлен и запущен": "将安装并启动所选引擎",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "将创建 outpost-awg 并为 10.78.0.0/16 启用 IPv4 转发和 NAT",
+    "Сначала установите движок": "请先安装引擎",
+    "Сначала установите sing-box в разделе протоколов": "请先在协议页面安装 sing-box",
+    "Сначала установите AmneziaWG в разделе протоколов": "请先在协议页面安装 AmneziaWG",
     "Сессия истекла — войдите снова": "会话已过期，请重新登录。",
     "API token не имеет нужного scope": "API 令牌没有所需的权限范围。",
     "Действие доступно только владельцу панели": "此操作仅限面板所有者。",
@@ -101,6 +115,13 @@ const messages: Record<Locale, Record<string, string>> = {
     "Укажите код GeoSite/GeoIP без префикса, например google или ru": "请输入不带前缀的 GeoSite/GeoIP 代码，例如 google 或 ru。",
   },
   fa: {
+    "Файлы движка будут проверены по SHA-256": "فایل‌های موتور با SHA-256 بررسی می‌شوند",
+    "Работающий движок перезапустится; остановленный останется остановленным": "موتور فعال بازراه‌اندازی می‌شود؛ موتور متوقف‌شده متوقف می‌ماند",
+    "Выбранный движок будет установлен и запущен": "موتور انتخاب‌شده نصب و راه‌اندازی می‌شود",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "رابط outpost-awg، مسیریابی IPv4 و NAT برای 10.78.0.0/16 ایجاد می‌شوند",
+    "Сначала установите движок": "ابتدا موتور را نصب کنید",
+    "Сначала установите sing-box в разделе протоколов": "ابتدا sing-box را در بخش پروتکل‌ها نصب کنید",
+    "Сначала установите AmneziaWG в разделе протоколов": "ابتدا AmneziaWG را در بخش پروتکل‌ها نصب کنید",
     "Сессия истекла — войдите снова": "نشست شما منقضی شده است. دوباره وارد شوید.",
     "API token не имеет нужного scope": "توکن API مجوز لازم را ندارد.",
     "Действие доступно только владельцу панели": "این عملیات فقط برای مالک پنل در دسترس است.",
@@ -213,6 +234,13 @@ export function localize(message: string, language: Locale) {
 
 const presentationMessages: Record<Exclude<Locale, "ru">, Record<string, string>> = {
   en: {
+    "Файлы движка будут проверены по SHA-256": "Engine files will be verified with SHA-256",
+    "Работающий движок перезапустится; остановленный останется остановленным": "A running engine will restart; a stopped engine will remain stopped",
+    "Выбранный движок будет установлен и запущен": "The selected engine will be installed and started",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "Creates outpost-awg, IPv4 forwarding and NAT for 10.78.0.0/16",
+    "Сначала установите движок": "Install the engine first",
+    "Сначала установите sing-box в разделе протоколов": "Install sing-box in Protocols first",
+    "Сначала установите AmneziaWG в разделе протоколов": "Install AmneziaWG in Protocols first",
     "Перезапустить службу": "Restart service",
     "Проверить и перечитать Nginx": "Validate and reload Nginx",
     "Сначала будет выполнен nginx -t": "nginx -t will run first",
@@ -241,6 +269,13 @@ const presentationMessages: Record<Exclude<Locale, "ru">, Record<string, string>
     "operation.completed": "Done",
   },
   "zh-CN": {
+    "Файлы движка будут проверены по SHA-256": "将使用 SHA-256 验证引擎文件",
+    "Работающий движок перезапустится; остановленный останется остановленным": "运行中的引擎将重启；已停止的引擎保持停止",
+    "Выбранный движок будет установлен и запущен": "将安装并启动所选引擎",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "将创建 outpost-awg 并为 10.78.0.0/16 启用 IPv4 转发和 NAT",
+    "Сначала установите движок": "请先安装引擎",
+    "Сначала установите sing-box в разделе протоколов": "请先在协议页面安装 sing-box",
+    "Сначала установите AmneziaWG в разделе протоколов": "请先在协议页面安装 AmneziaWG",
     "Перезапустить службу": "重启服务",
     "Проверить и перечитать Nginx": "验证并重新加载 Nginx",
     "Сначала будет выполнен nginx -t": "将先运行 nginx -t",
@@ -269,6 +304,13 @@ const presentationMessages: Record<Exclude<Locale, "ru">, Record<string, string>
     "operation.completed": "完成",
   },
   fa: {
+    "Файлы движка будут проверены по SHA-256": "فایل‌های موتور با SHA-256 بررسی می‌شوند",
+    "Работающий движок перезапустится; остановленный останется остановленным": "موتور فعال بازراه‌اندازی می‌شود؛ موتور متوقف‌شده متوقف می‌ماند",
+    "Выбранный движок будет установлен и запущен": "موتور انتخاب‌شده نصب و راه‌اندازی می‌شود",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "رابط outpost-awg، مسیریابی IPv4 و NAT برای 10.78.0.0/16 ایجاد می‌شوند",
+    "Сначала установите движок": "ابتدا موتور را نصب کنید",
+    "Сначала установите sing-box в разделе протоколов": "ابتدا sing-box را در بخش پروتکل‌ها نصب کنید",
+    "Сначала установите AmneziaWG в разделе протоколов": "ابتدا AmneziaWG را در بخش پروتکل‌ها نصب کنید",
     "Перезапустить службу": "راه‌اندازی مجدد سرویس",
     "Проверить и перечитать Nginx": "اعتبارسنجی و بارگذاری دوبارهٔ Nginx",
     "Сначала будет выполнен nginx -t": "ابتدا nginx -t اجرا می‌شود",
@@ -323,6 +365,10 @@ function presentationText(value: string, language: Exclude<Locale, "ru">) {
   if (connection) return language === "en" ? `Rotate connection “${connection[1]}”`
     : language === "zh-CN" ? `轮换连接“${connection[1]}”`
       : `تعویض اطلاعات اتصال «${connection[1]}»`;
+  const install = value.match(/^Установить (.+) ([0-9][^ ]*)$/);
+  if (install) return language === "en" ? `Install ${install[1]} ${install[2]}` : language === "zh-CN" ? `安装 ${install[1]} ${install[2]}` : `نصب ${install[1]} ${install[2]}`;
+  const ports = value.match(/^Публичные порты: (.+)$/);
+  if (ports) return language === "en" ? `Public ports: ${ports[1]}` : language === "zh-CN" ? `公共端口：${ports[1]}` : `درگاه‌های عمومی: ${ports[1]}`;
   const update = value.match(/^Обновить (.+) до (.+)$/);
   if (update) return language === "en" ? `Update ${update[1]} to ${update[2]}`
     : language === "zh-CN" ? `将 ${update[1]} 更新至 ${update[2]}`

@@ -1,0 +1,23 @@
+[Unit]
+Description=Outpost Naive (sing-box)
+After=network-online.target outpost.service
+Wants=network-online.target
+ConditionPathExists=/opt/outpost/engines/sing-box/current/sing-box
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/outpost/engines/sing-box/current/sing-box run -c /etc/outpost/engines/sing-box.json
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/etc/outpost /etc/letsencrypt /opt/outpost/engines
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

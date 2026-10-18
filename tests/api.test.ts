@@ -182,7 +182,7 @@ describe("HTTP API", () => {
     expect(created).toMatchObject({ state: "ready", connection: { name: "Мама", avatar: "avatar-8", status: "active", generation: 1 } });
     expect(created.subscription.url).toContain("/s/");
     expect(created.subscription.qrUrl).toBe(`${created.subscription.url}/qr/landing.svg`);
-    expect(created.catalogVersion).toBe(3);
+    expect(created.catalogVersion).toBe(4);
     expect(created.applications.length).toBeGreaterThan(10);
     expect(typeof created.applications[0].id).toBe("string");
     expect(typeof created.applications[0].pricing.model).toBe("string");
@@ -190,7 +190,7 @@ describe("HTTP API", () => {
     expect(created.applications[0].pricing.sourceUrl).toStartWith("https://");
     expect(created.applications[0].profileUrl).toContain("/apps/");
     expect(created.applications[0].qrUrl).toContain("/qr/");
-    expect(created.advanced.map((item: { id: string }) => item.id)).toEqual(["vless-links", "mihomo-yaml", "sing-box-json", "xray-json"]);
+    expect(created.advanced.map((item: { id: string }) => item.id)).toEqual(["vless-links", "mihomo-yaml", "sing-box-json", "xray-json", "mihomo-modern", "sing-box-modern", "amneziawg-conf", "naive-json"]);
     expect(created.subscription).not.toHaveProperty("formats");
     expect(created.subscription).not.toHaveProperty("qrDataUrl");
 

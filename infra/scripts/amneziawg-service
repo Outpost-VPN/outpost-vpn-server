@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+interface=outpost-awg
+root=/opt/outpost/engines/amneziawg/current
+snapshot=/etc/outpost/engines/amneziawg.json
+native=$(mktemp)
+child=
+cleanup() {
+  trap - EXIT INT TERM
+  if test -n "$child"; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi
+  iptables -D INPUT -i "$interface" -j DROP 2>/dev/null || true
+  iptables -D FORWARD -i "$interface" -j OUTPOST_AWG 2>/dev/null || true
+  iptables -D FORWARD -o "$interface" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
+  iptables -t nat -D POSTROUTING -s 10.78.0.0/16 -m comment --comment outpost-awg -j MASQUERADE 2>/dev/null || true
+  iptables -F OUTPOST_AWG 2>/dev/null || true
+  iptables -X OUTPOST_AWG 2>/dev/null || true
+  ip link delete "$interface" 2>/dev/null || true
+  rm -f "$native"
+}
+trap 'rm -f "$native"' EXIT
+# Refuse to take over a pre-existing interface or an existing subnet route.
+routes=$({ ip -4 route show table all root 10.78.0.0/16; ip -4 route show table all match 10.78.0.0/16; } | awk '$1 != "default" && $2 != "default"')
+if ip link show "$interface" >/dev/null 2>&1 || test -n "$routes" || iptables -S OUTPOST_AWG >/dev/null 2>&1; then
+  echo "AmneziaWG interface or subnet is already in use" >&2
+  exit 1
+fi
+/opt/outpost/current/bin/outpostctl awg-native "$snapshot" >"$native"
+trap cleanup EXIT
+trap 'exit 0' INT TERM
+"$root/amneziawg-go" -f "$interface" &
+child=$!
+for _ in {1..100}; do
+  test ! -S "/var/run/amneziawg/$interface.sock" || break
+  kill -0 "$child"
+  sleep 0.1
+done
+"$root/awg" setconf "$interface" "$native"
+ip address add 10.78.0.1/16 dev "$interface"
+ip link set mtu 1280 up dev "$interface"
+# Only this VPN's ingress is accepted by these rules. Host services and private
+# destinations stay inaccessible; NAT and forwarding rules have explicit owners.
+sysctl -w net.ipv4.ip_forward=1 >/dev/null
+iptables -N OUTPOST_AWG
+for cidr in 0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4; do
+  iptables -A OUTPOST_AWG -d "$cidr" -j REJECT
+done
+iptables -A OUTPOST_AWG -p udp --dport 443 -j REJECT
+iptables -A OUTPOST_AWG -j ACCEPT
+iptables -I INPUT 1 -i "$interface" -j DROP
+iptables -I FORWARD 1 -i "$interface" -j OUTPOST_AWG
+iptables -I FORWARD 1 -o "$interface" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -t nat -I POSTROUTING 1 -s 10.78.0.0/16 -m comment --comment outpost-awg -j MASQUERADE
+systemd-notify --ready
+wait "$child"

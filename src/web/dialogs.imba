@@ -1,3 +1,4 @@
+import {engines as definitions} from '../shared/engines.ts'
 import './mcp.imba'
 import {basicSetup} from 'codemirror'
 import {EditorState} from '@codemirror/state'
@@ -981,7 +982,7 @@ tag outpost-engine-modal
 			<header.outpost-modal-header>
 				<span.outpost-modal-mark><outpost-icon name="code">
 				<div>
-					<h2> t('Конфигурация {engine}', {engine: engine == 'xray' ? 'Xray' : 'Hysteria 2'})
+					<h2> t('Конфигурация {engine}', {engine: definitions[engine].name})
 					<p> t('Проверка шаблона выполняется во время ввода.')
 				<button.outpost-modal-close type="button" @click=store.close aria-label=t('action.close')><outpost-icon name="x">
 			<div.outpost-modal-body>
@@ -998,8 +999,8 @@ tag outpost-engine-modal
 				<div.outpost-field.raw-field>
 					<div.editor-head>
 						<span> t('Шаблон')
-						<small> t('{format} · Enter сохраняет отступ · Tab — 2 пробела', {format: engine == 'xray' ? 'JSON' : 'YAML'})
-					<outpost-code-editor bind=template syntax=(engine == 'xray' ? 'json' : 'yaml') change=(do(value) edit(value))>
+						<small> t('{format} · Enter сохраняет отступ · Tab — 2 пробела', {format: definitions[engine].format})
+					<outpost-code-editor bind=template syntax=definitions[engine].format.toLowerCase! change=(do(value) edit(value))>
 				if checking
 					<div.validation-state.validation-checking aria-live="polite">
 						<outpost-icon name="spinner-gap">
