@@ -81,7 +81,7 @@ tag outpost-engine-row
 				if engine.installed
 					<span.state .working=working?> working? ? t('system.active') : t('methods.engine_stopped')
 				else
-					<span.state> t('engines.not_installed')
+					<span.state.missing> t('engines.not_installed')
 			<div.version>
 				<span> engine.installed or engine.desired
 				if engine.installed and engine.available
@@ -101,17 +101,18 @@ tag outpost-engine-row
 			<p.outpost-error role="alert"> error
 
 	css self
-		d:grid gtc:52px minmax(180px,.65fr) minmax(0,1.5fr) 80px ai:center g:10px 20px p:22px
+		d:grid gtc:52px minmax(230px,.8fr) minmax(0,1.5fr) 80px ai:center g:10px 20px p:22px
 		.engine-mark s:52px d:grid ja:center rd:12px bgc:color-mix(in srgb,var(--outpost-brand) 9%,var(--outpost-white)) bd:1px solid color-mix(in srgb,var(--outpost-brand) 18%,var(--outpost-white))
 		.name d:flex ai:center flex-wrap:wrap g:5px 10px
 		h2 fs:16px c:var(--outpost-navy)
 		.version d:flex ai:center flex-wrap:wrap g:5px mt:5px fs:12px c:var(--outpost-muted)
 		.version span, .version strong white-space:nowrap
 		.version strong c:var(--outpost-brand) fw:600
-		.state fs:11px c:var(--outpost-muted) lh:1.5
+		.state fs:11px c:var(--outpost-muted) lh:1.5 white-space:nowrap
 		.state.working c:var(--outpost-success) fw:600
+		.state.missing c:var(--outpost-danger) fw:600
 		.capabilities d:flex ai:center flex-wrap:wrap g:5px 12px fs:12px lh:1.5 c:var(--outpost-muted)
-		.capabilities .configured c:var(--outpost-brand) fw:650
+		.capabilities .configured c:var(--outpost-text) fw:650
 		.actions d:flex ai:center g:8px
 		.spinning animation:spin 1s linear infinite
 		.outpost-error gc:2 / -1
