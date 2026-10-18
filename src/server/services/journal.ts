@@ -79,6 +79,8 @@ const definitions: Record<string, EventDefinition> = {
   "rulesets.update_failed": incident("system", "Не удалось обновить GeoIP/Geosite", (d) => named(d, "error"), "warning", true),
 
   "engine.order_changed": change("engines", "Порядок подключения движков изменён", engineOrderDescription),
+  "method.configured": change("engines", "Способы подключения изменены"),
+  "method.reordered": change("engines", "Приоритет способов подключения изменён"),
   "engine.config_applied": change("engines", (d) => `Конфигурация ${engineLabel(d.engine)} применена`, versionDescription),
   "engine.config_rolled_back": change("engines", (d) => `Конфигурация ${engineLabel(d.engine)} восстановлена`, versionDescription, true),
   "engine.telemetry_unavailable": incident("engines", (d) => `Телеметрия ${engineLabel(d.engine)} недоступна`, "Статусы подключений временно неизвестны", "warning"),

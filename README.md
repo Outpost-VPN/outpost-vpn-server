@@ -35,6 +35,13 @@ link list. New transports use opt-in advanced profiles; native Naive JSON and
 AmneziaWG `.conf` exports are also available. See [protocol expansion](docs/PROTOCOL-EXPANSION.md)
 for client requirements, ports, validation and remaining release/field work.
 
+Engine installation and connection methods are managed separately. Add a method
+by selecting an installed engine, a supported protocol and its listener settings;
+subscriptions include only methods supported by the selected client profile.
+The same protocol can use different engines and ports. See
+[connection methods](docs/CONNECTION-METHODS.md) for the capability matrix,
+migration behavior and API/MCP contracts.
+
 ## Architecture
 
 ```text

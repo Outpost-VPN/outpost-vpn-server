@@ -41,23 +41,6 @@ describe("system settings", () => {
     }
   });
 
-  test("persists engine priority as the subscription source of truth", () => {
-    const system = new SystemService(fixture.db);
-    expect(system.engineOrder()).toEqual(engineIds);
-
-    system.updateEngineOrder(["xray", ...engineIds.filter((id) => id !== "xray")], "owner");
-
-    expect(new SystemService(fixture.db).engineOrder()).toEqual(["xray", ...engineIds.filter((id) => id !== "xray")]);
-    expect(fixture.db.setting<string[]>("engine_order", [])).toEqual(["xray", ...engineIds.filter((id) => id !== "xray")]);
-  });
-
-  test("rejects missing, duplicate and unknown engines", () => {
-    const system = new SystemService(fixture.db);
-    expect(() => system.updateEngineOrder(["hysteria"], "owner")).toThrow();
-    expect(() => system.updateEngineOrder(["hysteria", "hysteria"], "owner")).toThrow();
-    expect(() => system.updateEngineOrder(["hysteria", "unknown"], "owner")).toThrow();
-  });
-
   test("defaults prerelease installations to the candidate channel and validates changes", () => {
     const system = new SystemService(fixture.db);
     expect(system.settings().system.updateChannel).toBe("candidate");

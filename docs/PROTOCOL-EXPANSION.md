@@ -4,12 +4,15 @@ Implemented in `feat/protocol-expansion`, based on `c2d0b0b` (`0.2.0-beta.6`).
 Local implementation and targeted validation completed on 2026-10-19. No signed
 release has been built or published; no live server or active client was changed.
 
+The subsequent [engine/method model](CONNECTION-METHODS.md) separates runtime
+management from configurable listeners and client capabilities.
+
 ## Runtimes and ports
 
 Versions were selected from upstream releases on 2026-10-18 and pinned by SHA-256.
 They are reproducible selections, not an automatic “latest” policy.
 
-| Runtime | Version | Transports | Public ports |
+| Runtime | Version | Transports | Default ports |
 |---|---|---|---|
 | Hysteria | 2.13.0 | Hysteria 2 | UDP 443 |
 | Xray | 26.10.17, upstream prerelease | VLESS XHTTP / gRPC through existing Nginx | TCP 443 |
@@ -23,15 +26,16 @@ them to TCP/443 would need a separate edge/address design. No result here proves
 bypass of FAMLES, hotel filtering, or a particular TSPU rule.
 
 Existing required runtimes remain installed by default. Additional runtimes are
-installed individually through the protocol panel, with verified downloads,
+installed individually through the engine tab; listeners are added separately, with verified downloads,
 configuration validation, service-owned listener checks, and rollback. An update
 of an installed but stopped runtime preserves its stopped state. Uninstalled
 optional runtimes are shown as absent and do not make server health fail.
 
 ## Client profiles
 
-Existing application subscriptions retain their three original transports and
-routing behavior. Their five golden outputs are unchanged. Updating one of these
+With migrated default methods, existing application subscriptions retain their
+original transports and routing behavior. Configured method changes apply to
+these profiles according to their client capabilities. Their five golden outputs are unchanged. Updating one of these
 subscriptions alone does not opt an old client into unsupported protocols.
 
 After installing a runtime, open a connection's public page, choose **For advanced
@@ -50,7 +54,7 @@ policy. Naive is not a native Mihomo outbound; sing-box builds may need the
 platform-specific Cronet library. A GUI app's name/version does not establish its
 bundled core or available build features. Generated profiles omit transports
 whose runtime is not installed; native-only exports return a clear conflict until
-installation.
+installation and configuration of a compatible method.
 
 Refresh and apply subscriptions on devices after server/client configuration
 changes. AmneziaWG native files must be reimported after credential rotation.

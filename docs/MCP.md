@@ -75,3 +75,15 @@ by installation, migrations, recovery and updates; it has no MCP mode.
 
 References: [MCP transport specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
 [Codex MCP configuration](https://developers.openai.com/codex/mcp/).
+
+### Engine and method management (development branch)
+
+The protocol-expansion branch adds `engines_get`, `methods_get`, `method_create`,
+`method_update`, `method_delete` and `methods_reorder`. They use the panel API and
+shared validation; reads require `engines:read`, changes require `engines:write`.
+Read state first and verify it after a change. Server setting changes can briefly
+restart the selected engine and affect all its methods; agree interruption scope
+before applying them. Engine installation and service operations retain the
+existing `operation_preview` / `operation_confirm` contract. Devices must refresh
+and apply their compatible subscription afterward. See
+[connection methods](CONNECTION-METHODS.md) for contracts and limitations.

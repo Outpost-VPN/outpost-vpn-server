@@ -1,3 +1,4 @@
+import {clientProfiles} from "../src/shared/connection-methods";
 import { describe, expect, test } from "bun:test";
 import {
   advanced,
@@ -20,12 +21,12 @@ const baseUrl = "https://proxy.example/s/token";
 const locales: Locale[] = ["ru", "en", "zh-CN", "fa"];
 
 describe("versioned application catalog", () => {
-  test("catalog v4 is complete and every application has explicit pricing", () => {
-    expect(catalogVersion).toBe(4);
+  test("catalog v5 is complete and every application has explicit pricing", () => {
+    expect(catalogVersion).toBe(5);
     expect(new Set(applications.map((app) => app.id)).size).toBe(applications.length);
     for (const app of applications) {
       expect(app.platforms.length).toBeGreaterThan(0);
-      expect(app.transports.length).toBeGreaterThan(0);
+      expect(clientProfiles[app.format].protocols.length).toBeGreaterThan(0);
       expect(["free", "freemium", "paid"]).toContain(app.pricing.model);
       expect(["none", "optional", "one-time", "subscription"]).toContain(app.pricing.billing);
       expect(app.pricing.sourceUrl).toStartWith("https://");

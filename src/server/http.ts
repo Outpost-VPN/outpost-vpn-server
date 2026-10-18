@@ -1,5 +1,6 @@
-import type { ProtocolId } from "../shared/protocols";
-import { engines, isEngine, type EngineId } from "../shared/engines";
+import type { ClientProfile } from "../shared/connection-methods";
+import { ConnectionMethodService } from "./services/connection-methods";
+import { engines, engineMetadata, isEngine, type EngineId } from "../shared/engines";
 import { ZodError } from "zod";
 import QRCode from "qrcode";
 import { chmod, mkdir, unlink } from "node:fs/promises";
@@ -58,6 +59,7 @@ export class HttpApplication {
   readonly system: SystemService;
   readonly engines: EngineRuntimeService;
   readonly engineConfigs: EngineConfigService;
+  readonly methods: ConnectionMethodService;
   readonly journal: JournalService;
   readonly monitoring: MonitoringService;
   readonly connectionSync: ConnectionSyncService;
@@ -68,7 +70,7 @@ export class HttpApplication {
 
   constructor(
     readonly db: OutpostDatabase,
-    connectionEngine?: Pick<EngineRuntimeService, "add" | "rotate" | "revoke">,
+    connectionEngine?: Pick<EngineRuntimeService, "add" | "rotate" | "revoke"> & Partial<Pick<EngineRuntimeService, "reconfigure">>,
   ) {
     if (config.setup) prepareSetupMonitoring(db);
     this.dashboardEvents = new DashboardEvents();
@@ -81,6 +83,8 @@ export class HttpApplication {
     this.traffic = new TrafficService(db, configuredCollectors(), this.journal, !config.setup);
     this.engines = new EngineRuntimeService(db);
     this.connectionSync = new ConnectionSyncService(db, this.connections, connectionEngine ?? this.engines);
+    this.methods = new ConnectionMethodService(db, (engine, methods) => connectionEngine?.reconfigure
+      ? connectionEngine.reconfigure(engine, methods) : this.engines.reconfigure(engine, methods));
     this.engineConfigs = new EngineConfigService(db, this.journal);
     this.operations = new OperationService(db, this.journal, undefined, async (connectionId, operationActor) => {
       const result = await this.connectionSync.rotate(connectionId, operationActor);
@@ -240,6 +244,7 @@ export class HttpApplication {
         system,
         settings: this.system.settings(),
         engineConfigs: this.engineConfigs.state(),
+        methods: this.methods.state(),
         tokens: this.auth.apiTokens(),
         operations,
         security: this.auth.security(cookie(ctx.request, "outpost_session")),
@@ -325,10 +330,23 @@ export class HttpApplication {
       const limit = optionalPositiveInteger(ctx.url.searchParams.get("limit"));
       return json(this.journal.list({ scope, category, q, before, limit, language: ctx.language }));
     });
-    this.post("/api/v1/engines/reorder", false, async (ctx) => {
-      ownerOnly(ctx);
-      const body = await ctx.json<{ ids?: unknown }>();
-      return json(this.system.updateEngineOrder(body.ids, actor(ctx)));
+    this.get("/api/v1/engines", false, () => json({versions: this.db.engines.versions(), definitions: engineMetadata, capabilities: this.methods.state().capabilities}));
+    this.get("/api/v1/methods", false, () => json(this.methods.state()));
+    this.post("/api/v1/methods", false, async (ctx) => {
+      const body = await ctx.json();
+      return json(await this.connectionSync.reconcile(() => this.methods.save(body, actor(ctx))), 201);
+    });
+    this.post("/api/v1/methods/reorder", false, async (ctx) => {
+      const body = await ctx.json<{ ids: unknown }>();
+      return json(await this.connectionSync.reconcile(() => this.methods.reorder(body.ids, actor(ctx))));
+    });
+    this.patch("/api/v1/methods/:id", false, async (ctx) => {
+      const body = await ctx.json();
+      return json(await this.connectionSync.reconcile(() => this.methods.save(body, actor(ctx), ctx.params.id!)));
+    });
+    this.delete("/api/v1/methods/:id", false, async (ctx) => {
+      await this.connectionSync.reconcile(() => this.methods.remove(ctx.params.id!, actor(ctx)));
+      return empty();
     });
     this.get("/api/v1/settings", false, () => json(this.system.settings()));
     this.patch("/api/v1/settings", false, async (ctx) => json(this.system.updateSettings(await ctx.json(), actor(ctx))));
@@ -420,7 +438,7 @@ export class HttpApplication {
     }
     const baseUrl = `${config.origin}/s/${token}`;
     const platform = requestedPlatform ?? detectPlatform(ctx.request.headers.get("user-agent") ?? "");
-    const html = renderCatalogPage(connection, baseUrl, platform, ctx.language);
+    const html = renderCatalogPage(connection, baseUrl, platform, ctx.language, this.methodAvailability());
     return contentResponse(ctx.request, html, "text/html; charset=utf-8", head);
   }
 
@@ -433,25 +451,23 @@ export class HttpApplication {
   private async advancedProfile(ctx: RequestContext, head = false) {
     const item = advancedDefinition(ctx.params.target!);
     if (!item) throw new ServiceError(404, "Профиль не найден");
-    return this.profile(ctx, item.format, head, undefined, item.protocols);
+    return this.profile(ctx, item.format, head, undefined, item.clientProfile);
   }
 
-  private async profile(ctx: RequestContext, format: SubscriptionFormat, head: boolean, appId?: string, protocols?: readonly ProtocolId[]) {
+  private async profile(ctx: RequestContext, format: SubscriptionFormat, head: boolean, appId?: string, clientProfile?: ClientProfile) {
     const token = ctx.params.token!;
     const connection = this.connections.bySubscriptionToken(token);
     const credentials = this.connections.credentials(connection.id);
     const routes = this.rulesets.materialize(this.routes.published());
     const enabledEngines = this.db.engines.installed();
-    if (format === "amneziawg" && !enabledEngines.includes("amneziawg")) throw new ServiceError(409, "Сначала установите AmneziaWG в разделе протоколов");
-    if (format === "naive" && !enabledEngines.includes("sing-box")) throw new ServiceError(409, "Сначала установите sing-box в разделе протоколов");
     const rendered = renderers[format].render({
       connection,
       credentials,
       routes,
       subscriptionToken: token,
-      protocols,
+      methods: this.methods.list(),
+      clientProfile: clientProfile ?? format,
       enabledEngines,
-      engineOrder: this.system.engineOrder(),
       clientPlatform: detectPlatform(ctx.request.headers.get("user-agent") ?? ""),
       network: this.system.networkSettings(),
     });
@@ -645,9 +661,13 @@ export class HttpApplication {
       connection: publicConnection(result.connection),
       subscription: { ...result.subscription, qrUrl: `${result.subscription.url}/qr/landing.svg` },
       catalogVersion,
-      applications: catalog(result.subscription.url, undefined, language),
-      advanced: advanced(result.subscription.url, language),
+      applications: catalog(result.subscription.url, undefined, language, this.methodAvailability()),
+      advanced: advanced(result.subscription.url, language, this.methodAvailability()),
     };
+  }
+
+  private methodAvailability() {
+    return { methods: this.methods.list(), installed: this.db.engines.installed() };
   }
 
   private activeCredentials() {
@@ -796,7 +816,7 @@ function authorized(method: string, path: string, scopes: string[]) {
   const read = method === "GET";
   const required = path === "/api/v1/status" ? "status:read"
     : path.startsWith("/api/v1/dashboard") ? "owner:session"
-    : path.startsWith("/api/v1/me") ? `settings:${read ? "read" : "write"}`
+    : path === "/api/v1/me" ? `settings:${read ? "read" : "write"}`
     : path.startsWith("/api/v1/connections") ? `connections:${read ? "read" : "write"}`
       : path.startsWith("/api/v1/routes") ? `routes:${read ? "read" : "write"}`
         : path.startsWith("/api/v1/rulesets") ? `routes:${read ? "read" : "write"}`
@@ -804,7 +824,7 @@ function authorized(method: string, path: string, scopes: string[]) {
           : path.startsWith("/api/v1/backups") ? "backups:read"
           : path.startsWith("/api/v1/operations") ? `operations:${read ? "read" : "write"}`
             : path.startsWith("/api/v1/settings") ? `settings:${read ? "read" : "write"}`
-              : path.startsWith("/api/v1/engines") ? `engines:${read ? "read" : "write"}`
+              : path.startsWith("/api/v1/engines") || path.startsWith("/api/v1/methods") ? `engines:${read ? "read" : "write"}`
               : path.startsWith("/api/v1/tokens") ? "tokens:write"
                 : path.startsWith("/api/v1/system") ? "system:read"
                   : "api:read";

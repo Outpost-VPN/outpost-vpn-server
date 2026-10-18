@@ -6,7 +6,7 @@ import { networkDefaults, settingsPatchSchema, type NetworkSettings } from "../.
 import type { OutpostDatabase } from "../db/database";
 import { now } from "../db/database";
 import { config } from "../config";
-import { engineIds, engines, serviceNames, type EngineId } from "../../shared/engines";
+import { engineIds, engines, engineMetadata, serviceNames, type EngineId } from "../../shared/engines";
 import { ServiceError } from "./connections";
 import { JournalService, type JournalQuery } from "./journal";
 import { ApplicationUpdateService } from "./application-updates";
@@ -56,8 +56,7 @@ export class SystemService {
         { name: "VLESS gRPC", status: transportStatus(monitored.transports?.grpc), listen: "127.0.0.1:10001", secret: config.grpcService },
       ],
       versions,
-      engineOrder: this.engineOrder(),
-      engines,
+      engines: engineMetadata,
       telemetryLimited: this.db.engines.limitedTelemetry,
       tls: {
         status: monitored.tls?.status ?? "unknown",
@@ -121,33 +120,6 @@ export class SystemService {
       },
       checkedAt: monitored.checkedAt ?? null,
     };
-  }
-
-  engineOrder(): EngineId[] {
-    const stored = this.db.setting<unknown>("engine_order", engineIds);
-    if (!Array.isArray(stored)) return [...engineIds];
-    const valid = stored.filter((item): item is EngineId => typeof item === "string" && engineIds.includes(item as EngineId));
-    return [...new Set(valid), ...engineIds.filter((item) => !valid.includes(item))];
-  }
-
-  updateEngineOrder(ids: unknown, actor = "owner") {
-    if (!Array.isArray(ids) || ids.length !== engineIds.length || ids.some((item) => typeof item !== "string")) {
-      throw new ServiceError(400, "Укажите все доступные движки в нужном порядке");
-    }
-    const next = ids as EngineId[];
-    if (new Set(next).size !== engineIds.length || engineIds.some((item) => !next.includes(item))) {
-      throw new ServiceError(400, "Порядок движков содержит неизвестные или повторяющиеся элементы");
-    }
-    const before = this.engineOrder();
-    return this.journal.change(
-      "engine.order_changed",
-      () => {
-        this.db.setSetting("engine_order", next);
-        return { engineOrder: next };
-      },
-      () => ({ actor, action: "engines.reorder", resource: "engines", before, after: next }),
-      () => ({ actor, source: "engines", subjectType: "engine_order", data: { order: next } }),
-    );
   }
 
   settings() {

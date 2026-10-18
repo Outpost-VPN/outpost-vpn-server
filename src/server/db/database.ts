@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { EngineInventory } from "../services/engine-inventory";
+import { ConnectionMethodStore } from "../services/connection-methods";
 import { config } from "../config";
 import type { JournalEventInput } from "../models";
 import { defaultRoutes, migrations } from "./schema";
@@ -11,6 +12,7 @@ export type SqlValue = string | number | bigint | boolean | Uint8Array | null;
 export class OutpostDatabase {
   readonly raw: Database;
   readonly engines: EngineInventory;
+  readonly methods: ConnectionMethodStore;
 
   constructor(path = config.databasePath) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -18,7 +20,9 @@ export class OutpostDatabase {
     this.raw.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
     this.migrate();
     this.engines = new EngineInventory(this);
+    this.methods = new ConnectionMethodStore(this);
     this.seed();
+    this.methods.migrate();
   }
 
   migrate() {
@@ -61,7 +65,6 @@ export class OutpostDatabase {
     this.publishInitialRoutes();
     this.setDefault("interface", { compact: false });
     this.setDefault("system", { timezone: "UTC", updateChannel: "stable" });
-    this.setDefault("engine_order", ["hysteria", "xray"]);
     this.engines.reconcilePins();
   }
 

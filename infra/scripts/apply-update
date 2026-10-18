@@ -72,6 +72,13 @@ if test -n "$optional_ids"; then
     test ! -f "/etc/outpost/engines/${info[1]}" || cp -a "/etc/outpost/engines/${info[1]}" "$update_tmp/optional-engines/${info[1]}"
   done <<<"$optional_ids"
 fi
+declare -a managed_units=()
+mkdir "$update_tmp/units"
+for unit_path in "$source_dir"/infra/systemd/*.service; do
+  unit=${unit_path##*/}
+  managed_units+=("$unit")
+  test ! -f "/etc/systemd/system/$unit" || cp -a "/etc/systemd/system/$unit" "$update_tmp/units/$unit"
+done
 mark_progress 30 operation.update_snapshotting
 sed -e "s/^OUTPOST_VERSION=.*/OUTPOST_VERSION=$version/" -e '/^OUTPOST_ENV=/d' \
   "$env_file" >"$update_tmp/outpost.env.next"
@@ -99,7 +106,11 @@ rollback() {
   for file in "${optional_configs[@]}"; do
     if test -f "$update_tmp/optional-engines/$file"; then install -o root -g outpost -m 0640 "$update_tmp/optional-engines/$file" "/etc/outpost/engines/$file"; else rm -f "/etc/outpost/engines/$file"; fi
   done
+  for unit in "${managed_units[@]}"; do
+    if test -f "$update_tmp/units/$unit"; then cp -a "$update_tmp/units/$unit" "/etc/systemd/system/$unit"; else rm -f "/etc/systemd/system/$unit"; fi
+  done
   systemctl daemon-reload
+  if test -x /opt/outpost/current/infra/scripts/engine-firewall; then /opt/outpost/current/infra/scripts/engine-firewall --all || true; fi
   for index in "${!optional_services[@]}"; do
     if test "${optional_active[$index]}" = 1; then systemctl restart "${optional_services[$index]}" || true; fi
   done

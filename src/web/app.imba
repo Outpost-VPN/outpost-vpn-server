@@ -8,6 +8,7 @@ import './home.imba'
 import './connections.imba'
 import './routes.imba'
 import './protocols.imba'
+import './methods.imba'
 import './dialogs.imba'
 import './auth.imba'
 import {t} from './i18n.imba'
@@ -55,10 +56,10 @@ tag App
 				<outpost-archive-modal key=store.dialogKey store=store>
 			elif store.dialog == 'confirm'
 				<outpost-confirm-modal store=store>
+			elif store.dialog == 'method'
+				<outpost-method-editor key=store.dialogKey store=store>
 			elif store.dialog == 'engine'
 				<outpost-engine-modal store=store>
-			elif store.dialog == 'history'
-				<outpost-engine-history store=store>
 			elif store.dialog == 'backup'
 				<outpost-backup-modal store=store>
 			elif store.dialog == 'domain'

@@ -1,3 +1,4 @@
+import {engines} from "../src/shared/engines";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import YAML from "yaml";
 import { HttpApplication } from "../src/server/http";
@@ -11,6 +12,7 @@ describe("HTTP API", () => {
   beforeEach(() => {
     fixture = database();
     app = new HttpApplication(fixture.db, {
+      async reconfigure() { return { ok: true }; },
       async add() { return { ok: true }; },
       async rotate() { return { ok: true }; },
       async revoke() { return { ok: true }; },
@@ -45,6 +47,35 @@ describe("HTTP API", () => {
       body: body === undefined ? undefined : JSON.stringify(body),
     }));
   }
+
+
+  test("separates installed engines from methods and exports only compatible enabled endpoints", async () => {
+    const cookie = ownerCookie();
+    for (const id of ["mihomo", "sing-box"] as const) fixture.db.engines.recordInstallation(id, engines[id].version);
+    const add = (engine: string, port: number) => request("/api/v1/methods", cookie, "POST", {engine, protocol: "anytls", name: engine + " TLS", enabled: true, settings: {port}});
+    const firstResponse = await add("mihomo", 1443);
+    expect(firstResponse.status).toBe(201);
+    const first = await firstResponse.json();
+    expect((await add("sing-box", 1443)).status).toBe(409);
+    expect((await add("sing-box", 2444)).status).toBe(201);
+    const response = await request("/api/v1/connections", cookie, "POST", {name: "Methods client"});
+    const created = await response.json();
+    const path = new URL(created.subscription.url).pathname;
+    const modern = await app.fetch(new Request("http://localhost" + path + "/advanced/mihomo-modern"));
+    expect(modern.status).toBe(200);
+    expect(YAML.parse(await modern.text()).proxies.filter((proxy: {type: string}) => proxy.type === "anytls")).toHaveLength(2);
+    const baseline = await app.fetch(new Request("http://localhost" + path + "/apps/everywhere"));
+    expect(YAML.parse(await baseline.text()).proxies).toHaveLength(3);
+    expect((await app.fetch(new Request("http://localhost" + path + "/advanced/naive-json"))).status).toBe(409);
+    const {id, updatedAt, ...editable} = first;
+    expect((await request("/api/v1/methods/" + id, cookie, "PATCH", {...editable, enabled:false})).status).toBe(200);
+    const after = await app.fetch(new Request("http://localhost" + path + "/advanced/mihomo-modern"));
+    expect(YAML.parse(await after.text()).proxies.filter((proxy: {type: string}) => proxy.type === "anytls")).toHaveLength(1);
+    expect((await request("/api/v1/methods/" + id, cookie, "DELETE")).status).toBe(204);
+    const state = await (await request("/api/v1/methods", cookie)).json();
+    expect(state.items.some((method: {id: string}) => method.id === id)).toBeFalse();
+    expect(state.items.some((method: {engine: string; protocol: string}) => method.engine === "sing-box" && method.protocol === "anytls")).toBeTrue();
+  });
 
   test("public health endpoints are available and protected endpoints require a session", async () => {
     const health = await app.fetch(new Request("http://localhost/healthz"));
@@ -182,7 +213,7 @@ describe("HTTP API", () => {
     expect(created).toMatchObject({ state: "ready", connection: { name: "Мама", avatar: "avatar-8", status: "active", generation: 1 } });
     expect(created.subscription.url).toContain("/s/");
     expect(created.subscription.qrUrl).toBe(`${created.subscription.url}/qr/landing.svg`);
-    expect(created.catalogVersion).toBe(4);
+    expect(created.catalogVersion).toBe(5);
     expect(created.applications.length).toBeGreaterThan(10);
     expect(typeof created.applications[0].id).toBe("string");
     expect(typeof created.applications[0].pricing.model).toBe("string");
@@ -190,7 +221,7 @@ describe("HTTP API", () => {
     expect(created.applications[0].pricing.sourceUrl).toStartWith("https://");
     expect(created.applications[0].profileUrl).toContain("/apps/");
     expect(created.applications[0].qrUrl).toContain("/qr/");
-    expect(created.advanced.map((item: { id: string }) => item.id)).toEqual(["vless-links", "mihomo-yaml", "sing-box-json", "xray-json", "mihomo-modern", "sing-box-modern", "amneziawg-conf", "naive-json"]);
+    expect(created.advanced.map((item: { id: string }) => item.id)).toEqual(["vless-links", "mihomo-yaml", "sing-box-json", "xray-json", "mihomo-modern", "sing-box-modern"]);
     expect(created.subscription).not.toHaveProperty("formats");
     expect(created.subscription).not.toHaveProperty("qrDataUrl");
 

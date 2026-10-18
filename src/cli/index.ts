@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import YAML from "yaml";
+import { runtimePorts } from "../server/adapters/engine-ports";
 import { enginePorts, engineHealth } from "../shared/protocols";
 import { amneziaNative } from "../server/adapters/amneziawg";
 import { engines, engineIds, isEngine } from "../shared/engines";
@@ -16,17 +16,11 @@ const [command = "help", ...args] = Bun.argv.slice(2);
 
 try {
   switch (command) {
+    case "engine-public-ports":
     case "engine-health-ports": {
       const id = args[0];
       if (!isEngine(id)) throw new Error("Unknown engine");
-      let ports = engineHealth(id);
-      if (id === "mihomo" || id === "sing-box") {
-        const text = await Bun.file(`/etc/outpost/engines/${engines[id].file}`).text();
-        const profile = id === "mihomo" ? YAML.parse(text) : JSON.parse(text);
-        const listeners = id === "mihomo" ? profile.listeners : profile.inbounds;
-        if (!Array.isArray(listeners)) throw new Error("Managed listener array is missing");
-        if (!listeners.length) ports = id === "mihomo" ? ["9097/tcp"] : [];
-      }
+      const ports = runtimePorts(id, await Bun.file(`/etc/outpost/engines/${engines[id].file}`).text(), command === "engine-health-ports");
       if (ports.length) console.log(ports.join("\n"));
       break;
     }

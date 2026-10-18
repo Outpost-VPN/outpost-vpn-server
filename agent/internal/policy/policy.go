@@ -141,8 +141,8 @@ func Validate(request Request) error {
 		return nil
 	case "config.sync":
 		engine, ok := request.Payload["engine"].(string)
-		if !ok || !isEngine(engine) || !Engines[engine].Optional {
-			return errors.New("optional engine is required")
+		if !ok || !isEngine(engine) {
+			return errors.New("known engine is required")
 		}
 		return requirePath(request.Payload, "source", "/var/lib/outpost/runtime")
 	case "config.apply":

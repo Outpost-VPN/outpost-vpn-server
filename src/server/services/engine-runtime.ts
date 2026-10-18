@@ -5,6 +5,7 @@ import type { OutpostDatabase } from "../db/database";
 import { config } from "../config";
 import { ConnectionService } from "./connections";
 import { engineFile, type EngineId } from "../../shared/engines";
+import type { ConnectionMethod } from "../../shared/connection-methods";
 import { defaultEngineTemplates } from "../adapters/engine-presets";
 import { renderEngine } from "../adapters/engines";
 import { callAgent } from "./operations";
@@ -42,6 +43,10 @@ export class EngineRuntimeService {
   async add(connectionId: string, generation: number) {
     if (config.demo) return { ok: true, demo: true };
     const credential = this.credential(connectionId, generation);
+    if (!this.defaultXrayListeners()) {
+      await this.syncEngine("xray", this.activeCredentials({ include: { id: connectionId, generation } }));
+      return this.syncOptional({ include: { id: connectionId, generation } });
+    }
     const source = join(this.runtimeDir, `xray-add-${connectionId}-${generation}.json`);
     writeFileSync(source, JSON.stringify(renderXrayUserAdd(credential), null, 2), { mode: 0o640 });
     const rendered = this.renderRecovery({ include: { id: connectionId, generation } });
@@ -51,16 +56,16 @@ export class EngineRuntimeService {
 
   async rotate(connectionId: string, _previousGeneration: number, generation: number) {
     if (config.demo) return { ok: true, demo: true };
-    const source = this.renderRecovery({ include: { id: connectionId, generation } });
-    await this.runner({
-      action: "config.apply",
-      payload: { source, target: join(config.configDir, "engines", "xray.json"), engine: "xray" },
-    });
+    await this.syncEngine("xray", this.activeCredentials({ include: { id: connectionId, generation } }));
     return this.syncOptional({ include: { id: connectionId, generation } });
   }
 
   async revoke(connectionId: string, generation: number) {
     if (config.demo) return { ok: true, demo: true };
+    if (!this.defaultXrayListeners()) {
+      await this.syncEngine("xray", this.activeCredentials({ exclude: connectionId }));
+      return this.syncOptional({ exclude: connectionId });
+    }
     const email = this.credential(connectionId, generation).xray.email;
     const rendered = this.renderRecovery({ exclude: connectionId });
     await this.runner({ action: "xray.user.revoke", payload: { email, rendered } });
@@ -107,16 +112,26 @@ export class EngineRuntimeService {
     return this.syncEngine(engine, this.activeCredentials({}));
   }
 
+  async reconfigure(engine: EngineId, methods: ConnectionMethod[]) {
+    if (config.demo) return { ok: true, demo: true };
+    const source = this.renderSnapshot(engine, this.activeCredentials({}), methods);
+    return this.runner({ action: "config.sync", payload: { source, engine } });
+  }
+
+  private defaultXrayListeners() {
+    return this.db.methods.list().filter((method) => method.engine === "xray" && method.enabled).length === 2;
+  }
+
   private async syncEngine(engine: EngineId, credentials: ConnectionCredential[]) {
     const source = this.renderSnapshot(engine, credentials);
     return this.runner({ action: "config.sync", payload: { source, engine } });
   }
 
-  private renderSnapshot(engine: EngineId, credentials: ConnectionCredential[]) {
+  private renderSnapshot(engine: EngineId, credentials: ConnectionCredential[], methods = this.db.methods.list()) {
     const stored = this.db.raw.query<{ template: string }, string>("SELECT template FROM engine_configs WHERE engine = ? AND active = 1").get(engine);
     const source = join(this.runtimeDir, engineFile(engine));
     const temporary = `${source}.${crypto.randomUUID()}.tmp`;
-    writeFileSync(temporary, renderEngine(engine, stored?.template ?? defaultEngineTemplates[engine], credentials), { mode: 0o640 });
+    writeFileSync(temporary, renderEngine(engine, stored?.template ?? defaultEngineTemplates[engine], credentials, methods), { mode: 0o640 });
     renameSync(temporary, source);
     return source;
   }

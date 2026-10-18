@@ -1,4 +1,6 @@
 [Unit]
+Wants=outpost-firewall.service
+After=outpost-firewall.service
 Description=Outpost AmneziaWG 3.1 userspace server
 After=network-online.target outpost.service
 Wants=network-online.target

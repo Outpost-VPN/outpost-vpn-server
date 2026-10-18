@@ -71,8 +71,7 @@ if test "$mode" = update; then
     /opt/outpost/current/infra/scripts/engine-health "$engine"
   fi
   if [[ "$engine" = mihomo || "$engine" = sing-box || "$engine" = amneziawg ]]; then
-    IFS=',' read -r -a ports <<<"${info[7]}"
-    for port in "${ports[@]}"; do ufw allow "$port"; done
+    /opt/outpost/current/infra/scripts/engine-firewall "$engine"
     systemctl enable "$service"
   fi
 fi

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export LC_ALL=C
+engine=${1:-}
+if test "$engine" = --all || test "$engine" = --clear; then
+  while IFS= read -r id; do
+    if test "$engine" = --clear; then "$0" "$id" --clear; continue; fi
+    mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "$id")
+    if test -f "/etc/outpost/engines/${info[1]}"; then "$0" "$id"; fi
+  done < <(/opt/outpost/current/bin/outpostctl engine-list --all)
+  exit 0
+fi
+mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "$engine")
+test "${#info[@]}" = 9 || exit 1
+chain="OUTPOST_IN_${engine^^}"
+chain=${chain//-/_}
+if test "${2:-}" = --clear; then
+  iptables -D ufw-user-input -j "$chain" 2>/dev/null || true
+  iptables -F "$chain" 2>/dev/null || true
+  iptables -X "$chain" 2>/dev/null || true
+  exit 0
+fi
+ports=$(/opt/outpost/current/bin/outpostctl engine-public-ports "$engine")
+rules=$(mktemp)
+trap 'rm -f "$rules"' EXIT
+iptables -S ufw-user-input >/dev/null
+iptables -N "$chain" 2>/dev/null || iptables -S "$chain" >/dev/null
+iptables -C ufw-user-input -j "$chain" 2>/dev/null || iptables -I ufw-user-input 1 -j "$chain"
+{
+  printf '*filter\n-F %s\n' "$chain"
+  while IFS= read -r endpoint; do
+    test -n "$endpoint" || continue
+    port=${endpoint%/*}
+    protocol=${endpoint#*/}
+    [[ "$port" =~ ^[0-9]+$ && "$protocol" =~ ^(tcp|udp)$ ]] || exit 1
+    printf -- '-A %s -p %s --dport %s -j ACCEPT\n' "$chain" "$protocol" "$port"
+  done <<<"$ports"
+  printf 'COMMIT\n'
+} >"$rules"
+# Replace only our chain atomically; preserve all UFW and other service rules.
+iptables-restore --noflush <"$rules"

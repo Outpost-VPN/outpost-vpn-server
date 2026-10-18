@@ -5,6 +5,8 @@ type Data = Record<string, unknown>;
 
 const titles: Record<Exclude<Locale, "ru">, Record<string, string>> = {
   en: {
+    "method.configured": "Connection methods changed",
+    "method.reordered": "Connection method priority changed",
     "connection.created": "Connection created",
     "connection.updated": "Connection updated",
     "connection.activated": "Connection ready",
@@ -47,6 +49,8 @@ const titles: Record<Exclude<Locale, "ru">, Record<string, string>> = {
     "system.tls_restored": "TLS certificate is healthy again",
   },
   "zh-CN": {
+    "method.configured": "连接方式已更改",
+    "method.reordered": "连接方式优先级已更改",
     "connection.created": "已创建连接",
     "connection.updated": "已更新连接",
     "connection.activated": "连接已就绪",
@@ -89,6 +93,8 @@ const titles: Record<Exclude<Locale, "ru">, Record<string, string>> = {
     "system.tls_restored": "TLS 证书已恢复正常",
   },
   fa: {
+    "method.configured": "روش‌های اتصال تغییر کرد",
+    "method.reordered": "اولویت روش‌های اتصال تغییر کرد",
     "connection.created": "اتصال ایجاد شد",
     "connection.updated": "اتصال به‌روزرسانی شد",
     "connection.activated": "اتصال آماده است",

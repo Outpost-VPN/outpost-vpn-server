@@ -21,7 +21,7 @@ jobs:
             infra/scripts/outpostctl infra/scripts/deploy-remote infra/scripts/apply-update \
             infra/scripts/export-backup infra/scripts/export-backup-plain infra/scripts/restore-backup \
             infra/renewal-hooks/deploy/outpost infra/scripts/update-engine infra/scripts/install-engines \
-            infra/scripts/apply-config infra/scripts/engine-health infra/scripts/amneziawg-service
+            infra/scripts/apply-config infra/scripts/engine-health infra/scripts/engine-firewall infra/scripts/amneziawg-service
       - run: bun run check
       - name: Validate generated subscriptions with native engines
         env:

@@ -155,6 +155,9 @@ func execute(request policy.Request) (string, error) {
 		if err != nil {
 			return installed, err
 		}
+		if _, err := run("systemctl", "is-active", "--quiet", "xray"); err != nil {
+			return installed, nil
+		}
 		output, err := run("/opt/outpost/engines/xray/current/xray", "api", "adu", "--server=127.0.0.1:10085", request.Payload["source"].(string))
 		if err == nil && xrayUserUpdateSucceeded(output, "Added", 2) {
 			return installed + "; " + output, nil
@@ -165,6 +168,9 @@ func execute(request policy.Request) (string, error) {
 		installed, err := install(request.Payload["rendered"].(string), "/etc/outpost/engines/xray.json")
 		if err != nil {
 			return installed, err
+		}
+		if _, err := run("systemctl", "is-active", "--quiet", "xray"); err != nil {
+			return installed, nil
 		}
 		xhttpOutput, xhttpErr := run("/opt/outpost/engines/xray/current/xray", "api", "rmu", "--server=127.0.0.1:10085", "-tag=vless-xhttp", request.Payload["email"].(string))
 		grpcOutput, grpcErr := run("/opt/outpost/engines/xray/current/xray", "api", "rmu", "--server=127.0.0.1:10085", "-tag=vless-grpc", request.Payload["email"].(string))

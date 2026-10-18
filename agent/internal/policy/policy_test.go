@@ -220,7 +220,7 @@ func TestOptionalEngineCatalog(t *testing.T) {
 			t.Fatalf("wrong target accepted for %s", id)
 		}
 		request = Request{Action: "config.sync", Payload: map[string]any{"engine": id, "source": "/var/lib/outpost/runtime/profile"}}
-		if err := Validate(request); (err == nil) != engine.Optional {
+		if err := Validate(request); err != nil {
 			t.Fatalf("sync policy differs from catalog for %s", id)
 		}
 	}

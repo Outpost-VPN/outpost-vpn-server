@@ -1,4 +1,6 @@
 [Unit]
+Wants=outpost-firewall.service
+After=outpost-firewall.service
 Description=Outpost Hysteria 2
 After=network-online.target outpost.service
 Wants=network-online.target

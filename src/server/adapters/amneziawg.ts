@@ -6,6 +6,7 @@ import type { ConnectionCredential } from "../models";
 
 const key = z.string().regex(/^[A-Za-z0-9+/]{43}=$/);
 const snapshotSchema = z.object({
+  listenPort: z.number().int().min(0).max(65535).optional(),
   server: z.object({ privateKey: key, headerProtectionKey: key }).strict(),
   peers: z.array(z.object({ publicKey: key, presharedKey: key,
     address: z.string().regex(/^10\.78\.(?:\d{1,3})\.(?:\d{1,3})\/32$/),
@@ -80,13 +81,13 @@ export function amneziaNative(value: unknown) {
     if (parts.some((part) => part > 255) || (parts[2] === 0 && parts[3]! < 2) || addresses.has(peer.address) || keys.has(peer.publicKey)) throw new Error("Invalid or duplicate AmneziaWG peer");
     addresses.add(peer.address); keys.add(peer.publicKey);
   }
-  return ["[Interface]", `PrivateKey = ${snapshot.server.privateKey}`, `ListenPort = ${protocols.amneziawg.port}`, ...obfuscation(snapshot.server.headerProtectionKey),
+  return ["[Interface]", `PrivateKey = ${snapshot.server.privateKey}`, `ListenPort = ${snapshot.listenPort ?? protocols.amneziawg.port}`, ...obfuscation(snapshot.server.headerProtectionKey),
     ...snapshot.peers.flatMap((peer) => ["", "[Peer]", `PublicKey = ${peer.publicKey}`, `PresharedKey = ${peer.presharedKey}`, `AllowedIPs = ${peer.address}`]), ""].join("\n");
 }
 
-export function amneziaClient(credential: ConnectionCredential, serial: number, host: string, server = amneziaIdentity()) {
+export function amneziaClient(credential: ConnectionCredential, serial: number, host: string, server = amneziaIdentity(), port = protocols.amneziawg.port) {
   const peer = amneziaPeer(credential, serial);
   return ["[Interface]", `PrivateKey = ${peer.privateKey}`, `Address = ${peer.address}`, "DNS = 1.1.1.1, 9.9.9.9", "MTU = 1280",
     ...obfuscation(server.headerProtectionKey), "", "[Peer]", `PublicKey = ${publicKey(server.privateKey)}`,
-    `PresharedKey = ${peer.presharedKey}`, `Endpoint = ${host}:${protocols.amneziawg.port}`, "AllowedIPs = 0.0.0.0/0, ::/0", "PersistentKeepalive = 25", ""].join("\n");
+    `PresharedKey = ${peer.presharedKey}`, `Endpoint = ${host}:${port}`, "AllowedIPs = 0.0.0.0/0, ::/0", "PersistentKeepalive = 25", ""].join("\n");
 }

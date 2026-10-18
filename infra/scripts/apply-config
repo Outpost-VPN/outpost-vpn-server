@@ -58,9 +58,21 @@ esac
 if test "$restart" = validate-only; then exit 0; fi
 if cmp -s "$source_path" "$target_path"; then exit 0; fi
 backup_path="${target_path}.previous"
-test ! -f "$target_path" || cp -a "$target_path" "$backup_path"
+had_target=0
+was_active=0
+if test -f "$target_path"; then had_target=1; cp -a "$target_path" "$backup_path"; fi
+if systemctl is-active --quiet "$service"; then was_active=1; fi
+restore_config() {
+  if test "$had_target" = 1; then cp -a "$backup_path" "$target_path"; else rm -f "$target_path"; fi
+  if test "$was_active" = 1; then systemctl restart "$service" || true; fi
+  /opt/outpost/current/infra/scripts/engine-firewall "$engine" || true
+}
 install -o root -g outpost -m 0640 "$source_path" "${target_path}.tmp"
 mv "${target_path}.tmp" "$target_path"
+
+if test -d "/opt/outpost/engines/$engine/current"; then
+  /opt/outpost/current/infra/scripts/engine-firewall "$engine" || { restore_config; exit 1; }
+fi
 
 if test "$restart" = 0; then
   echo "Configuration validated and installed; inactive engine was not started"
@@ -69,20 +81,18 @@ fi
 
 if test "$engine" = amneziawg && test "$restart" = sync; then
   if /opt/outpost/engines/amneziawg/current/awg syncconf outpost-awg "$native"; then exit 0; fi
-  test ! -f "$backup_path" || cp -a "$backup_path" "$target_path"
+  restore_config
   echo "AmneziaWG peer synchronization failed" >&2
   exit 1
 fi
 if ! systemctl restart "$service"; then
-  test ! -f "$backup_path" || cp -a "$backup_path" "$target_path"
-  systemctl restart "$service" || true
+  restore_config
   echo "Engine rejected the configuration; previous revision restored" >&2
   exit 1
 fi
 
 /opt/outpost/current/infra/scripts/engine-health "$engine" || {
-  test ! -f "$backup_path" || cp -a "$backup_path" "$target_path"
-  systemctl restart "$service" || true
+  restore_config
   echo "Engine did not become active; previous revision restored" >&2
   exit 1
 }

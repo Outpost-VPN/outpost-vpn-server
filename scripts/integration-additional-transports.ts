@@ -1,3 +1,4 @@
+import {methodSettings, type ConnectionMethod} from "../src/shared/connection-methods";
 import { createHash, X509Certificate } from "node:crypto";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -99,6 +100,62 @@ try {
     }
     console.log(`${protocol}: verified TLS, authenticated transfer and invalid-password rejection passed`);
   }
+
+  const matrixPorts = await freePorts(6);
+  const matrix: ConnectionMethod[] = [
+    ["mihomo", "hysteria2"], ["sing-box", "anytls"], ["sing-box", "hysteria2"],
+    ["mihomo", "xhttp"], ["mihomo", "grpc"], ["sing-box", "grpc"],
+  ].map(([engine, protocol], index) => ({ id: "matrix-" + index, engine, protocol,
+    name: engine + " " + protocol, enabled: true, updatedAt: 0,
+    settings: { ...methodSettings(engine as any, protocol as any), port: matrixPorts[index]! },
+  })) as ConnectionMethod[];
+  for (const engine of ["mihomo", "sing-box"] as const) {
+    const text = tlsPaths(renderEngine(engine, defaultEngineTemplates[engine], [credential], matrix));
+    const profile = engine === "mihomo" ? YAML.parse(text) : JSON.parse(text);
+    if (engine === "mihomo") {
+      delete profile["external-controller"]; delete profile.secret;
+      for (const listener of profile.listeners) listener.listen = "127.0.0.1";
+      profile.rules.unshift("IP-CIDR,127.0.0.1/32,DIRECT,no-resolve");
+    } else {
+      for (const listener of profile.inbounds) listener.listen = "127.0.0.1";
+      profile.route.rules.unshift({ ip_cidr: ["127.0.0.1/32"], action: "route", outbound: "direct" });
+    }
+    const home = join(directory, "matrix-server-" + engine); mkdirSync(home);
+    const path = join(home, "config");
+    writeFileSync(path, engine === "mihomo" ? YAML.stringify(profile) : JSON.stringify(profile), {mode: 0o600});
+    processes.launch(engine === "mihomo" ? [mihomo, "-d", home, "-f", path] : [sing, "run", "-c", path], {SAFE_PATHS: directory});
+  }
+  for (const method of matrix) {
+    for (const valid of [true, false]) {
+      const home = join(directory, method.id + valid); mkdirSync(home);
+      const path = join(home, "config");
+      const selected = { ...context, methods: [method], clientProfile: "mihomo-modern" as const };
+      const proxy = YAML.parse(mihomoRenderer.render(selected).body).proxies[0];
+      Object.assign(proxy, {server: "127.0.0.1", sni: "localhost", servername: "localhost", fingerprint});
+      if (!valid) {
+        if (proxy.type === "vless") proxy.uuid = "00000000-0000-4000-8000-000000000000";
+        else proxy.password += "-invalid";
+      }
+      writeFileSync(path, YAML.stringify({"mixed-port": proxyPort, "bind-address": "127.0.0.1", mode: "rule", "log-level": "warning", proxies: [proxy], rules: ["MATCH," + proxy.name]}), {mode: 0o600});
+      const child = processes.launch([mihomo, "-d", home, "-f", path]);
+      await waitForPort(proxyPort!);
+      let succeeded = false;
+      try { succeeded = (await command([curl, "--noproxy", "", "-fsS", "--max-time", "3", "--socks5-hostname", "127.0.0.1:" + proxyPort, "http://127.0.0.1:" + origin.port + "/"])) === "verified-outpost-origin"; } catch {}
+      child.kill(); await child.exited;
+      if (succeeded !== valid) throw new Error(method.name + ": " + (valid ? "authenticated transfer failed" : "invalid credentials accepted"));
+    }
+    console.log(method.name + ": configured port, verified TLS, cross-core transfer and invalid-credential rejection passed");
+  }
+
+  const [headlessStats] = await freePorts(1);
+  const headless = YAML.parse(tlsPaths(renderEngine("hysteria", defaultEngineTemplates.hysteria, [credential], [])));
+  headless.auth.http.url = "http://127.0.0.1:" + auth.port + "/";
+  headless.trafficStats.listen = "127.0.0.1:" + headlessStats;
+  const headlessPath = join(directory, "headless-hysteria.yaml");
+  writeFileSync(headlessPath, YAML.stringify(headless));
+  processes.launch([hysteria, "server", "--config", headlessPath]);
+  await waitForPort(headlessStats!);
+  console.log("Hysteria: disabled public method keeps a valid loopback-only runtime");
 } finally {
   await processes.close();
   origin.stop(true);

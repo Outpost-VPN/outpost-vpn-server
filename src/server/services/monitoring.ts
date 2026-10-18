@@ -75,8 +75,10 @@ export class MonitoringService {
     const tls = snapshot.tlsDays === null ? null : tlsLevel(snapshot.tlsDays, this.setup);
     for (const service of this.expectedServices()) this.observeService(service, services[service] ?? false, observedAt);
     if (snapshot.transports && !this.setup) {
-      this.observeService("vless-xhttp", snapshot.transports.xhttp, observedAt);
-      this.observeService("vless-grpc", snapshot.transports.grpc, observedAt);
+      const methods = this.db.methods.list();
+      for (const protocol of ["xhttp", "grpc"] as const) {
+        this.observeService(`vless-${protocol}`, !methods.some((method) => method.engine === "xray" && method.protocol === protocol && method.enabled) || snapshot.transports[protocol], observedAt);
+      }
     }
     this.observeThreshold(
       "system:disk",

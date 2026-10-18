@@ -1,11 +1,11 @@
 import { amneziaSnapshot, amneziaNative } from "./amneziawg";
+import { defaultMethods, type ConnectionMethod } from "../../shared/connection-methods";
+import { methodListeners } from "./method-listeners";
 import { createHash, createHmac } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
 import { engineIds, engines, engineFile, type EngineId } from "../../shared/engines";
-import { protocols } from "../../shared/protocols";
-import { protocolCredential } from "./protocol-credentials";
 import type { OutpostDatabase } from "../db/database";
 import type { ConnectionCredential, TrafficPoint } from "../models";
 import { config } from "../config";
@@ -139,33 +139,33 @@ export function renderXray(template: string, credentials: ConnectionCredential[]
   return rendered;
 }
 
-export function renderEngine(engine: EngineId, template: string, credentials: ConnectionCredential[] = []) {
-  if (engine === "hysteria") return renderHysteria(template);
-  if (engine === "xray") return renderXray(template, credentials);
+export function renderEngine(engine: EngineId, template: string, credentials: ConnectionCredential[] = [], methods: readonly ConnectionMethod[] = defaultMethods([engine], { xhttp: config.xhttpPath, grpc: config.grpcService })) {
+  const selected = methods.filter((method) => method.engine === engine && method.enabled);
+  if (engine === "hysteria") {
+    const profile = YAML.parse(renderHysteria(template));
+    profile.listen = selected.length ? `:${selected[0]!.settings.port}` : "127.0.0.1:0";
+    return YAML.stringify(profile);
+  }
+  if (engine === "xray") {
+    const profile = JSON.parse(renderXray(template, credentials));
+    profile.inbounds = profile.inbounds.filter((inbound: { tag: string }) => !["vless-xhttp", "vless-grpc"].includes(inbound.tag) || selected.some((method) => `vless-${method.protocol}` === inbound.tag));
+    return JSON.stringify(profile, null, 2);
+  }
   assertTemplate(engine, template);
   if (engine === "amneziawg") {
-    const snapshot = amneziaSnapshot(credentials);
+    const snapshot = amneziaSnapshot(selected.length ? credentials : []);
+    snapshot.listenPort = selected[0]?.settings.port ?? 0;
     amneziaNative(snapshot);
     return JSON.stringify(snapshot, null, 2);
   }
-  const certificate = `/etc/letsencrypt/live/${config.domain}/fullchain.pem`;
-  const key = `/etc/letsencrypt/live/${config.domain}/privkey.pem`;
   if (engine === "mihomo") {
     const profile = parseEngineTemplate(engine, template) as Record<string, unknown>;
     profile.secret = createHmac("sha256", config.hysteriaStatsSecret).update("outpost:mihomo-controller:v1").digest("base64url");
-    profile.listeners = credentials.length ? [
-      { name: "anytls", type: "anytls", listen: "0.0.0.0", port: protocols.anytls.port, certificate, "private-key": key,
-        users: Object.fromEntries(credentials.map((credential) => { const user = protocolCredential(credential, "anytls"); return [user.username, user.password]; })) },
-      { name: "trusttunnel", type: "trusttunnel", listen: "0.0.0.0", port: protocols.trusttunnel.port, certificate, "private-key": key,
-        network: ["tcp"], users: credentials.map((credential) => protocolCredential(credential, "trusttunnel")) },
-    ] : [];
+    profile.listeners = methodListeners(engine, methods, credentials);
     return YAML.stringify(profile);
   }
   const profile = parseEngineTemplate(engine, template) as Record<string, unknown>;
-  profile.inbounds = credentials.length ? [{ type: "naive", tag: "naive", listen: "0.0.0.0", listen_port: protocols.naive.port, network: "tcp",
-    users: credentials.map((credential) => protocolCredential(credential, "naive")),
-    tls: { enabled: true, certificate_path: certificate, key_path: key },
-  }] : [];
+  profile.inbounds = methodListeners(engine, methods, credentials);
   return JSON.stringify(profile, null, 2);
 }
 
@@ -185,7 +185,7 @@ export class EngineConfigService {
     const check = validateTemplate(engine, template);
     if (!check.valid) return { ...check, rendered: null, hash: null };
     try {
-      const rendered = renderEngine(engine, template, credentials);
+      const rendered = renderEngine(engine, template, credentials, this.db.methods.list());
       const active = this.active(engine);
       const baseline = active?.template ?? defaultEngineTemplates[engine];
       const previous = this.renderStored(engine, baseline, credentials);
@@ -367,7 +367,7 @@ export class EngineConfigService {
   }
 
   private renderStored(engine: EngineId, template: string, credentials: ConnectionCredential[]) {
-    try { return renderEngine(engine, template, credentials); }
+    try { return renderEngine(engine, template, credentials, this.db.methods.list()); }
     catch { return null; }
   }
 }

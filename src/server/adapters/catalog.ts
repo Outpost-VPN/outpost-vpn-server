@@ -1,4 +1,6 @@
-import type { ProtocolId } from "../../shared/protocols";
+import {protocols} from "../../shared/protocols";
+import type {EngineId} from "../../shared/engines";
+import { clientProfiles, compatibleMethods, type ConnectionMethod, type ClientProfile } from "../../shared/connection-methods";
 import type { Connection, SubscriptionFormat } from "../models";
 import { metadata, type Locale } from "../../shared/i18n";
 
@@ -27,7 +29,6 @@ export type AppDefinition = {
   pricing: AppPricing;
   updateMode: UpdateMode;
   routeFidelity: RouteFidelity;
-  transports: string[];
   installUrls: Partial<Record<AppPlatform, string>>;
   deepLink?: (url: string) => string;
 };
@@ -37,10 +38,10 @@ export type AdvancedDefinition = {
   format: SubscriptionFormat;
   name?: string;
   minimumCore?: string;
-  protocols?: ProtocolId[];
+  clientProfile?: ClientProfile;
 };
 
-export const catalogVersion = 4;
+export const catalogVersion = 5;
 export const platforms: { id: AppPlatform; label: string }[] = [
   { id: "macos", label: "macOS" },
   { id: "ios", label: "iOS" },
@@ -80,68 +81,67 @@ export const applications: AppDefinition[] = [
   {
     id: "everywhere", name: "Everywhere Proxy", technology: "Mihomo", format: "mihomo", platforms: ["macos", "ios"], support: "tested",
     icon: "/assets/apps/everywhere.jpg", pricing: free(appleEverywhere), updateMode: "manual", routeFidelity: "exact",
-    transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], installUrls: { macos: appleEverywhere, ios: appleEverywhere },
+    installUrls: { macos: appleEverywhere, ios: appleEverywhere },
   },
   {
     id: "incy", name: "INCY", technology: "Xray", format: "links", platforms: ["macos", "ios"], support: "tested",
     icon: "/assets/apps/incy.jpg", pricing: free(appleIncy), updateMode: "automatic", routeFidelity: "limited",
-    transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], installUrls: { macos: appleIncy, ios: appleIncy }, deepLink: incyLink,
+    installUrls: { macos: appleIncy, ios: appleIncy }, deepLink: incyLink,
   },
   {
     id: "stash", name: "Stash", technology: "Mihomo", format: "mihomo", platforms: ["macos", "ios"], support: "tested",
     icon: "/assets/apps/stash.svg", pricing: paid(appleStash), updateMode: "automatic", routeFidelity: "exact",
-    transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], installUrls: { macos: appleStash, ios: appleStash }, deepLink: stashLink,
+    installUrls: { macos: appleStash, ios: appleStash }, deepLink: stashLink,
   },
   {
     id: "clash-verge", name: "Clash Verge Rev", technology: "Mihomo", format: "mihomo", platforms: ["macos", "windows", "linux"], support: "tested",
     icon: "/assets/apps/clash-verge-rev.png", pricing: free(githubVerge), updateMode: "automatic", routeFidelity: "exact",
-    transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], installUrls: { macos: githubVerge, windows: githubVerge, linux: githubVerge }, deepLink: clashLink,
+    installUrls: { macos: githubVerge, windows: githubVerge, linux: githubVerge }, deepLink: clashLink,
   },
   {
     id: "clash-party", name: "Clash Party", technology: "Mihomo", format: "mihomo", platforms: ["macos", "windows", "linux"], support: "compatible",
     icon: "/assets/apps/clash-party.svg", pricing: free(githubParty), updateMode: "automatic", routeFidelity: "exact",
-    transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], installUrls: { macos: githubParty, windows: githubParty, linux: githubParty }, deepLink: clashLink,
+    installUrls: { macos: githubParty, windows: githubParty, linux: githubParty }, deepLink: clashLink,
   },
   {
     id: "clash-meta", name: "Clash Meta for Android", technology: "Mihomo", format: "mihomo", platforms: ["android"], support: "tested",
     icon: "/assets/apps/clash-meta.svg", pricing: free(githubMeta), updateMode: "automatic", routeFidelity: "exact",
-    transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], installUrls: { android: githubMeta }, deepLink: clashMetaLink,
+    installUrls: { android: githubMeta }, deepLink: clashMetaLink,
   },
   {
     id: "flclash", name: "FlClash", technology: "Mihomo", format: "mihomo", platforms: ["macos", "android", "windows", "linux"], support: "compatible",
     icon: "/assets/apps/flclash.png", pricing: free(githubFlClash), updateMode: "automatic", routeFidelity: "exact",
-    transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], installUrls: { macos: githubFlClash, android: githubFlClash, windows: githubFlClash, linux: githubFlClash }, deepLink: clashLink,
+    installUrls: { macos: githubFlClash, android: githubFlClash, windows: githubFlClash, linux: githubFlClash }, deepLink: clashLink,
   },
   {
     id: "happ", name: "Happ", technology: "Xray", format: "links", platforms: ["macos", "ios", "android", "windows", "linux"], support: "compatible",
     icon: "/assets/apps/happ.jpg", pricing: free(appleHapp), updateMode: "automatic", routeFidelity: "limited",
-    transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"],
     installUrls: { macos: githubHapp, ios: appleHapp, android: "https://play.google.com/store/apps/details?id=com.happproxy", windows: githubHapp, linux: githubHapp },
   },
   {
     id: "sing-box-android", name: "sing-box", technology: "sing-box", format: "sing-box", platforms: ["android"], support: "tested",
     icon: "/assets/apps/sing-box.svg", pricing: free(singBoxAndroid), updateMode: "automatic", routeFidelity: "exact",
-    transports: ["Hysteria 2", "VLESS gRPC"], installUrls: { android: singBoxAndroid }, deepLink: singBoxLink,
+    installUrls: { android: singBoxAndroid }, deepLink: singBoxLink,
   },
   {
     id: "sing-box-apple", name: "sing-box", technology: "sing-box", format: "sing-box", platforms: ["macos"], support: "compatible",
     icon: "/assets/apps/sing-box.svg", pricing: free(singBoxApple), updateMode: "automatic", routeFidelity: "exact",
-    transports: ["Hysteria 2", "VLESS gRPC"], installUrls: { macos: singBoxApple }, deepLink: singBoxLink,
+    installUrls: { macos: singBoxApple }, deepLink: singBoxLink,
   },
   {
     id: "sing-box-desktop", name: "sing-box", technology: "sing-box", format: "sing-box", platforms: ["windows", "linux"], support: "compatible",
     icon: "/assets/apps/sing-box.svg", pricing: free(singBoxDesktop), updateMode: "automatic", routeFidelity: "exact",
-    transports: ["Hysteria 2", "VLESS gRPC"], installUrls: { windows: singBoxDesktop, linux: singBoxDesktop }, deepLink: singBoxLink,
+    installUrls: { windows: singBoxDesktop, linux: singBoxDesktop }, deepLink: singBoxLink,
   },
   {
     id: "v2rayn", name: "v2rayN", technology: "Xray", format: "xray-json", platforms: ["macos", "windows", "linux"], support: "tested",
     icon: "/assets/apps/v2rayn.png", pricing: free(githubV2rayN), updateMode: "automatic", routeFidelity: "exact",
-    transports: ["VLESS XHTTP", "VLESS gRPC"], installUrls: { macos: githubV2rayN, windows: githubV2rayN, linux: githubV2rayN },
+    installUrls: { macos: githubV2rayN, windows: githubV2rayN, linux: githubV2rayN },
   },
   {
     id: "v2rayng", name: "v2rayNG", technology: "Xray", format: "xray-json", platforms: ["android"], support: "tested",
     icon: "/assets/apps/v2rayng.png", pricing: free(githubV2rayNG), updateMode: "automatic", routeFidelity: "exact",
-    transports: ["VLESS XHTTP", "VLESS gRPC"], installUrls: { android: githubV2rayNG },
+    installUrls: { android: githubV2rayNG },
   },
 ];
 
@@ -150,8 +150,8 @@ export const advancedDefinitions: AdvancedDefinition[] = [
   { id: "mihomo-yaml", format: "mihomo" },
   { id: "sing-box-json", format: "sing-box" },
   { id: "xray-json", format: "xray-json" },
-  { id: "mihomo-modern", format: "mihomo", name: "Mihomo · AnyTLS / TrustTunnel / AmneziaWG", minimumCore: "Mihomo ≥1.19.32", protocols: ["hysteria2", "xhttp", "grpc", "anytls", "trusttunnel", "amneziawg"] },
-  { id: "sing-box-modern", format: "sing-box", name: "sing-box · AnyTLS / Naive", minimumCore: "sing-box ≥1.14.3", protocols: ["hysteria2", "grpc", "anytls", "naive"] },
+  { id: "mihomo-modern", format: "mihomo", name: "Mihomo · AnyTLS / TrustTunnel / AmneziaWG", minimumCore: clientProfiles["mihomo-modern"].minimumCore, clientProfile: "mihomo-modern" },
+  { id: "sing-box-modern", format: "sing-box", name: "sing-box · AnyTLS / Naive", minimumCore: clientProfiles["sing-box-modern"].minimumCore, clientProfile: "sing-box-modern" },
   { id: "amneziawg-conf", format: "amneziawg", name: "AmneziaWG 3.1 · .conf", minimumCore: "AmneziaVPN ≥5.0.1.5 / AmneziaWG 3.1" },
   { id: "naive-json", format: "naive", name: "NaiveProxy JSON", minimumCore: "NaiveProxy / sing-box ≥1.14.3" },
 ];
@@ -164,7 +164,9 @@ export function advancedDefinition(id: string) {
   return advancedDefinitions.find((item) => item.id === id) ?? null;
 }
 
-export function catalog(baseUrl: string, platform?: string, language: Locale = "en") {
+export type MethodAvailability = { methods: readonly ConnectionMethod[]; installed: readonly EngineId[] };
+
+export function catalog(baseUrl: string, platform?: string, language: Locale = "en", available?: MethodAvailability) {
   const selected = isPlatform(platform) ? platform : null;
   return applications
     .filter((app) => !selected || app.platforms.includes(selected))
@@ -183,20 +185,20 @@ export function catalog(baseUrl: string, platform?: string, language: Locale = "
         pricing: app.pricing,
         updateMode: app.updateMode,
         routeFidelity: app.routeFidelity,
-        transports: app.transports,
+        transports: [...new Set((available ? compatibleMethods(available.methods, app.format, available.installed).map((method) => method.protocol) : clientProfiles[app.format].protocols).map((protocol) => protocols[protocol].name))],
         installUrls: app.installUrls,
         installUrl: selected ? app.installUrls[selected] ?? null : null,
         profileUrl,
         qrUrl: `${baseUrl}/qr/${app.id}.svg`,
         openUrl: app.deepLink?.(profileUrl) ?? null,
       };
-    });
+    }).filter((app) => app.transports.length > 0);
 }
 
-export function advanced(baseUrl: string, language: Locale = "en") {
+export function advanced(baseUrl: string, language: Locale = "en", available?: MethodAvailability) {
   const names = catalogCopy[language].advancedNames as Record<string, string>;
   const descriptions = catalogCopy[language].advancedDescriptions as Record<string, string>;
-  return advancedDefinitions.map((item) => ({
+  return advancedDefinitions.filter((item) => !available || compatibleMethods(available.methods, item.clientProfile ?? item.format, available.installed).length > 0).map((item) => ({
     id: item.id,
     name: names[item.id] ?? item.name,
     description: descriptions[item.id] ?? `${catalogCopy[language].modernText} ${item.minimumCore}.`,
@@ -214,20 +216,20 @@ export function detectPlatform(userAgent: string) {
   return "unknown";
 }
 
-export function renderCatalogPage(_connection: Connection, baseUrl: string, platform: string, language: Locale = "en") {
+export function renderCatalogPage(_connection: Connection, baseUrl: string, platform: string, language: Locale = "en", available?: MethodAvailability) {
   const copy = catalogCopy[language];
   const meta = metadata(language);
   const initial = isPlatform(platform) ? platform : "macos";
   const tabs = platforms.map(({ id, label }) => `<button class="platform-tab" type="button" role="tab" aria-selected="${id === initial}" data-platform="${id}"><span>${label}</span><span class="auto-badge" data-auto-badge hidden>${copy.auto}</span></button>`).join("");
   const panels = platforms.map(({ id, label }) => {
-    const items = catalog(baseUrl, id, language);
+    const items = catalog(baseUrl, id, language, available);
     const primary = items.filter((app) => app.primaryFor.includes(id));
     const more = items.filter((app) => !app.primaryFor.includes(id));
     return `<section class="platform-panel" role="tabpanel" data-platform-panel="${id}"${id === initial ? "" : " hidden"}><h2 class="visually-hidden">${copy.appsFor} ${label}</h2><div class="apps">${primary.map((app) => card(app, copy, label)).join("")}</div>${more.length ? `<details class="more"><summary>${copy.more} <span>${more.length}</span></summary><div class="apps apps--more">${more.map((app) => card(app, copy, label)).join("")}</div></details>` : ""}</section>`;
   }).join("");
   const labels = { ru: "Русский", en: "English", "zh-CN": "简体中文", fa: "فارسی" };
   const languageLinks = (["ru", "en", "zh-CN", "fa"] as Locale[]).map((id) => `<a href="${escape(baseUrl)}?lang=${encodeURIComponent(id)}" lang="${id}" aria-current="${id === language ? "true" : "false"}">${labels[id]}</a>`).join("");
-  const advancedItems = advanced(baseUrl, language).map((item) => `<li><div><strong>${escape(item.name ?? item.id)}</strong><span>${escape(item.description ?? item.id)}</span></div><button type="button" data-copy="${escape(item.profileUrl)}">${copy.copy}</button></li>`).join("");
+  const advancedItems = advanced(baseUrl, language, available).map((item) => `<li><div><strong>${escape(item.name ?? item.id)}</strong><span>${escape(item.description ?? item.id)}</span></div><button type="button" data-copy="${escape(item.profileUrl)}">${copy.copy}</button></li>`).join("");
   const clientMessages = escape(JSON.stringify(copy.client));
 
   return `<!doctype html>
@@ -237,7 +239,7 @@ export function renderCatalogPage(_connection: Connection, baseUrl: string, plat
 @media(max-width:900px){.app{grid-template-columns:58px minmax(0,1fr) 170px}.facts{grid-column:2}.app-actions{grid-column:3;grid-row:1/3}.app-icon{width:58px;height:58px}}
 @media(max-width:640px){.site-header__inner,.page{width:min(100% - 28px,560px)}.site-header__inner{padding:9px 0}.page{padding:30px 0 44px}.intro h1{font-size:31px}.intro p{font-size:15px}.platform-tabs{display:flex;gap:6px;overflow-x:auto;margin:0 -14px 22px;padding:0 14px;border:0;border-radius:0;background:transparent}.platform-tab{flex:0 0 auto;min-width:86px;min-height:44px;border:1px solid #d8e0ed;border-radius:11px;background:#f8faff}.app{grid-template-columns:52px minmax(0,1fr);gap:10px 13px;padding:18px 15px}.app-icon{width:52px;height:52px}.facts,.app-actions{grid-column:1/-1;grid-row:auto}.action-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}.action-buttons>:only-child{grid-column:1/-1}.button{min-height:40px}.link-actions{justify-content:flex-start}.feedback{text-align:start}.advanced li{align-items:flex-start;flex-wrap:wrap}.advanced li button{margin-inline-start:0}}
 </style><script src="/catalog.js" defer></script></head>
-<body data-initial-platform="${initial}" data-messages="${clientMessages}"><header class="site-header"><div class="site-header__inner"><a class="brand" href="/" aria-label="Outpost"><img src="/brand-mark.png" alt=""><span>Outpost</span></a><nav class="language-switcher" aria-label="Language">${languageLinks}</nav></div></header><main class="page"><header class="intro"><h1>${copy.heading}</h1><p>${copy.subtitle}</p></header><nav class="platform-tabs" role="tablist" aria-label="${copy.operatingSystem}">${tabs}</nav><div class="platform-panels">${panels}</div><details class="advanced"><summary>${copy.advanced}</summary><p>${copy.advancedText}</p><ul>${advancedItems}</ul></details></main></body></html>`;
+<body data-initial-platform="${initial}" data-messages="${clientMessages}"><header class="site-header"><div class="site-header__inner"><a class="brand" href="/" aria-label="Outpost"><img src="/brand-mark.png" alt=""><span>Outpost</span></a><nav class="language-switcher" aria-label="Language">${languageLinks}</nav></div></header><main class="page"><header class="intro"><h1>${copy.heading}</h1><p>${copy.subtitle}</p>${available && !catalog(baseUrl, platform, language, available).length ? `<p>${copy.unavailable}</p>` : ""}</header><nav class="platform-tabs" role="tablist" aria-label="${copy.operatingSystem}">${tabs}</nav><div class="platform-panels">${panels}</div><details class="advanced"${available && !catalog(baseUrl, platform, language, available).length ? " open" : ""}><summary>${copy.advanced}</summary><p>${copy.advancedText}</p><ul>${advancedItems}</ul></details></main></body></html>`;
 }
 
 function card(app: ReturnType<typeof catalog>[number], copy: typeof catalogCopy[Locale], platform: string) {
@@ -273,27 +275,31 @@ function escape(value: unknown) {
 
 const catalogCopy = {
   ru: {
+    unavailable: "Для доступных способов выберите совместимый профиль в разделе «Для опытных». Если профилей нет, обратитесь к владельцу сервера.",
     modernText: "Новые транспорты требуют установки соответствующих движков на сервере и актуального ядра клиента. Минимум:",
     title: "Настройка подключения", heading: "Подключите своё устройство", subtitle: "Выберите операционную систему и проверенное приложение. Способ обновления маршрутов виден сразу.", auto: "Авто", appsFor: "Приложения для", operatingSystem: "Операционная система", more: "Ещё приложения", advanced: "Для опытных", advancedText: "Сырые профили для ручного импорта. Отдельные URI не содержат маршрутов Outpost.", add: "Открыть в приложении", copy: "Скопировать профиль", copyLink: "Скопировать ссылку", openQr: "Открыть QR-код", install: "Установить", available: "Доступно для", automatic: "Маршруты обновляются автоматически", manual: "Маршруты обновляются вручную", exact: "Точный порядок маршрутов", limited: "Маршруты сгруппированы по действиям", client: { opening: "Открываем приложение…", copied: "Ссылка скопирована — вставьте её в приложение", copyFailed: "Не удалось скопировать ссылку" },
     descriptions: { everywhere: "Самый простой Apple-клиент; профиль обновляется вручную.", incy: "Бесплатный Apple-клиент с обновляемой подпиской.", stash: "Точное автоматическое обновление маршрутов на iPhone и iPad.", "clash-verge": "Популярный настольный клиент Mihomo.", "clash-party": "Компактный Mihomo-клиент для компьютера.", "clash-meta": "Проверенный Mihomo-клиент для Android.", flclash: "Лёгкий кроссплатформенный Mihomo-клиент.", happ: "Простой бесплатный кроссплатформенный клиент.", "sing-box-android": "Официальный клиент sing-box для Android.", "sing-box-apple": "Официальный клиент sing-box для macOS.", "sing-box-desktop": "Официальный профиль sing-box для компьютера.", v2rayn: "Полная обновляемая конфигурация Xray.", v2rayng: "Полная обновляемая конфигурация Xray для Android." },
     advancedNames: { "vless-links": "Ссылки подключений", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "Отдельные URI не содержат маршрутов.", "mihomo-yaml": "Полный профиль Mihomo для ручного импорта.", "sing-box-json": "Полный профиль sing-box для ручного импорта.", "xray-json": "Полная конфигурация Xray для ручного импорта." },
   },
   en: {
+    unavailable: "Choose a compatible profile under “For advanced users”. If none are available, contact the server owner.",
     modernText: "New transports require their server engines to be installed and an up-to-date client core. Minimum:",
     title: "Connection setup", heading: "Connect your device", subtitle: "Choose an operating system and a verified app. Route update behavior is shown up front.", auto: "Auto", appsFor: "Apps for", operatingSystem: "Operating system", more: "More apps", advanced: "For advanced users", advancedText: "Raw profiles for manual import. Individual URIs do not contain Outpost routes.", add: "Open in app", copy: "Copy profile", copyLink: "Copy link", openQr: "Open QR code", install: "Install", available: "Available for", automatic: "Routes update automatically", manual: "Routes update manually", exact: "Exact route order", limited: "Routes grouped by action", client: { opening: "Opening the app…", copied: "Link copied—paste it into the app", copyFailed: "Could not copy the link" },
     descriptions: { everywhere: "The simplest Apple client; refresh the profile manually.", incy: "A free Apple client with an updating subscription.", stash: "Exact automatic route updates on iPhone and iPad.", "clash-verge": "A popular Mihomo desktop client.", "clash-party": "A compact Mihomo desktop client.", "clash-meta": "A proven Mihomo client for Android.", flclash: "A lightweight cross-platform Mihomo client.", happ: "A simple free cross-platform client.", "sing-box-android": "The official sing-box client for Android.", "sing-box-apple": "The official sing-box client for macOS.", "sing-box-desktop": "The official sing-box desktop profile.", v2rayn: "A complete updating Xray configuration.", v2rayng: "A complete updating Xray configuration for Android." },
     advancedNames: { "vless-links": "Connection links", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "Individual URIs do not contain routes.", "mihomo-yaml": "Complete Mihomo profile for manual import.", "sing-box-json": "Complete sing-box profile for manual import.", "xray-json": "Complete Xray configuration for manual import." },
   },
   "zh-CN": {
+    unavailable: "请在“高级选项”中选择兼容配置。如无可用配置，请联系服务器所有者。",
     modernText: "新传输需要安装对应服务端引擎并更新客户端内核。最低版本：",
     title: "连接设置", heading: "连接您的设备", subtitle: "选择操作系统和经过验证的应用。路由更新方式会直接显示。", auto: "自动", appsFor: "适用于", operatingSystem: "操作系统", more: "更多应用", advanced: "高级选项", advancedText: "用于手动导入的原始配置。单独 URI 不包含 Outpost 路由。", add: "在应用中打开", copy: "复制配置", copyLink: "复制链接", openQr: "打开 QR 码", install: "安装", available: "可用于", automatic: "路由自动更新", manual: "路由需手动更新", exact: "精确的路由顺序", limited: "路由按操作分组", client: { opening: "正在打开应用…", copied: "链接已复制，请粘贴到应用中", copyFailed: "无法复制链接" },
     descriptions: { everywhere: "最简单的 Apple 客户端；配置需手动更新。", incy: "支持更新订阅的免费 Apple 客户端。", stash: "在 iPhone 和 iPad 上精确自动更新路由。", "clash-verge": "流行的 Mihomo 桌面客户端。", "clash-party": "轻巧的 Mihomo 桌面客户端。", "clash-meta": "经过验证的 Android Mihomo 客户端。", flclash: "轻量级跨平台 Mihomo 客户端。", happ: "简单免费的跨平台客户端。", "sing-box-android": "官方 sing-box Android 客户端。", "sing-box-apple": "官方 sing-box macOS 客户端。", "sing-box-desktop": "官方 sing-box 桌面配置。", v2rayn: "完整且可更新的 Xray 配置。", v2rayng: "适用于 Android 的完整可更新 Xray 配置。" },
     advancedNames: { "vless-links": "连接链接", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "单独 URI 不包含路由。", "mihomo-yaml": "用于手动导入的完整 Mihomo 配置。", "sing-box-json": "用于手动导入的完整 sing-box 配置。", "xray-json": "用于手动导入的完整 Xray 配置。" },
   },
   fa: {
+    unavailable: "یک پروفایل سازگار از «برای کاربران حرفه‌ای» انتخاب کنید. اگر پروفایلی موجود نیست، با مالک سرور تماس بگیرید.",
     modernText: "انتقال‌های جدید به نصب موتور سرور و هستهٔ به‌روز کلاینت نیاز دارند. حداقل:",
     title: "راه‌اندازی اتصال", heading: "دستگاه خود را متصل کنید", subtitle: "سیستم‌عامل و یک برنامهٔ بررسی‌شده را انتخاب کنید. روش به‌روزرسانی مسیرها همان ابتدا نمایش داده می‌شود.", auto: "خودکار", appsFor: "برنامه‌ها برای", operatingSystem: "سیستم‌عامل", more: "برنامه‌های بیشتر", advanced: "برای کاربران حرفه‌ای", advancedText: "پروفایل‌های خام برای ورود دستی. URIهای جداگانه شامل مسیرهای Outpost نیستند.", add: "باز کردن در برنامه", copy: "کپی پروفایل", copyLink: "کپی پیوند", openQr: "باز کردن کد QR", install: "نصب", available: "در دسترس برای", automatic: "مسیرها خودکار به‌روزرسانی می‌شوند", manual: "مسیرها دستی به‌روزرسانی می‌شوند", exact: "ترتیب دقیق مسیرها", limited: "مسیرها بر اساس عمل گروه‌بندی می‌شوند", client: { opening: "در حال باز کردن برنامه…", copied: "پیوند کپی شد؛ آن را در برنامه جای‌گذاری کنید", copyFailed: "کپی پیوند انجام نشد" },
     descriptions: { everywhere: "ساده‌ترین کلاینت Apple؛ پروفایل دستی به‌روزرسانی می‌شود.", incy: "کلاینت رایگان Apple با اشتراک قابل به‌روزرسانی.", stash: "به‌روزرسانی خودکار و دقیق مسیرها در iPhone و iPad.", "clash-verge": "کلاینت محبوب دسکتاپ Mihomo.", "clash-party": "کلاینت جمع‌وجور دسکتاپ Mihomo.", "clash-meta": "کلاینت آزموده‌شدهٔ Mihomo برای Android.", flclash: "کلاینت سبک و چندسکویی Mihomo.", happ: "کلاینت ساده، رایگان و چندسکویی.", "sing-box-android": "کلاینت رسمی sing-box برای Android.", "sing-box-apple": "کلاینت رسمی sing-box برای macOS.", "sing-box-desktop": "پروفایل رسمی دسکتاپ sing-box.", v2rayn: "پیکربندی کامل و قابل به‌روزرسانی Xray.", v2rayng: "پیکربندی کامل و قابل به‌روزرسانی Xray برای Android." },
     advancedNames: { "vless-links": "پیوندهای اتصال", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "URIهای جداگانه شامل مسیرها نیستند.", "mihomo-yaml": "پروفایل کامل Mihomo برای ورود دستی.", "sing-box-json": "پروفایل کامل sing-box برای ورود دستی.", "xray-json": "پیکربندی کامل Xray برای ورود دستی." },
   },
-} satisfies Record<Locale, { modernText: string; title: string; heading: string; subtitle: string; auto: string; appsFor: string; operatingSystem: string; more: string; advanced: string; advancedText: string; add: string; copy: string; copyLink: string; openQr: string; install: string; available: string; automatic: string; manual: string; exact: string; limited: string; client: Record<string, string>; descriptions: Record<string, string>; advancedNames: Record<string, string>; advancedDescriptions: Record<string, string> }>;
+} satisfies Record<Locale, { unavailable: string; modernText: string; title: string; heading: string; subtitle: string; auto: string; appsFor: string; operatingSystem: string; more: string; advanced: string; advancedText: string; add: string; copy: string; copyLink: string; openQr: string; install: string; available: string; automatic: string; manual: string; exact: string; limited: string; client: Record<string, string>; descriptions: Record<string, string>; advancedNames: Record<string, string>; advancedDescriptions: Record<string, string> }>;

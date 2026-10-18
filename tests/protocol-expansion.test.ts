@@ -1,3 +1,4 @@
+import {defaultMethods} from "../src/shared/connection-methods";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
@@ -101,6 +102,7 @@ describe("additional protocol contracts", () => {
     try {
       (config as { demo: boolean }).demo = false;
       for (const id of ["mihomo", "sing-box", "amneziawg"] as const) fixture.db.engines.recordInstallation(id, engines[id].version);
+      fixture.db.setSetting("connection_methods", defaultMethods(engineIds));
       const snapshots = new Map<string, string>();
       const recovery: Array<Record<string, unknown>> = [];
       const runtime = new EngineRuntimeService(fixture.db, async (request) => {
