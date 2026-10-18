@@ -53,7 +53,7 @@ tag outpost-engine-mark
 	css self
 		s:34px d:inline-grid ja:center
 		img s:100% object-fit:contain d:block
-		&.hysteria img color-scheme:dark
+		&.hysteria img color-scheme:light
 
 tag outpost-logo
 	version = null

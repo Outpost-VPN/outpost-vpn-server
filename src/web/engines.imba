@@ -1,5 +1,5 @@
 import {engineViews} from './context.imba'
-import {t, intl} from './i18n.imba'
+import {t} from './i18n.imba'
 
 tag outpost-engines
 	store = null
@@ -26,11 +26,13 @@ tag outpost-engine-row
 		const service = store.data.system.services.find do(item) item.name == engine.service
 		service..status == 'active'
 
-	get count do store.data.methods.items.filter(do(method) method.engine == engine.id).length
 	get caption do working? ? t('Остановить {engine}', {engine: engine.name}) : t('Запустить {engine}', {engine: engine.name})
 	get upgrade do "{engine.installed ? t('settings.update.upgrade') : t('settings.update.install')} {engine.name} {engine.desired}"
-	get checked
-		new Intl.DateTimeFormat(intl!, {dateStyle: 'short', timeStyle: 'short'}).format(new Date(engine.release.checkedAt))
+	get checktip
+		const release = engine.release
+		return t('engines.check_failed') if release and release.error
+		return t(release.pending == 'bundle' ? 'engines.bundle_pending' : 'engines.artifact_pending') if release and release.pending
+		t('engines.check_one', {engine: engine.name})
 
 	def edit
 		store.selected = {engine: engine.id, template: engine.config.template, activeVersion: engine.config.activeVersion, preset: engine.config.preset}
@@ -72,60 +74,50 @@ tag outpost-engine-row
 		preview(working? ? 'service.stop' : 'service.start', {service: engine.service})
 
 	<self>
-		<div.engine-mark .hysteria=(engine.id == 'hysteria')><outpost-engine-mark kind=engine.id>
+		<div.engine-mark><outpost-engine-mark kind=engine.id>
 		<div.identity>
-			<h2> engine.name
+			<div.name>
+				<h2> engine.name
+				if engine.installed
+					<span.state .working=working?> working? ? t('system.active') : t('methods.engine_stopped')
+				else
+					<span.state> t('engines.not_installed')
 			<div.version>
-				<span> engine.installed or t('engines.not_installed')
-				if engine.available
+				<span> engine.installed or engine.desired
+				if engine.installed and engine.available
 					<strong> "→ {engine.desired}"
-				<button.icon-button.small type="button" disabled=!!busy @click=check title=t('engines.check_one', {engine: engine.name}) aria-label=t('engines.check_one', {engine: engine.name})>
+				<button.icon-button.small type="button" disabled=!!busy @click=check title=checktip aria-label=t('engines.check_one', {engine: engine.name})>
 					<outpost-icon name=(busy == 'check' ? 'spinner-gap' : 'arrows-clockwise') .spinning=(busy == 'check')>
 				if engine.available
 					<button.icon-button.small.update type="button" disabled=!!busy @click=update title=upgrade aria-label=upgrade><outpost-icon name="download-simple">
-			if engine.installed
-				<span.state> working? ? t('system.active') : t('methods.engine_stopped')
 		<div.capabilities>
-			<p> engine.transport
-			<span> "{t('methods.count')}: {count}"
+			for protocol in engine.capabilities
+				<span .configured=protocol.configured> protocol.name
 		<div.actions>
-			<button.icon-button type="button" disabled=!!busy @click=edit aria-label=t('Настроить {engine}', {engine: engine.name}) title=t('Настроить {engine}', {engine: engine.name})><outpost-icon name="gear-six">
 			if engine.installed
+				<button.icon-button type="button" disabled=!!busy @click=edit aria-label=t('Настроить {engine}', {engine: engine.name}) title=t('Настроить {engine}', {engine: engine.name})><outpost-icon name="gear-six">
 				<button.icon-button type="button" disabled=!!busy @click=toggle aria-label=caption title=caption><outpost-icon name=(working? ? 'pause' : 'play')>
-		<div.release>
-			if engine.release
-				if engine.release.error
-					<span> t('engines.check_failed')
-				else
-					<a href=engine.release.url target="_blank" rel="noopener noreferrer"> "{t('engines.upstream')}: {engine.release.latest}"
-					if engine.release.pending
-						<span> t(engine.release.pending == 'bundle' ? 'engines.bundle_pending' : 'engines.artifact_pending')
-				<small> "{t('engines.checked')}: {checked}"
-			else
-				<span> t('engines.not_checked')
 		if error
 			<p.outpost-error role="alert"> error
 
 	css self
-		d:grid gtc:52px minmax(210px,.9fr) minmax(150px,1fr) auto ai:center g:10px 20px p:22px
-		.engine-mark s:52px d:grid ja:center rd:12px bgc:var(--outpost-soft)
-		.engine-mark.hysteria bgc:var(--outpost-navy)
+		d:grid gtc:52px minmax(180px,.65fr) minmax(0,1.5fr) 80px ai:center g:10px 20px p:22px
+		.engine-mark s:52px d:grid ja:center rd:12px bgc:color-mix(in srgb,var(--outpost-brand) 9%,var(--outpost-white)) bd:1px solid color-mix(in srgb,var(--outpost-brand) 18%,var(--outpost-white))
+		.name d:flex ai:center flex-wrap:wrap g:5px 10px
 		h2 fs:16px c:var(--outpost-navy)
-		.version d:flex ai:center g:5px mt:5px fs:12px c:var(--outpost-muted)
+		.version d:flex ai:center flex-wrap:wrap g:5px mt:5px fs:12px c:var(--outpost-muted)
+		.version span, .version strong white-space:nowrap
 		.version strong c:var(--outpost-brand) fw:600
-		.state, .capabilities p, .capabilities span fs:12px c:var(--outpost-muted) mt:5px lh:1.5
-		.capabilities p c:var(--outpost-text)
+		.state fs:11px c:var(--outpost-muted) lh:1.5
+		.state.working c:var(--outpost-success) fw:600
+		.capabilities d:flex ai:center flex-wrap:wrap g:5px 12px fs:12px lh:1.5 c:var(--outpost-muted)
+		.capabilities .configured c:var(--outpost-brand) fw:650
 		.actions d:flex ai:center g:8px
 		.spinning animation:spin 1s linear infinite
-		.release gc:2 / -1 d:flex ai:center flex-wrap:wrap g:6px 14px fs:12px c:var(--outpost-muted)
-		.release small fs:11px
-		.release a c:var(--outpost-brand)
 		.outpost-error gc:2 / -1
 		@media(max-width: 1000px)
-			gtc:52px minmax(0,1fr) auto
+			gtc:52px minmax(0,1fr) 80px
 			.capabilities gc:2 / -1 gr:2
-			.release gc:2 / -1 gr:3
 		@media(max-width: 520px)
 			p:16px g:10px 12px
 			.actions gc:2 / -1 gr:3
-			.release gr:4

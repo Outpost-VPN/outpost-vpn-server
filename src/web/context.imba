@@ -24,7 +24,9 @@ export def engineViews store
 		const definition = definitions[id]
 		const version = versions.find do(item) item.engine == id
 		const installed = version..installed_version
-		{...definition, id: id, transport: engineCapabilities[id].map(do(protocol) protocols[protocol].name).join(' / '), config: store.data.engineConfigs[id], installed: installed, desired: version..desired_version, checksum: version..checksum, available: version..updateAvailable, release: store.data.system.engineReleases[id]}
+		const capabilities = engineCapabilities[id].map do(protocol)
+			{id: protocol, name: protocols[protocol].name, configured: store.data.methods.items.some(do(method) method.engine == id and method.protocol == protocol)}
+		{...definition, id: id, capabilities: capabilities, config: store.data.engineConfigs[id], installed: installed, desired: version..desired_version, checksum: version..checksum, available: version..updateAvailable, release: store.data.system.engineReleases[id]}
 
 export const routeActions = [
 	{id: 'DIRECT', label: 'Напрямую'}
