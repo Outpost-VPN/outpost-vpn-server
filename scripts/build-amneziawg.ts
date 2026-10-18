@@ -2,12 +2,13 @@ import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import sources from "../infra/amneziawg-sources.json";
+import pinnedSources from "../infra/amneziawg-sources.json";
 import { verifiedDownload } from "./lib/verified-download";
 
 // Build on the release runner; no compiler, source execution or kernel module
 // installation is required on the VPS. Both sources are immutable and pinned.
 if (process.platform !== "linux") throw new Error("AmneziaWG runtime builds require Linux");
+const sources: typeof pinnedSources = process.env.OUTPOST_AMNEZIA_SOURCES_FILE ? await Bun.file(process.env.OUTPOST_AMNEZIA_SOURCES_FILE).json() : pinnedSources;
 const output = resolve(process.env.OUTPOST_AMNEZIA_OUTPUT ?? "dist/engines/amneziawg");
 const directory = mkdtempSync(join(tmpdir(), "outpost-amnezia-build-"));
 mkdirSync(output, { recursive: true });
@@ -27,7 +28,7 @@ try {
     }
     copyFileSync(join(extracted, source.name === "amneziawg-go" ? "LICENSE" : "COPYING"), join(output, `${source.name}.LICENSE`));
   }
-  copyFileSync(resolve("infra/amneziawg-sources.json"), join(output, "sources.json"));
+  writeFileSync(join(output, "sources.json"), JSON.stringify(sources, null, 2) + "\n");
   writeFileSync(join(output, "SOURCE_SHA256"), sources[0]!.sha256 + "\n");
   const checksums = [];
   for (const name of ["amneziawg-go", "awg"]) {

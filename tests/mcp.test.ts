@@ -84,6 +84,7 @@ test("MCP methods share panel validation, runtime application and engine scopes"
     expect((await readApi.get<{items:unknown[]}>("/api/v1/methods")).items).toHaveLength(3);
     await expect(readApi.post("/api/v1/methods",args)).rejects.toThrow("403");
     await expect(readApi.post("/api/v1/engines/check")).rejects.toThrow("403");
+    await expect(readApi.post("/api/v1/engines/mihomo/check")).rejects.toThrow("403");
   } finally {
     await client.close(); await server.close(); await http.stop(true); fixture.close();
   }

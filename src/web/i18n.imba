@@ -60,15 +60,12 @@ export def setLanguage value, persist = true
 	current
 
 const ru = {
+	'engines.check_one': 'Проверить новую версию {engine}'
+	'engines.bundle_pending': 'Ожидается отдельная подписанная сборка движка'
+	'engines.artifact_pending': 'Для этой версии пока нет готового файла с SHA-256'
 	"engines.not_checked": "Новые релизы ещё не проверялись"
-	"engines.needs_outpost": "Для установки этой версии нужен новый релиз Outpost"
 	"engines.upstream": "Последняя версия проекта"
 	"engines.check_failed": "Не удалось проверить релизы. Повторите проверку."
-	"engines.update_hint": "Установить поддерживаемую версию; перед применением будет показано влияние на подключения"
-	'engines.available_pin': 'Поддерживаемая версия: {version}'
-	"engines.current_pin": "Эта версия уже установлена"
-	"engines.installed": "Установлена"
-	"engines.release_policy": "Проверка сверяет официальные релизы. Установка доступна для версий, включённых в текущий релиз Outpost."
 	"methods.native_profile": "Отдельный конфигурационный файл; правила маршрутизации Outpost в него не входят."
 	"methods.compatible_client": "Совместимый клиент этого формата"
 	"methods.special_profile": "Клиент и подписка · специальный профиль"
@@ -217,8 +214,6 @@ const ru = {
 	'engines.updates_available': 'Доступны обновления'
 	'engines.current_versions': 'Используются актуальные версии'
 	"engines.checked": "Проверено"
-	"engines.check": "Проверить новые версии"
-	"engines.checking": "Проверяем…"
 	'engines.recent': 'Последние конфигурации'
 	'engines.baseline': 'базовая конфигурация'
 	'engines.published': 'опубликована'

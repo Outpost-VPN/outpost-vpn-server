@@ -20,14 +20,13 @@ Outpost traffic collector. A special profile is a configuration format, not a pa
 plan; native exports also identify their lack of Outpost routing rules. Cronet is
 required for Naive, not for an AnyTLS-only sing-box profile.
 
-**Check for new versions** queries the official projects' GitHub releases (source
-tags for bundled AmneziaWG), stores numeric check timestamps and reports partial
-failures per engine. `EngineInventory` owns both discovery state and installed
-versions. Discovery never changes installable pins or checksums: installation/update
-still uses versions included in the signed Outpost release and the existing
-operation preview/confirmation. A newer upstream version is shown with an explicit
-Outpost-update requirement. Local official logo sources are recorded in
-`assets/engines/SOURCES.md`.
+Each engine has its own version-check icon and an install/update icon next to its
+version. Engine updates are independent of panel releases: official release assets
+use published SHA-256 digests, and AWG uses standalone signed runtime bundles.
+The root installer re-verifies the known source and downloaded file, validates the
+configuration and rolls back on failure. See [independent engine updates](INDEPENDENT-ENGINES.md)
+for trust, packaging and recovery contracts. Local official logo sources are recorded
+in `assets/engines/SOURCES.md`.
 
 - `src/shared/connection-methods.ts` owns the input schema, verified server
   capabilities, settings defaults and client-profile capabilities.
@@ -118,7 +117,8 @@ select the first compatible method and do not carry Outpost routing policy.
 ## API and MCP
 
 - `GET /api/v1/engines`: versions, runtime metadata and server capabilities.
-- `POST /api/v1/engines/check`: check official versions without installation.
+- `POST /api/v1/engines/:engine/check`: check one engine without installation.
+- `POST /api/v1/engines/check`: compatible batch check endpoint.
 - `GET /api/v1/methods`: configured methods, capabilities and proposed settings.
 - `POST /api/v1/methods`: create using the shared input schema.
 - `PATCH /api/v1/methods/:id`: replace settings; engine/protocol identity stays fixed.

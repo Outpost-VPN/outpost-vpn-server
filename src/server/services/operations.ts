@@ -237,9 +237,10 @@ export class OperationService {
       if (!/^[0-9a-f]{64}$/.test(checksum)) throw new ServiceError(400, "Некорректная контрольная сумма");
       const pinned = this.db.engines.version(engine);
       if (!pinned || pinned.desired_version !== version || pinned.checksum !== checksum) {
-        throw new ServiceError(409, "Версия не совпадает с закреплённым обновлением");
+        throw new ServiceError(409, "Версия не совпадает с доступным обновлением");
       }
       if (pinned.installed_version === version) throw new ServiceError(409, "Эта версия уже установлена");
+      if (pinned.installed_version && compareVersions(version, pinned.installed_version) < 0) throw new ServiceError(409, "Можно установить только более новую версию движка");
       context.engineInstalled = Boolean(pinned.installed_version);
     }
     if (action === "update.apply") {
@@ -399,7 +400,7 @@ export async function callAgent(request: { action: string; payload: Record<strin
     let response = "";
     const timeout = request.action === "setup.finalize" || request.action === "update.apply" || request.action === "backup.restore"
       ? 180_000
-      : request.action === "engine.update" ? 120_000 : 30_000;
+      : request.action === "engine.update" ? 240_000 : 30_000;
     socket.setTimeout(timeout);
     // Bun closes the readable side after net.Socket.end(), so a delayed agent
     // reply is lost. The newline terminates the request without half-closing it.

@@ -13,6 +13,9 @@ tag outpost-icon < i
 
 	<self.ph .{"ph-{name}"}>
 
+	css self
+		d:inline-grid ja:center lh:1 fl:0 0 auto font-style:normal
+
 tag outpost-device-glyph
 	kind = 'phone'
 
@@ -44,12 +47,13 @@ tag outpost-brand-mark
 tag outpost-engine-mark
 	kind = ''
 
-	<self aria-hidden="true">
+	<self .hysteria=(kind == 'hysteria') aria-hidden="true">
 		<img src=engineIcons[kind] alt="">
 
 	css self
 		s:34px d:inline-grid ja:center
 		img s:100% object-fit:contain d:block
+		&.hysteria img color-scheme:dark
 
 tag outpost-logo
 	version = null

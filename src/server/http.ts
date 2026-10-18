@@ -332,6 +332,10 @@ export class HttpApplication {
     });
     this.get("/api/v1/engines", false, () => json({versions: this.db.engines.versions(), releases: this.db.engines.releaseChecks(), definitions: engineMetadata, capabilities: this.methods.state().capabilities}));
     this.post("/api/v1/engines/check", false, async (ctx) => json(await this.db.engines.checkReleases(actor(ctx))));
+    this.post("/api/v1/engines/:engine/check", false, async (ctx) => {
+      if (!isEngine(ctx.params.engine)) throw new ServiceError(404, "Неизвестный движок");
+      return json(await this.db.engines.checkReleases(actor(ctx), undefined, ctx.params.engine));
+    });
     this.get("/api/v1/methods", false, () => json(this.methods.state()));
     this.post("/api/v1/methods", false, async (ctx) => {
       const body = await ctx.json();

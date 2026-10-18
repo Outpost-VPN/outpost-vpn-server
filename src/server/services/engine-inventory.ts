@@ -3,61 +3,40 @@ import { existsSync, realpathSync } from "node:fs";
 import { engineIds, engines, engineTracksTraffic, serviceNames, type EngineId } from "../../shared/engines";
 import type { OutpostDatabase } from "../db/database";
 import { config } from "../config";
-import {compareVersions, parseVersion} from "../releases";
+import {compareVersions} from "../releases";
 
 export type EngineVersion = { engine: EngineId; installed_version: string | null; desired_version: string; checksum: string };
-type ReleaseCheck = {checkedAt: number; latest: string | null; url: string | null; error: "unavailable" | null};
+import {EngineReleases, type EngineRelease, type ReleaseFetch} from "../adapters/engine-releases";
 
 export class EngineInventory {
-  private checking: Promise<ReturnType<EngineInventory["releaseChecks"]>> | null = null;
+  private checking = new Map<EngineId, Promise<EngineRelease>>();
   constructor(private db: OutpostDatabase) {}
 
   releaseChecks() {
-    const stored = this.db.setting<Partial<Record<EngineId, ReleaseCheck>>>("engine_release_checks", {});
+    const stored = this.db.setting<Partial<Record<EngineId, EngineRelease>>>("engine_release_checks", {});
     return Object.fromEntries(this.versions().map((version) => {
       const check = stored[version.engine];
       return [version.engine, check ? {...check,
-        newerThanPin: Boolean(check.latest && compareVersions(check.latest, version.desired_version) > 0),
+        newerThanPin: Boolean(check.latest && compareVersions(check.latest, engines[version.engine].version) > 0),
         newerThanInstalled: Boolean(check.latest && version.installed_version && compareVersions(check.latest, version.installed_version) > 0),
       } : null];
     }));
   }
 
-  async checkReleases(actor = "owner", fetcher: (url: string, options?: RequestInit) => Promise<Response> = globalThis.fetch) {
-    if (this.checking) return this.checking;
-    this.checking = (async () => {
-      const checks = await Promise.all(engineIds.map(async (engine) => {
-        const definition = engines[engine];
-        const bundled = definition.archive === "bundled";
-        const checkedAt = Date.now();
-        try {
-          const response = await fetcher(`https://api.github.com/repos/${definition.repository}/${bundled ? "tags" : "releases"}?per_page=50`, {
-            headers: {accept: "application/vnd.github+json", "user-agent": `Outpost/${config.version}`},
-            signal: AbortSignal.timeout(10_000),
-          });
-          if (!response.ok) throw new Error("Release check failed");
-          const releases = await response.json() as Array<{tag_name: string; name: string; draft: boolean; prerelease: boolean}>;
-          const candidates = releases.map((release) => {
-            const tag = bundled ? release.name : release.tag_name;
-            const version = tag.replace(engine === "hysteria" ? /^app\/v/ : /^v/, "");
-            return {tag, version, draft: release.draft, prerelease: bundled ? Boolean(parseVersion(version)?.prerelease.length) : release.prerelease};
-          }).filter((release) => !release.draft && (!release.prerelease || ("prerelease" in definition && definition.prerelease))
-              && parseVersion(release.version) && (engine !== "hysteria" || release.tag.startsWith("app/v")))
-            .sort((a, b) => compareVersions(b.version, a.version));
-          const latest = candidates[0];
-          if (!latest) throw new Error("No matching release");
-          return [engine, {checkedAt, latest: latest.version, url: `https://github.com/${definition.repository}/${bundled ? "tree" : "releases/tag"}/${encodeURIComponent(latest.tag)}`, error: null}] as const;
-        } catch {
-          return [engine, {checkedAt, latest: null, url: null, error: "unavailable" as const}] as const;
-        }
-      }));
-      // Discovery is informational. Only the signed Outpost release owns
-      // installable pins/checksums and the agent's update allowlist.
-      this.db.setSetting("engine_release_checks", Object.fromEntries(checks));
-      this.db.audit({actor, action: "engines.check", resource: "engine_versions"});
-      return this.releaseChecks();
-    })().finally(() => { this.checking = null; });
-    return this.checking;
+  async checkReleases(actor = "owner", fetcher: ReleaseFetch = globalThis.fetch, selected?: EngineId) {
+    const catalog = new EngineReleases(fetcher);
+    const checks = await Promise.all((selected ? [selected] : engineIds).map(async (engine) => {
+      let checking = this.checking.get(engine);
+      if (!checking) {
+        checking = catalog.latest(engine).finally(() => this.checking.delete(engine));
+        this.checking.set(engine, checking);
+      }
+      return [engine, await checking] as const;
+    }));
+    const stored = this.db.setting<Partial<Record<EngineId, EngineRelease>>>("engine_release_checks", {});
+    this.db.setSetting("engine_release_checks", {...stored, ...Object.fromEntries(checks)});
+    this.db.audit({actor, action:"engines.check", resource:"engine_versions", resourceId:selected});
+    return this.releaseChecks();
   }
 
   reconcilePins() {
@@ -89,7 +68,13 @@ export class EngineInventory {
   }
 
   versions() {
-    return this.db.raw.query<EngineVersion, []>("SELECT engine, installed_version, desired_version, checksum FROM engine_versions ORDER BY engine").all();
+    const candidates = this.db.setting<Partial<Record<EngineId, EngineRelease>>>("engine_release_checks", {});
+    return this.db.raw.query<EngineVersion, []>("SELECT engine, installed_version, desired_version, checksum FROM engine_versions ORDER BY engine").all().map((version) => {
+      const artifact = candidates[version.engine]?.artifact;
+      const candidate = artifact && compareVersions(artifact.version, version.desired_version) > 0
+        ? {...version, desired_version:artifact.version, checksum:artifact.checksum} : version;
+      return {...candidate, updateAvailable:!candidate.installed_version || compareVersions(candidate.desired_version, candidate.installed_version) > 0};
+    });
   }
 
   version(engine: string) { return this.versions().find((version) => version.engine === engine); }

@@ -293,9 +293,9 @@ tag outpost-access
 		.access-row small mt:3px c:var(--outpost-muted) fs:11px
 		.used c:var(--outpost-muted) fs:11px ta:right
 		.current justify-self:end px:8px py:3px rd:999px bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:10px
-		.icon-button s:32px d:grid ja:center p:0 bd:1px solid transparent rd:8px bgc:transparent c:var(--outpost-muted)
+		.icon-button s:32px bc:transparent rd:8px bgc:transparent
+			&:not(:disabled)@hover bgc:var(--outpost-soft) c:var(--outpost-brand)
 		.icon-button .ph fs:16px
-		.icon-button bgc@hover:var(--outpost-soft) c@hover:var(--outpost-brand)
 		.notice mt:12px c:var(--outpost-muted) fs:12px ta:center
 		.token-row w:100% d:grid gtc:42px minmax(0, 1fr) 180px 32px ai:center g:12px box-sizing:border-box
 		.token-rows d:grid g:6px mt:10px

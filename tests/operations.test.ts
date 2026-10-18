@@ -37,18 +37,19 @@ describe("confirmed operations", () => {
     expect(events.map((event) => event.type)).toContain("service.stopped");
   });
 
-  test("only installs the pinned engine update with its checksum", () => {
+  test("only installs the available engine update with its checksum", () => {
     const operations = new OperationService(fixture.db);
     const checksum = "a".repeat(64);
+    fixture.db.engines.recordInstallation("xray", "26.3.1");
     fixture.db.raw.query("UPDATE engine_versions SET desired_version = ?, checksum = ? WHERE engine = 'xray'")
       .run("26.4.1", checksum);
 
     expect(operations.preview("engine.update", { engine: "xray", version: "26.4.1", checksum }).preview)
       .toMatchObject({ title: "Обновить Xray до 26.4.1" });
     expect(() => operations.preview("engine.update", { engine: "xray", version: "26.4.2", checksum }))
-      .toThrow("закреплённым обновлением");
+      .toThrow("доступным обновлением");
     expect(() => operations.preview("engine.update", { engine: "xray", version: "26.4.1", checksum: "b".repeat(64) }))
-      .toThrow("закреплённым обновлением");
+      .toThrow("доступным обновлением");
   });
 
   test("requires a matching detached signature for application updates", () => {

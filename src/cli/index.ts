@@ -11,11 +11,20 @@ import { EngineConfigService } from "../server/adapters/engines";
 import { EngineRuntimeService } from "../server/services/engine-runtime";
 import { ConnectionService } from "../server/services/connections";
 import { OutpostApi } from "../shared/api";
+import {EngineReleases} from "../server/adapters/engine-releases";
 
 const [command = "help", ...args] = Bun.argv.slice(2);
 
 try {
   switch (command) {
+    case "engine-release-info": {
+      const [engine, version, checksum] = args;
+      if (!isEngine(engine) || !version) throw new Error("Unknown engine/version");
+      const artifact = await new EngineReleases().resolve(engine, version);
+      if (artifact.checksum !== checksum) throw new Error("Official release checksum changed; check versions again");
+      console.log([artifact.checksum,artifact.url,artifact.archive,artifact.signatureUrl ?? "-"].join("\n"));
+      break;
+    }
     case "engine-public-ports":
     case "engine-health-ports": {
       const id = args[0];

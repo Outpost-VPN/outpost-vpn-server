@@ -88,6 +88,7 @@ existing `operation_preview` / `operation_confirm` contract. Devices must refres
 and apply their compatible subscription afterward. See
 [connection methods](CONNECTION-METHODS.md) for contracts and limitations.
 
-`engines_check` checks official project releases (source tags for bundled AWG),
-requiring `engines:write`. Results include timestamps, release links and individual
-errors. It never installs binaries or changes signed-release pins/checksums.
+`engines_check` accepts an optional `engine` selector and requires `engines:write`.
+It discovers independent update candidates, timestamps, release links and individual
+errors; it does not install binaries. Installation remains an exact confirmed
+`engine.update` operation. See [independent engine updates](INDEPENDENT-ENGINES.md).

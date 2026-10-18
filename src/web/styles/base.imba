@@ -85,6 +85,14 @@ global css html
 		color: inherit
 		text-decoration: none
 
+	.icon-button
+		s:36px d:inline-grid ja:center p:0 bd:1px solid var(--outpost-line) rd:9px bgc:var(--outpost-white) c:var(--outpost-muted) fs:18px lh:1 cursor:pointer
+		outpost-icon s:20px d:inline-grid ja:center lh:1
+		&:not(:disabled)@hover bgc:var(--outpost-soft) c:var(--outpost-brand)
+		@disabled cursor:default bgc:var(--outpost-white) tween:none
+		&.small s:28px rd:7px fs:15px
+		&.small outpost-icon s:18px
+
 	.outpost-button
 		height: 48px
 		display: inline-flex

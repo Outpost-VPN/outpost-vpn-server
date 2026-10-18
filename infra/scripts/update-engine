@@ -11,10 +11,13 @@ mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "$engine")
 test "${#info[@]}" = 9 || { echo "Unknown engine" >&2; exit 1; }
 service=${info[0]}
 config_file=${info[1]}
-archive_format=${info[2]}
 binary=${info[3]}
-test "$version" = "${info[4]}" && test "$checksum" = "${info[5]}" || { echo "Engine does not match the release pin" >&2; exit 1; }
-url=${info[6]}
+mapfile -t release < <(/opt/outpost/current/bin/outpostctl engine-release-info "$engine" "$version" "$checksum")
+test "${#release[@]}" = 4 || { echo "Official engine release could not be verified" >&2; exit 1; }
+test "$checksum" = "${release[0]}" || exit 1
+url=${release[1]}
+archive_format=${release[2]}
+signature_url=${release[3]}
 root="/opt/outpost/engines/$engine"
 target="$root/$version"
 current="$root/current"
@@ -28,8 +31,12 @@ trap 'rm -rf "$update_tmp"' EXIT
 # switched into service. A failed first installation has no previous symlink.
 test ! -e "$target" || { echo "$engine $version is already installed" >&2; exit 1; }
 if test "$archive_format" != bundled; then
-  curl -fL --retry 3 -o "$update_tmp/archive" "$url"
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL --max-time 60 --retry 1 --retry-max-time 90 -o "$update_tmp/archive" "$url"
   printf '%s  %s\n' "$checksum" "$update_tmp/archive" | sha256sum -c -
+  if test "$signature_url" != -; then
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL --max-time 20 --retry 2 -o "$update_tmp/archive.minisig" "$signature_url"
+    minisign -Vm "$update_tmp/archive" -x "$update_tmp/archive.minisig" -p /opt/outpost/current/infra/release/minisign.pub
+  fi
 fi
 mkdir "$update_tmp/stage"
 case "$archive_format" in
@@ -42,12 +49,27 @@ case "$archive_format" in
     ;;
   binary) install -m 0755 "$update_tmp/archive" "$update_tmp/stage/$binary" ;;
   gzip) gzip -dc "$update_tmp/archive" >"$update_tmp/stage/$binary" ;;
-  zip) unzip -tq "$update_tmp/archive" >/dev/null; unzip -q "$update_tmp/archive" -d "$update_tmp/stage" ;;
-  tar.gz) tar -xzf "$update_tmp/archive" --strip-components=1 -C "$update_tmp/stage" ;;
+  zip)
+    unzip -tq "$update_tmp/archive" >/dev/null
+    while IFS= read -r name; do
+      case "$name" in xray|geoip.dat|geosite.dat|LICENSE) unzip -p "$update_tmp/archive" "$name" >"$update_tmp/stage/$name" ;; esac
+    done < <(unzip -Z1 "$update_tmp/archive")
+    ;;
+  tar.gz)
+    if test "$engine" = amneziawg; then
+      for name in amneziawg-go awg SHA256SUMS SOURCE_SHA256 sources.json amneziawg-go.LICENSE amneziawg-tools.LICENSE; do
+        tar -xOzf "$update_tmp/archive" "./$name" >"$update_tmp/stage/$name"
+      done
+      (cd "$update_tmp/stage" && sha256sum -c SHA256SUMS)
+    else
+      tar -xOzf "$update_tmp/archive" "sing-box-$version-linux-amd64/sing-box" >"$update_tmp/stage/$binary"
+    fi
+    ;;
   *) echo "Unsupported engine archive" >&2; exit 1 ;;
 esac
 test -f "$update_tmp/stage/$binary"
 chmod 0755 "$update_tmp/stage/$binary"
+if test "$engine" = amneziawg; then chmod 0755 "$update_tmp/stage/awg"; fi
 install -d -m 0755 "$root"
 mv "$update_tmp/stage" "$target"
 rollback() {

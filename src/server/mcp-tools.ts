@@ -1,4 +1,5 @@
 import {methodInputSchema} from "../shared/connection-methods";
+import {engineIds} from "../shared/engines";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { version } from "../version";
@@ -125,9 +126,10 @@ export function createMcpServer(api: OutpostApi) {
   }, async () => result(await api.get("/api/v1/engines")));
   server.registerTool("engines_check", {
     title: "Проверить версии движков",
-    description: "Сверяет официальные GitHub releases движков. Требует engines:write; ничего не устанавливает и не меняет закреплённые версии. Более новый upstream может требовать обновления Outpost.",
+    description: "Проверяет официальные версии и проверяемые файлы независимых обновлений. Передайте engine для одного движка. Требует engines:write; ничего не устанавливает. AWG использует отдельную подписанную сборку движка.",
+    inputSchema: {engine: z.enum(engineIds as [string, ...string[]]).optional()},
     annotations: {readOnlyHint: true},
-  }, async () => result(await api.post("/api/v1/engines/check")));
+  }, async ({engine}) => result(await api.post(engine ? `/api/v1/engines/${engine}/check` : "/api/v1/engines/check")));
 
   server.registerTool("methods_get", {
     title: "Способы подключения", description: "Читает настроенные способы, их приоритет, серверные возможности и предлагаемые настройки. Требует engines:read.",

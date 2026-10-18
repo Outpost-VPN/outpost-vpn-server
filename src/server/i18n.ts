@@ -2,6 +2,8 @@ import { accept, locale, resolve, type Locale } from "../shared/i18n";
 
 const messages: Record<Locale, Record<string, string>> = {
   en: {
+    "Версия не совпадает с доступным обновлением": "Version does not match the available engine update",
+    "Можно установить только более новую версию движка": "Only a newer engine version can be installed",
     "Файлы движка будут проверены по SHA-256": "Engine files will be verified with SHA-256",
     "Работающий движок перезапустится; остановленный останется остановленным": "A running engine will restart; a stopped engine will remain stopped",
     "Выбранный движок будет установлен и запущен": "The selected engine will be installed and started",
@@ -78,6 +80,8 @@ const messages: Record<Locale, Record<string, string>> = {
     "Client profile does not match the subscription format": "Клиентский профиль не соответствует формату подписки",
   },
   "zh-CN": {
+    "Версия не совпадает с доступным обновлением": "版本与可用引擎更新不匹配",
+    "Можно установить только более новую версию движка": "只能安装更新的引擎版本",
     "This name is reserved by client routing policies": "此名称已为客户端路由策略保留",
     "Invalid connection method": "请检查连接方式的设置",
     "Connection method not found": "未找到连接方式",
@@ -152,6 +156,8 @@ const messages: Record<Locale, Record<string, string>> = {
     "Укажите код GeoSite/GeoIP без префикса, например google или ru": "请输入不带前缀的 GeoSite/GeoIP 代码，例如 google 或 ru。",
   },
   fa: {
+    "Версия не совпадает с доступным обновлением": "نسخه با به‌روزرسانی موجود موتور مطابقت ندارد",
+    "Можно установить только более новую версию движка": "فقط نسخه جدیدتر موتور قابل نصب است",
     "This name is reserved by client routing policies": "این نام برای سیاست‌های مسیریابی کلاینت رزرو شده است",
     "Invalid connection method": "تنظیمات روش اتصال را بررسی کنید",
     "Connection method not found": "روش اتصال پیدا نشد",
@@ -228,6 +234,8 @@ const messages: Record<Locale, Record<string, string>> = {
 };
 
 const codes: Record<string, string> = {
+  "Версия не совпадает с доступным обновлением": "engine.candidate_changed",
+  "Можно установить только более новую версию движка": "engine.downgrade",
   "This name is reserved by client routing policies": "method.reserved_name",
   "Invalid connection method": "method.invalid",
   "Connection method not found": "method.not_found",
