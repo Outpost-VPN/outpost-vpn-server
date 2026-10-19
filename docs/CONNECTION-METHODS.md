@@ -112,10 +112,14 @@ modern profiles declare tested minimum core/build requirements, including Cronet
 for Naive. User-Agent detection chooses an existing format, not an unverified core
 version. Unknown client capabilities do not opt into advanced protocols.
 
-VLESS Base64 export has been removed. The universal URL selects full Xray JSON for
-Xray/v2rayN/v2rayNG and routing-aware links for INCY/Happ. Unknown clients receive
-the application catalog to choose a supported profile, rather than a link-only
-fallback that silently drops routing rules.
+Existing universal subscriptions retain beta.4's wire formats: Mihomo YAML,
+sing-box JSON, INCY links and VLESS Base64 for Xray/v2ray/Happ/FoXray/Streisand
+or unknown non-browser clients. Browser requests still open the application catalog.
+This compatibility response uses the same configured methods and credentials;
+it is not offered as a new manual profile. Explicit application URLs continue
+to provide full Xray JSON or routing-aware INCY/Happ links. New protocol support
+requires selecting a compatible modern/native profile rather than changing an
+existing client's response format.
 
 The renderer intersects enabled methods, installed server engines and client
 profile capabilities, preserving method priority. A client profile from a different

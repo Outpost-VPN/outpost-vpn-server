@@ -4,6 +4,7 @@ import YAML from "yaml";
 import { networkDefaults } from "../src/shared/settings";
 import {
   linksRenderer,
+  legacyXrayRenderer,
   mihomoRenderer,
   renderLinkRoutes,
   singBoxRenderer,
@@ -72,11 +73,12 @@ describe("technology subscription renderers", () => {
     expect(JSON.parse(xrayJsonRenderer.render(customized).body).routing.rules)
       .not.toContainEqual({ type: "field", network: "udp", port: 443, outboundTag: "block" });
   });
-  test("four formats match their golden SHA-256 fingerprints", () => {
+  test("five formats retain beta.4's golden SHA-256 fingerprints", () => {
     const cases = [
       [linksRenderer, "ee90de33a4c5b6b1f8b62830c05dc51f33e19c045d417230974eee89648ed336"],
       [mihomoRenderer, "b6b492d3dea2cda44e2ee96acea7325f707264efba1d3f948c99ab2141d5eb58"],
       [singBoxRenderer, "0848019229157830b0f4f02caf6c8bf04c69e3dca06da7f120b3119c711247ea"],
+      [legacyXrayRenderer, "4acd88ef98861fed276fc4716ab1f1cbd3cba56134e6a4acf4c4a59619a69b16"],
       [xrayJsonRenderer, "9310bd75855d5beff6bc47b33a9b2ff8424b539beae23b88991a6dbb41e7d2b9"],
     ] as const;
     for (const [renderer, expected] of cases) {

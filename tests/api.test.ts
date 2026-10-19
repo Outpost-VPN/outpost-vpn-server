@@ -484,7 +484,7 @@ describe("HTTP API", () => {
     expect(profile.DirectSites).toContain("full:custom.example");
   });
 
-  test("universal subscriptions select routing profiles and let unknown clients choose an application", async () => {
+  test("universal subscriptions preserve legacy client formats and browser catalog access", async () => {
     const connection = app.connections.create({ name: "Федор" });
     const ready = await app.connectionSync.activate(connection.id);
     const url = ready.subscription!.url.replace("localhost:8181", "localhost");
@@ -509,20 +509,20 @@ describe("HTTP API", () => {
     });
     expect(app.connections.get(connection.id).last_fetched_at).not.toBeNull();
 
-    for (const agent of ["Xray/26.3.1", "v2rayN/7.0", "v2rayNG/1.10.0"]) {
+    for (const agent of ["Xray/26.3.1", "v2rayN/7.0", "v2rayNG/1.10.0", "Happ/1.0", "FoXray/1.0", "Streisand/1.0", "", "UnknownClient/1.0"]) {
       const response = await app.fetch(new Request(url, { headers: { "user-agent": agent } }));
-      expect(response.headers.get("content-type")).toContain("application/json");
-      expect((await response.json()).routing.rules.length).toBeGreaterThan(0);
+      expect(response.headers.get("content-type")).toContain("text/plain");
+      const links = Buffer.from(await response.text(), "base64").toString("utf8").trim().split("\n");
+      expect(links).toHaveLength(2);
+      expect(links.every((link) => link.startsWith("vless://"))).toBeTrue();
+      expect(links[0]).toContain("type=xhttp");
+      expect(links[1]).toContain("type=grpc");
     }
-    for (const agent of ["INCY/1.0", "Happ/1.0"]) {
-      const response = await app.fetch(new Request(url, { headers: { "user-agent": agent } }));
-      const body = await response.text();
-      if (agent.startsWith("INCY")) expect(response.headers.get("autorouting")).toBe(`incy://autorouting/onadd/${ready.subscription!.url}/routes`);
-      else expect(body).toStartWith("happ://routing/onadd/");
-      expect(body).toContain("vless://");
-    }
-    for (const agent of ["", "UnknownClient/1.0", "FoXray/1.0", "Streisand/1.0"]) {
-      const response = await app.fetch(new Request(url, { headers: { "user-agent": agent } }));
+    const incy = await app.fetch(new Request(url, { headers: { "user-agent": "INCY/1.0" } }));
+    expect(incy.headers.get("autorouting")).toBe(`incy://autorouting/onadd/${ready.subscription!.url}/routes`);
+    expect(await incy.text()).toContain("vless://");
+    for (const agent of ["", "UnknownClient/1.0", "Mozilla/5.0"]) {
+      const response = await app.fetch(new Request(url, { headers: { "user-agent": agent, accept: "text/html" } }));
       expect(response.headers.get("content-type")).toContain("text/html");
       expect(await response.text()).toContain("data-platform-panel");
     }

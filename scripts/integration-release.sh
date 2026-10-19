@@ -101,6 +101,7 @@ fixture() {
   "$bun_binary" "$source_root/scripts/release-smoke-fixture.ts" "$1" "$source_root"
 }
 ready
+"$bun_binary" "$source_root/scripts/release-smoke-fixture.ts" baseline "$lab/legacy-source"
 before_hysteria=$(systemctl show -p MainPID --value hysteria-server)
 before_xray=$(systemctl show -p MainPID --value xray)
 test "$before_hysteria" -gt 0

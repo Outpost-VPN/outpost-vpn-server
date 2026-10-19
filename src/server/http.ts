@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { config } from "./config";
 import type { OutpostDatabase } from "./db/database";
 import { AuthService } from "./auth/webauthn";
-import { renderLinkRoutes, renderers } from "./adapters/subscriptions";
+import { renderLinkRoutes, renderers, type SubscriptionWireFormat } from "./adapters/subscriptions";
 import {
   advanced,
   advancedDefinition,
@@ -27,7 +27,7 @@ import { SystemService } from "./services/system";
 import { EngineRuntimeService } from "./services/engine-runtime";
 import { EngineConfigService } from "./adapters/engines";
 import { JournalService, type JournalScope } from "./services/journal";
-import type { JournalCategory, SubscriptionFormat } from "./models";
+import type { JournalCategory } from "./models";
 import type {ProtocolId} from "../shared/protocols";
 import { MonitoringService, prepareSetupMonitoring } from "./services/monitoring";
 import { ConnectionSyncService } from "./services/connection-sync";
@@ -461,7 +461,7 @@ export class HttpApplication {
     return this.profile(ctx, {format: item.format, clientProfile: item.clientProfile}, head);
   }
 
-  private async profile(ctx: RequestContext, client: {format: SubscriptionFormat; appId?: string; clientProfile?: ClientProfile; protocols?: readonly ProtocolId[]}, head: boolean) {
+  private async profile(ctx: RequestContext, client: {format: SubscriptionWireFormat; appId?: string; clientProfile?: ClientProfile; protocols?: readonly ProtocolId[]}, head: boolean) {
     const token = ctx.params.token!;
     const connection = this.connections.bySubscriptionToken(token);
     const credentials = this.connections.credentials(connection.id);
@@ -473,7 +473,7 @@ export class HttpApplication {
       routes,
       subscriptionToken: token,
       methods: this.methods.list(),
-      clientProfile: client.clientProfile ?? client.format,
+      clientProfile: client.clientProfile,
       protocols: client.protocols,
       enabledEngines,
       clientPlatform: detectPlatform(ctx.request.headers.get("user-agent") ?? ""),
@@ -709,16 +709,14 @@ function json(value: unknown, status = 200, headers?: HeadersInit) {
 
 function empty() { return new Response(null, { status: 204 }); }
 
-function universalSubscription(request: Request): {format: SubscriptionFormat; appId?: string} | null {
+function universalSubscription(request: Request): {format: SubscriptionWireFormat} | null {
   const agent = (request.headers.get("user-agent") ?? "").toLowerCase();
   if (/mihomo|clash|everywhere|flclash|stash/.test(agent)) return {format: "mihomo"};
   if (/sing-box|singbox|sfa|sfi|sfm/.test(agent)) return {format: "sing-box"};
-  if (/incy|happ/.test(agent)) {
-    const appId = /happ/.test(agent) ? "happ" : "incy";
-    return {format: application(appId)!.format, appId};
-  }
-  if (/(?:^|\W)(?:xray|v2rayn|v2rayng)(?:\W|$)/.test(agent)) return {format: "xray-json"};
-  return null;
+  if (/incy/.test(agent)) return {format: "links"};
+  if (/xray|v2ray|happ|foxray|streisand/.test(agent)) return {format: "xray"};
+  if ((request.headers.get("accept") ?? "").includes("text/html")) return null;
+  return {format: "xray"};
 }
 
 async function contentResponse(

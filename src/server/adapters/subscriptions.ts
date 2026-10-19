@@ -29,8 +29,12 @@ export interface RenderedSubscription {
   headers: Record<string, string>;
 }
 
+// The universal URL keeps beta.4's Base64 wire format for existing clients.
+// New imports use the explicit application/profile catalog instead.
+export type SubscriptionWireFormat = SubscriptionFormat | "xray";
+
 export interface SubscriptionRenderer {
-  readonly id: SubscriptionFormat;
+  readonly id: SubscriptionWireFormat;
   render(context: SubscriptionContext): RenderedSubscription;
 }
 
@@ -210,10 +214,22 @@ export const xrayJsonRenderer: SubscriptionRenderer = {
   },
 };
 
-export const renderers: Record<SubscriptionFormat, SubscriptionRenderer> = {
+export const legacyXrayRenderer: SubscriptionRenderer = {
+  id: "xray",
+  render(context) {
+    const links = subscriptionMethods(context, "xray-json").map((method) => methodLink(method, context));
+    return output(Buffer.from(`${links.join("\n")}\n`, "utf8").toString("base64"), "text/plain; charset=utf-8", {
+      "profile-title": utf8Header(`Outpost · ${context.connection.name}`),
+      "profile-update-interval": "12",
+    });
+  },
+};
+
+export const renderers: Record<SubscriptionWireFormat, SubscriptionRenderer> = {
   mihomo: mihomoRenderer,
   "sing-box": singBoxRenderer,
   "xray-json": xrayJsonRenderer,
+  xray: legacyXrayRenderer,
   naive: naiveRenderer,
   amneziawg: { id: "amneziawg", render(context) {
     const method = subscriptionMethods(context, "amneziawg")[0]!;
