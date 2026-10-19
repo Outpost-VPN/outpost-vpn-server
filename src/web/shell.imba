@@ -58,7 +58,7 @@ tag outpost-engine-mark
 tag outpost-logo
 	version = null
 
-	<self .stacked=!!version>
+	<self.outpost-logo .stacked=!!version>
 		<outpost-brand-mark>
 		<span.copy>
 			<span.name> t('app.name')
@@ -66,12 +66,7 @@ tag outpost-logo
 				<small.version> t('Версия {version}', {version: version})
 
 	css
-		display: flex
-		align-items: center
-		gap: 14px
-		color: #071536
 		.copy display:grid
-		.name font-size:28px; font-weight:750; line-height:1
 		&.stacked gap:12px
 		&.stacked outpost-brand-mark width:48px; height:48px; flex:0 0 48px
 		&.stacked .copy gap:2px

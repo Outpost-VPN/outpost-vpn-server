@@ -127,7 +127,7 @@ actual server methods. Unavailable profiles are omitted. If only advanced/native
 methods exist, the advanced section opens with guidance. Native Naive/AWG exports
 select the first compatible method and do not carry Outpost routing policy.
 
-Catalog v7 derives method names, per-protocol client requirements and route support
+Catalog v8 derives method names, per-protocol client requirements and route support
 through `profileSupport` for applications and manual profiles. `ApplicationProfile`
 owns the app's allowed protocols, profile validation, URLs, QR target and requirements.
 The same selection drives the public card, owner dialog and actual renderer.
@@ -145,6 +145,21 @@ new protocol types. Modern profile parameters are validated against the chosen a
 they cannot enable capabilities assigned to another app. sing-box for Apple is now
 listed on iOS as well as macOS, using the official sing-box MT App Store listing.
 
+Clash Mi is listed on all five platforms, with its official iOS App Store link and
+GitHub releases for desktop/Android. Its `clashmi://install-config?url=…` scheme
+targets Clash Mi directly and is shared by import and QR. It consumes the existing
+Mihomo renderer, including ordered Outpost rules; per-profile rule/group overrides
+and added Apple push rules default to off. Scheduled subscription updates default
+to 24 hours and prefer the server's `profile-update-interval` (Outpost: 12 hours).
+No global override mode is forced: the app retains its platform networking setup.
+AnyTLS/TrustTunnel use the shared modern requirements; AWG remains excluded pending
+confirmation of the bundled core. Sources checked on 2026-10-19:
+[platforms and downloads](https://github.com/KaringX/clashmi),
+[scheme handler](https://github.com/KaringX/clashmi/blob/main/lib/screens/scheme_handler.dart),
+[profile defaults](https://github.com/KaringX/clashmi/blob/main/lib/app/modules/profile_manager.dart),
+[subscription import](https://github.com/KaringX/clashmi/blob/main/lib/screens/add_profile_by_url_screen.dart),
+[override behavior](https://clashmi.app/guide/faq).
+
 ### Client version requirements
 
 Verified from official documentation/source on 2026-10-19. Core version means the
@@ -154,7 +169,7 @@ to check rather than inventing an application version.
 
 | Protocol | Clients/profile | Requirement |
 |---|---|---|
-| AnyTLS | Everywhere, Clash Verge Rev, Clash Party, Clash Meta for Android, FlClash | Mihomo ≥1.19.4 (AnyTLS protocol v2) |
+| AnyTLS | Everywhere, Clash Mi, Clash Verge Rev, Clash Party, Clash Meta for Android, FlClash | Mihomo ≥1.19.4 (AnyTLS protocol v2) |
 | AnyTLS | Official sing-box clients | sing-box ≥1.12.0 |
 | AnyTLS | Stash | iOS ≥3.3.0 / macOS ≥4.1.0 |
 | TrustTunnel | Mihomo-based profiles | Mihomo ≥1.19.21 |
@@ -162,7 +177,7 @@ to check rather than inventing an application version.
 | Naive | Official sing-box clients | sing-box ≥1.13.0 with Cronet |
 | AmneziaWG 3.1 | Clash Verge Rev, Clash Party, Clash Meta for Android, FlClash | Mihomo ≥1.19.31, including the AWG 3.x flag fixes |
 
-Stash profiles exclude AWG, and Everywhere's offered Mihomo profile excludes AWG
+Stash profiles exclude AWG, and Everywhere/Clash Mi offered Mihomo profiles exclude AWG
 pending confirmation of the bundled version. Native NaiveProxy JSON is a separate
 format from sing-box JSON; its requirement no longer incorrectly names sing-box.
 Mihomo/sing-box modern profiles include routes; native exports retain their existing

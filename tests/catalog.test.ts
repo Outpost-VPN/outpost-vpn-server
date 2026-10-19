@@ -23,8 +23,8 @@ const baseUrl = "https://proxy.example/s/token";
 const locales: Locale[] = ["ru", "en", "zh-CN", "fa"];
 
 describe("versioned application catalog", () => {
-  test("catalog v7 is complete and every application has explicit pricing", () => {
-    expect(catalogVersion).toBe(7);
+  test("catalog v8 is complete and every application has explicit pricing", () => {
+    expect(catalogVersion).toBe(8);
     expect(new Set(applications.map((app) => app.id)).size).toBe(applications.length);
     for (const app of applications) {
       expect(app.platforms.length).toBeGreaterThan(0);
@@ -32,7 +32,7 @@ describe("versioned application catalog", () => {
       expect(["free", "freemium", "paid"]).toContain(app.pricing.model);
       expect(["none", "optional", "one-time", "subscription"]).toContain(app.pricing.billing);
       expect(app.pricing.sourceUrl).toStartWith("https://");
-      expect(app.pricing.verifiedAt).toBe("2026-08-21");
+      expect(app.pricing.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(["automatic", "manual"]).toContain(app.updateMode);
       expect(["exact", "limited"]).toContain(app.routeFidelity);
       for (const platform of app.platforms) expect(app.installUrls[platform]).toStartWith("https://");
@@ -80,11 +80,11 @@ describe("versioned application catalog", () => {
   test("AnyTLS-only subscriptions show usable apps and the required app or core versions", () => {
     const available = {methods: defaultMethods(engineIds).filter((method) => method.protocol === "anytls"), installed: engineIds};
     const apps = catalog(baseUrl, "ios", "ru", available);
-    expect(apps.map((app) => app.id)).toEqual(["everywhere", "stash", "sing-box-apple"]);
+    expect(apps.map((app) => app.id)).toEqual(["everywhere", "stash", "clash-mi", "sing-box-apple"]);
+    expect(apps.filter((app) => app.primaryFor.includes("ios")).map((app) => app.id)).toEqual(["everywhere", "stash", "clash-mi"]);
     for (const app of apps) {
       expect(app.transports).toEqual(["AnyTLS"]);
       expect(app.routing.support).toBe("full");
-      expect(app.primaryFor).toContain("ios");
       expect(app.profileUrl).toEndWith("?profile=modern");
       expect(app.qrUrl).toEndWith("?profile=modern");
     }
@@ -108,9 +108,9 @@ describe("versioned application catalog", () => {
 
   test("prioritizes full routes and the most configured protocols before platform preferences", () => {
     const expected = {
-      ios: ["everywhere", "stash", "sing-box-apple"],
+      ios: ["everywhere", "stash", "clash-mi"],
       macos: ["clash-verge", "clash-party", "flclash"],
-      android: ["clash-meta", "flclash", "sing-box-android"],
+      android: ["clash-meta", "flclash", "clash-mi"],
       windows: ["clash-verge", "clash-party", "flclash"],
       linux: ["clash-verge", "clash-party", "flclash"],
     } as const;
@@ -123,9 +123,9 @@ describe("versioned application catalog", () => {
 
   test("full routes outrank limited routes even with fewer compatible protocols", () => {
     const apps = catalog(baseUrl, "ios", "en", {methods: defaultMethods(["hysteria", "xray"]), installed: engineIds});
-    expect(apps.map((app) => app.id)).toEqual(["everywhere", "stash", "sing-box-apple", "incy", "happ"]);
-    expect(apps[2]!.transports).toHaveLength(2);
-    expect(apps[3]!.transports).toHaveLength(3);
+    expect(apps.map((app) => app.id)).toEqual(["everywhere", "stash", "clash-mi", "sing-box-apple", "incy", "happ"]);
+    expect(apps[3]!.transports).toHaveLength(2);
+    expect(apps[4]!.transports).toHaveLength(3);
   });
 
   test("ranking counts distinct active protocols and changes with server availability", () => {
@@ -134,7 +134,7 @@ describe("versioned application catalog", () => {
     const duplicated = [...methods, ...Array.from({length: 5}, (_, index) => ({...grpc, id: `duplicate-${index}`}))];
     const available = {methods: duplicated, installed: engineIds};
     const apps = catalog(baseUrl, "ios", "en", available);
-    expect(apps.map((app) => app.id)).toEqual(["sing-box-apple", "everywhere", "stash", "incy", "happ"]);
+    expect(apps.map((app) => app.id)).toEqual(["sing-box-apple", "everywhere", "stash", "clash-mi", "incy", "happ"]);
     expect(apps[0]!.transports).toHaveLength(3);
     expect(apps[1]!.transports).toHaveLength(2);
     expect(catalog(baseUrl, "ios", "en", {methods, installed: engineIds}).map((app) => app.id)).toEqual(apps.map((app) => app.id));
@@ -142,7 +142,7 @@ describe("versioned application catalog", () => {
       {...available, methods: duplicated.map((method) => ({...method, enabled: method.protocol !== "naive"}))},
       {...available, installed: ["hysteria", "xray"] as const},
     ]) {
-      expect(catalog(baseUrl, "ios", "en", inactive).map((app) => app.id)).toEqual(["everywhere", "stash", "sing-box-apple", "incy", "happ"]);
+      expect(catalog(baseUrl, "ios", "en", inactive).map((app) => app.id)).toEqual(["everywhere", "stash", "clash-mi", "sing-box-apple", "incy", "happ"]);
     }
   });
 
@@ -169,6 +169,26 @@ describe("versioned application catalog", () => {
     expect(apps.find((app) => app.id === "stash")?.openUrl).toStartWith("stash://");
     expect(apps.find((app) => app.id === "clash-verge")?.openUrl).toStartWith("clash://");
     expect(apps.every((app) => app.icon.startsWith("/assets/apps/"))).toBeTrue();
+  });
+
+  test("Clash Mi is available on every platform with its own import scheme and supported modern methods", () => {
+    const available = {methods: defaultMethods(engineIds), installed: engineIds};
+    for (const {id} of platforms) {
+      const app = catalog(baseUrl, id, "en", available).find((item) => item.id === "clash-mi")!;
+      expect(app.routing.support).toBe("full");
+      expect(app.updateMode).toBe("automatic");
+      expect(app.transports).toContain("AnyTLS");
+      expect(app.transports).toContain("TrustTunnel");
+      expect(app.transports).not.toContain("AmneziaWG 3.1");
+      expect(app.requirements).toContain("Mihomo ≥1.19.4");
+      expect(app.requirements).toContain("Mihomo ≥1.19.21");
+      expect(app.installUrl).toBe(id === "ios" ? "https://apps.apple.com/us/app/clash-mi/id6744321968" : "https://github.com/KaringX/clashmi/releases/latest");
+      const imported = new URL(app.openUrl!);
+      expect(imported.protocol).toBe("clashmi:");
+      expect(imported.hostname).toBe("install-config");
+      expect(imported.searchParams.get("url")).toBe(app.profileUrl);
+      expect(app.profileUrl).toEndWith("/apps/clash-mi?profile=modern");
+    }
   });
 
   test("all application and advanced labels exist in four locales", () => {
@@ -201,6 +221,8 @@ describe("versioned application catalog", () => {
     expect(html).toContain('data-platform="macos"');
     expect(html).toContain('data-platform-panel="android"');
     expect(html).toContain('data-app="stash"');
+    expect(html).toContain('data-app="clash-mi"');
+    expect(html).toContain('<link rel="icon" type="image/png" href="/brand-mark.png">');
     expect(html).not.toContain("Бесплатно");
     expect(html).not.toContain("Посмотреть в магазине");
     expect(html).not.toContain("Платно · разовая покупка");

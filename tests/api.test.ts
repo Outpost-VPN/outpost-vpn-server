@@ -70,6 +70,12 @@ describe("HTTP API", () => {
     const applicationProfile = YAML.parse(await application.text());
     expect(applicationProfile.proxies.filter((proxy: {type: string}) => proxy.type === "anytls")).toHaveLength(2);
     expect(applicationProfile.rules).toContain("MATCH,PROXY");
+    const clashMi = created.applications.find((item: {id: string}) => item.id === "clash-mi");
+    expect(clashMi).toMatchObject({routing: {support: "full"}, platforms: ["macos", "ios", "android", "windows", "linux"]});
+    const clashMiProfile = await app.fetch(new Request(clashMi.profileUrl.replace("localhost:8181", "localhost")));
+    expect(clashMiProfile.status).toBe(200);
+    expect(YAML.parse(await clashMiProfile.text())).toEqual(applicationProfile);
+    expect((await app.fetch(new Request("http://localhost" + path + "/qr/clash-mi.svg?profile=modern"))).status).toBe(200);
     const links = await app.fetch(new Request("http://localhost" + path + "/qr/everywhere.svg"));
     const modernQr = await app.fetch(new Request("http://localhost" + path + "/qr/everywhere.svg?profile=modern"));
     expect(modernQr.status).toBe(200);
@@ -223,7 +229,7 @@ describe("HTTP API", () => {
     expect(created).toMatchObject({ state: "ready", connection: { name: "Мама", avatar: "avatar-8", status: "active", generation: 1 } });
     expect(created.subscription.url).toContain("/s/");
     expect(created.subscription.qrUrl).toBe(`${created.subscription.url}/qr/landing.svg`);
-    expect(created.catalogVersion).toBe(7);
+    expect(created.catalogVersion).toBe(8);
     expect(created.applications.find((app: {id: string}) => app.id === "everywhere")).toMatchObject({
       transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], routing: {support: "full"},
     });

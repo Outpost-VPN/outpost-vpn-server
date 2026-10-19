@@ -1,0 +1,20 @@
+.outpost-logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #071536;
+  text-decoration: none;
+}
+
+.outpost-logo > img {
+  display: block;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.outpost-logo .name {
+  font-size: 28px;
+  font-weight: 750;
+  line-height: 1;
+}
