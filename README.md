@@ -3,7 +3,7 @@
 Outpost is a self-hosted proxy management panel for one owner account. It deploys and
 maintains proxy runtimes with optional transports, provides universal Mihomo,
 sing-box, and Xray subscriptions, publishes shared routing rules, and tracks
-Hysteria/Xray traffic by connection without storing browsing history. Every connection has
+traffic across installed engines by connection without storing browsing history. Every connection has
 one credential generation and one link that may be shared by any number of
 people and physical devices.
 
@@ -14,9 +14,10 @@ revoke a passkey; revocation also ends sessions created with that passkey.
 Proxy users should receive individual connections and subscription links instead
 of panel access.
 
-> **Status:** `0.2.0-beta.6` pre-release fixes the initial setup handoff and adds
-> invitations for trusted administrators and direct MCP over HTTPS. The remaining
-> end-to-end field gate is tracked in [STATUS.md](STATUS.md).
+> **Status:** `0.2.0-beta.7` adds optional AnyTLS, TrustTunnel, Naive and
+> AmneziaWG runtimes, configurable connection methods, independent engine updates
+> and client compatibility guidance. Release and field validation is tracked in
+> [protocol expansion](docs/PROTOCOL-EXPANSION.md).
 
 ## Supported protocols
 
@@ -30,8 +31,8 @@ Outpost currently supports:
 - **AmneziaWG 3.1** on `UDP/51820`, through an optional userspace runtime.
 
 The VLESS transports share public `TCP/443` through Nginx. Subscription renderers
-produce Mihomo YAML, sing-box JSON, Xray URI base64, full Xray JSON, and a plain
-link list. New transports use opt-in advanced profiles; native Naive JSON and
+produce Mihomo YAML, sing-box JSON, full Xray JSON, and a plain link list.
+New transports use compatible client profiles; native Naive JSON and
 AmneziaWG `.conf` exports are also available. See [protocol expansion](docs/PROTOCOL-EXPANSION.md)
 for client requirements, ports, validation and remaining release/field work.
 
@@ -106,7 +107,7 @@ beside existing services or selecting alternative public ports is not supported.
 To install this beta instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.6 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.7 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,
