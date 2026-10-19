@@ -325,14 +325,13 @@ export function renderCatalogPage(_connection: Connection, baseUrl: string, plat
 :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#101a3b;background:#fff;font-synthesis:none}*{box-sizing:border-box}body{margin:0;background:#fff;color:#101a3b}.site-header{min-height:64px;border-bottom:1px solid #e2e8f2}.site-header__inner,.page{width:min(1180px,calc(100% - 40px));margin:0 auto}.site-header__inner{min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:18px}.language-switcher{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;direction:ltr}.language-switcher a{padding:6px 8px;border-radius:7px;color:#65718e;font-size:12px;text-decoration:none}.language-switcher a[aria-current=true]{background:#e8f0ff;color:#075bea;font-weight:700}.page{padding:48px 0 72px}.intro{margin-bottom:30px}.intro h1{margin:0;font-size:clamp(34px,4vw,48px);line-height:1.08;letter-spacing:-.045em}.intro p{max-width:760px;margin:12px 0 0;color:#65718e;font-size:17px;line-height:1.55}.platform-tabs{display:grid;grid-template-columns:repeat(5,1fr);overflow:hidden;margin-bottom:28px;border:1px solid #d8e0ed;border-radius:13px;background:#f8faff}.platform-tab{position:relative;min-height:58px;display:flex;align-items:center;justify-content:center;padding:10px 18px;border:0;border-inline-end:1px solid #d8e0ed;background:transparent;color:#101a3b;font:inherit;font-size:15px;font-weight:650;cursor:pointer}.platform-tab:last-child{border-inline-end:0}.platform-tab:hover{background:#eff4fd}.platform-tab:focus-visible{outline:3px solid #9cc1ff;outline-offset:-3px}.platform-tab[aria-selected=true]{z-index:1;color:#fff;background:#0b5bea}.auto-badge{position:absolute;top:4px;inset-inline-start:5px;padding:2px 5px;border-radius:5px;background:#e8f0ff;color:#075bea;font-size:8px;font-weight:750;line-height:1.2}.platform-tab[aria-selected=true] .auto-badge{background:rgba(255,255,255,.18);color:#fff}.apps{border:1px solid #d8e0ed;border-radius:14px;background:#fff}.app{display:grid;grid-template-columns:56px minmax(190px,1fr) minmax(250px,1.15fr) 200px;align-items:center;gap:22px;padding:22px 24px;border-bottom:1px solid #dfe6f0}.app:last-child{border-bottom:0}.app-icon{width:56px;height:56px;display:block;object-fit:cover;border-radius:15px;background:#fff;box-shadow:0 5px 16px rgba(24,39,75,.11)}.app-copy{min-width:0}.app-title{display:flex;flex-wrap:wrap;align-items:center;gap:7px}.app h3{margin:0;font-size:20px;line-height:1.25}.app-description{margin:6px 0 0;color:#66728e;font-size:13px;line-height:1.45}.compatibility{display:grid;gap:12px;min-width:0;font-size:12px;line-height:1.5}
 .fact-label{display:block;margin-bottom:6px;color:#65718e;font-size:11px}
 .technical,.transports{direction:ltr;unicode-bidi:isolate}
-.transports{display:flex;flex-wrap:wrap;gap:5px;margin:0;padding:0;list-style:none}
+.transports{position:relative;display:flex;flex-wrap:wrap;gap:5px;margin:0;padding:0;list-style:none}
 .transports li{padding:3px 7px;border-radius:5px;background:#f0f4fa;color:#263651;font-size:11px;font-weight:600}
-.route-support{display:flex;align-items:center;gap:7px;color:#16824b}
+.route-support{position:relative;display:flex;align-items:center;gap:7px;color:#16824b}
 .route-support>i{flex-shrink:0;font-size:17px}
 .route-support strong{font-size:12px;font-weight:650}
 .route-support--limited{color:#a25c00}.route-support--none{color:#65718e}
-.route-hint{position:relative;flex-shrink:0;line-height:1}.route-hint summary{display:flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;list-style:none;cursor:default}.route-hint summary::-webkit-details-marker{display:none}.route-hint summary:focus-visible{outline:2px solid #9cc1ff;outline-offset:3px}.route-hint i{font-size:17px}.route-tip{position:absolute;inset-inline-end:0;top:calc(100% + 8px);z-index:5;width:min(260px,calc(100vw - 64px));padding:10px 12px;border-radius:8px;background:#101a3b;color:#fff;font-size:11px;font-weight:400;line-height:1.5;text-align:start;box-shadow:0 6px 20px rgba(24,39,75,.16)}
-.requirements{margin:0;color:#65718e;font-size:11px}.versions{display:grid;gap:3px;margin:0;padding:0;list-style:none}.versions b{font-weight:600;color:#263651}
+.hint{display:inline-flex;align-items:center;border-radius:4px;cursor:default}.hint:focus-visible{outline:2px solid #9cc1ff;outline-offset:3px}.route-support .hint{flex-shrink:0;justify-content:center;width:20px;height:20px;font-size:17px;line-height:1}.hint-tip{position:absolute;inset-inline-end:0;top:calc(100% + 8px);z-index:5;width:min(260px,100%);padding:10px 12px;border-radius:8px;background:#101a3b;color:#fff;font-size:11px;font-weight:400;line-height:1.5;text-align:start;box-shadow:0 6px 20px rgba(24,39,75,.16);visibility:hidden;pointer-events:none}.hint:hover .hint-tip,.hint:focus-visible .hint-tip{visibility:visible}
 .update{display:flex;align-items:flex-start;gap:6px;margin:10px 0 0;color:#65718e;font-size:11px;line-height:1.5}
 .update i{font-size:14px;color:#16824b}.update--manual i{color:#a25c00}
 .empty-apps{padding:20px;border:1px solid #d8e0ed;border-radius:12px;color:#65718e;line-height:1.5}
@@ -345,12 +344,16 @@ export function renderCatalogPage(_connection: Connection, baseUrl: string, plat
 
 function compatibility(profile: ReturnType<typeof profileSupport>, copy: typeof catalogCopy[Locale]) {
   const {routing} = profile;
-  const methods = profile.transports.map((name) => `<li>${escape(name)}</li>`).join("");
-  const versions = profile.protocolRequirements.map((item) => `<li><b class="technical">${escape(item.name)}:</b> <span class="technical">${escape(item.requirement)}</span></li>`).join("");
-  const requirements = versions ? `<ul class="requirements versions">${versions}</ul>`
-    : profile.requirements ? `<p class="requirements technical">${escape(profile.requirements)}</p>` : "";
-  const hint = routing.support === "full" ? "" : `<details class="route-hint" name="route-hints"><summary title="${escape(routing.detail)}" aria-label="${escape(routing.detail)}"><i class="ph ph-question" aria-hidden="true"></i></summary><span class="route-tip" role="tooltip">${escape(routing.detail)}</span></details>`;
-  return `<div class="compatibility"><div class="methods"><span class="fact-label">${copy.methods}</span><ul class="transports">${methods}</ul></div>${requirements}<div class="route-support route-support--${routing.support}"><i class="ph ph-path" aria-hidden="true"></i><strong>${escape(routing.label)}</strong>${hint}</div></div>`;
+  const methods = profile.transports.map((name) => {
+    const version = profile.protocolRequirements.find((item) => item.name === name);
+    return `<li>${version ? hint(escape(name), `${name}: ${version.requirement}`) : escape(name)}</li>`;
+  }).join("");
+  const routeHint = routing.support === "full" ? "" : hint('<i class="ph ph-question" aria-hidden="true"></i>', routing.detail);
+  return `<div class="compatibility"><div class="methods"><span class="fact-label">${copy.methods}</span><ul class="transports">${methods}</ul></div><div class="route-support route-support--${routing.support}"><i class="ph ph-path" aria-hidden="true"></i><strong>${escape(routing.label)}</strong>${routeHint}</div></div>`;
+}
+
+function hint(content: string, detail: string) {
+  return `<span class="hint" tabindex="0" aria-label="${escape(detail)}">${content}<span class="hint-tip" role="tooltip">${escape(detail)}</span></span>`;
 }
 
 function card(app: ReturnType<typeof catalog>[number], copy: typeof catalogCopy[Locale]) {
