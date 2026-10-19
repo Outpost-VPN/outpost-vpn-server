@@ -213,7 +213,10 @@ describe("HTTP API", () => {
     expect(created).toMatchObject({ state: "ready", connection: { name: "Мама", avatar: "avatar-8", status: "active", generation: 1 } });
     expect(created.subscription.url).toContain("/s/");
     expect(created.subscription.qrUrl).toBe(`${created.subscription.url}/qr/landing.svg`);
-    expect(created.catalogVersion).toBe(5);
+    expect(created.catalogVersion).toBe(6);
+    expect(created.applications.find((app: {id: string}) => app.id === "everywhere")).toMatchObject({
+      transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], routing: {support: "full"},
+    });
     expect(created.applications.length).toBeGreaterThan(10);
     expect(typeof created.applications[0].id).toBe("string");
     expect(typeof created.applications[0].pricing.model).toBe("string");
@@ -427,7 +430,7 @@ describe("HTTP API", () => {
 
     const incy = await app.fetch(new Request(`${url}/apps/incy`, { headers: { "user-agent": "Mozilla/5.0 (iPhone)" } }));
     expect(incy.headers.get("no-limit-enabled")).toBe("1");
-    expect(incy.headers.get("autorouting")).toBe(`${ready.subscription!.url}/routes`);
+    expect(incy.headers.get("autorouting")).toBe(`incy://autorouting/onadd/${ready.subscription!.url}/routes`);
     expect(await incy.text()).toContain("vless://");
 
     const routes = await app.fetch(new Request(`${url}/routes`));
@@ -445,6 +448,24 @@ describe("HTTP API", () => {
     const missingQr = await app.fetch(new Request(`${url}/qr/not-real.svg`));
     expect(missingApp.status).toBe(404);
     expect(missingQr.status).toBe(404);
+  });
+
+  test("Happ subscription refreshes when routes change while its connection links stay the same", async () => {
+    const connection = app.connections.create({name: "Routes"});
+    const ready = await app.connectionSync.activate(connection.id);
+    const url = ready.subscription!.url.replace("localhost:8181", "localhost") + "/apps/happ";
+    app.routes.publish("Initial routes", "test");
+    const before = await app.fetch(new Request(url));
+    const links = (await before.text()).trimEnd().split("\n").slice(1);
+    app.routes.add({action: "DIRECT", matcher: "DOMAIN", value: "custom.example"}, "test");
+    app.routes.publish("New route", "test");
+    const after = await app.fetch(new Request(url, {headers: {"if-none-match": before.headers.get("etag")!}}));
+    expect(after.status).toBe(200);
+    const [routing, ...updated] = (await after.text()).trimEnd().split("\n");
+    expect(updated).toEqual(links);
+    expect(after.headers.get("etag")).not.toBe(before.headers.get("etag"));
+    const profile = JSON.parse(Buffer.from(routing!.split("/onadd/")[1]!, "base64").toString("utf8"));
+    expect(profile.DirectSites).toContain("full:custom.example");
   });
 
   test("universal subscriptions select routing profiles and let unknown clients choose an application", async () => {
@@ -479,8 +500,10 @@ describe("HTTP API", () => {
     }
     for (const agent of ["INCY/1.0", "Happ/1.0"]) {
       const response = await app.fetch(new Request(url, { headers: { "user-agent": agent } }));
-      expect(response.headers.get("autorouting")).toBe(`${ready.subscription!.url}/routes`);
-      expect(await response.text()).toContain("vless://");
+      const body = await response.text();
+      if (agent.startsWith("INCY")) expect(response.headers.get("autorouting")).toBe(`incy://autorouting/onadd/${ready.subscription!.url}/routes`);
+      else expect(body).toStartWith("happ://routing/onadd/");
+      expect(body).toContain("vless://");
     }
     for (const agent of ["", "UnknownClient/1.0", "FoXray/1.0", "Streisand/1.0"]) {
       const response = await app.fetch(new Request(url, { headers: { "user-agent": agent } }));

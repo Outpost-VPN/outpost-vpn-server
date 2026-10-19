@@ -223,9 +223,6 @@ tag outpost-connect-modal
 	get update
 		current and current.updateMode == 'automatic' ? t('connect.auto') : t('connect.manual')
 
-	get fidelity
-		current and current.routeFidelity == 'exact' ? t('connect.exact') : t('connect.limited')
-
 	def mount
 		const agent = window.navigator.userAgent.toLowerCase!
 		platform = 'ios' if /iphone|ipad|ipod/.test(agent)
@@ -473,12 +470,15 @@ tag outpost-connect-modal
 															<outpost-icon name="arrow-square-out">
 												<p> current.description
 												<div.profile-facts>
+													<span title=t('methods.title')>
+														<outpost-icon name="plugs-connected">
+														<em.technical> current.transports.join(' · ')
+													<span .warning=(current.routing.support != 'full') title=current.routing.detail>
+														<outpost-icon name="path">
+														<em> current.routing.label
 													<span .warning=(current.updateMode == 'manual')>
 														<outpost-icon name="arrows-clockwise">
 														<em> update
-													<span>
-														<outpost-icon name="list-checks">
-														<em> fidelity
 												<details.device-actions>
 													<summary>
 														<span> t('connect.this_device')
@@ -505,6 +505,10 @@ tag outpost-connect-modal
 													<span.expert-format>
 														<strong.technical> item.name
 														<small> item.description
+														<small.technical> item.transports.join(' · ')
+														<small title=item.routing.detail> item.routing.label
+														if item.requirements
+															<small.technical> item.requirements
 													<span.expert-copy>
 														<outpost-icon name=(copied == "advanced-{item.id}" ? 'check' : 'copy')>
 														<em> copied == "advanced-{item.id}" ? t('Скопировано') : t('connect.copy')

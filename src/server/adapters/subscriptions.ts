@@ -17,6 +17,7 @@ export interface SubscriptionContext {
   subscriptionToken: string;
   engineOrder?: readonly EngineId[];
   clientPlatform?: string;
+  linkClient?: "incy" | "happ";
   protocols?: readonly ProtocolId[];
   enabledEngines?: readonly EngineId[];
   network?: NetworkSettings;
@@ -55,13 +56,19 @@ export const linksRenderer: SubscriptionRenderer = {
   id: "links",
   render(context) {
     const methods = subscriptionMethods(context, "links");
+    const links = methods.map((method) => methodLink(method, context));
     const routeUrl = `${config.origin}/s/${context.subscriptionToken}/routes`;
-    return output(`${methods.map((method) => methodLink(method, context)).join("\n")}\n`, "text/plain; charset=utf-8", {
+    const routing: Record<string, string> = {};
+    if (context.linkClient === "happ") {
+      const profile = Buffer.from(renderLinkRoutes(context.routes, context.network).body, "utf8").toString("base64");
+      links.unshift(`happ://routing/onadd/${profile}`);
+    } else routing.autorouting = `incy://autorouting/onadd/${routeUrl}`;
+    return output(`${links.join("\n")}\n`, "text/plain; charset=utf-8", {
       "profile-title": utf8Header(`Outpost · ${context.connection.name}`),
       "profile-update-interval": "12",
       "profile-web-page-url": `${config.origin}/s/${context.subscriptionToken}`,
       "subscription-userinfo": "upload=0;download=0;total=0;expire=0",
-      autorouting: routeUrl,
+      ...routing,
       "fragmentation-enable": "1",
       "fragmentation-packets": "tlshello",
       "fragmentation-length": "10-30",

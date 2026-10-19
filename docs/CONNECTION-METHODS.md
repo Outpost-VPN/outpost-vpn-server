@@ -127,6 +127,23 @@ actual server methods. Unavailable profiles are omitted. If only advanced/native
 methods exist, the advanced section opens with guidance. Native Naive/AWG exports
 select the first compatible method and do not carry Outpost routing policy.
 
+Catalog v6 derives method names, client requirements and route support through one
+`profileSupport` owner for both applications and manual profiles. App cards show
+available protocols and full/limited Outpost routing support explicitly. Manual
+profiles additionally expose native exports without routing and minimum runtimes;
+they do not infer a GUI application's bundled core from its name. The owner dialog
+reads the same localized metadata. An empty platform gets explicit guidance.
+
+Link-routing contracts were checked against the official
+[INCY autorouting documentation](https://github.com/INCY-DEV/incy-docs/blob/main/ru/dev-docs/autorouting.md)
+and [Happ routing documentation](https://www.happ.su/main/dev-docs/routing)
+on 2026-10-19. INCY requires the full `incy://autorouting/onadd/` prefix in its
+header; a bare URL is ignored. Happ receives its documented routing line in the
+subscription body, avoiding large HTTP headers for expanded rule sets. Published
+rule changes therefore also change the response ETag through the existing body
+hash. Both consume the same grouped routing payload; exact rule order is preserved
+by full Mihomo/sing-box/Xray profiles only.
+
 ## API and MCP
 
 - `GET /api/v1/engines`: versions, runtime metadata and server capabilities.

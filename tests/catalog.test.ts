@@ -1,4 +1,5 @@
-import {clientProfiles} from "../src/shared/connection-methods";
+import {clientProfiles, defaultMethods} from "../src/shared/connection-methods";
+import {engineIds} from "../src/shared/engines";
 import { describe, expect, test } from "bun:test";
 import {
   advanced,
@@ -21,8 +22,8 @@ const baseUrl = "https://proxy.example/s/token";
 const locales: Locale[] = ["ru", "en", "zh-CN", "fa"];
 
 describe("versioned application catalog", () => {
-  test("catalog v5 is complete and every application has explicit pricing", () => {
-    expect(catalogVersion).toBe(5);
+  test("catalog v6 is complete and every application has explicit pricing", () => {
+    expect(catalogVersion).toBe(6);
     expect(new Set(applications.map((app) => app.id)).size).toBe(applications.length);
     for (const app of applications) {
       expect(app.platforms.length).toBeGreaterThan(0);
@@ -36,6 +37,43 @@ describe("versioned application catalog", () => {
       for (const platform of app.platforms) expect(app.installUrls[platform]).toStartWith("https://");
     }
     expect(applications.find((app) => app.id === "stash")?.pricing).toMatchObject({ model: "paid", billing: "one-time" });
+  });
+
+  test("app support describes the actual enabled methods across server engines", () => {
+    const defaults = defaultMethods();
+    const grpc = defaults.find((method) => method.protocol === "grpc")!;
+    const available = {installed: ["sing-box"] as const, methods: [
+      {...grpc, id: "grpc-a", engine: "sing-box" as const},
+      {...grpc, id: "grpc-b", engine: "sing-box" as const},
+      ...defaults.map((method) => ({...method, enabled: method.protocol !== "hysteria2"})),
+    ]};
+    const apps = catalog(baseUrl, "android", "ru", available);
+    expect(apps.length).toBeGreaterThan(0);
+    for (const app of apps) expect(app.transports).toEqual(["VLESS gRPC"]);
+    expect(apps.find((app) => app.id === "v2rayng")?.routing.support).toBe("full");
+    expect(apps.find((app) => app.id === "happ")?.routing.support).toBe("limited");
+    const html = renderCatalogPage(connection, baseUrl, "android", "ru", available);
+    expect(html).toContain("VLESS gRPC");
+    expect(html).not.toContain("VLESS XHTTP");
+    expect(html).not.toContain("Hysteria 2");
+  });
+
+  test("manual profiles expose routing exceptions and requirements only for selected methods", () => {
+    const methods = defaultMethods(engineIds);
+    const all = advanced(baseUrl, "ru", {methods, installed: engineIds});
+    expect(all.find((item) => item.id === "mihomo-modern")).toMatchObject({routing: {support: "full"}, requirements: "Mihomo ≥1.19.32"});
+    expect(all.find((item) => item.id === "amneziawg-conf")).toMatchObject({routing: {support: "none"}, transports: ["AmneziaWG 3.1"]});
+    expect(all.find((item) => item.id === "naive-json")?.routing.support).toBe("none");
+    expect(all.find((item) => item.id === "vless-links")?.routing.support).toBe("limited");
+    const onlyAnyTls = advanced(baseUrl, "ru", {methods: methods.filter((method) => method.protocol === "anytls"), installed: engineIds});
+    const singBox = onlyAnyTls.find((item) => item.id === "sing-box-modern")!;
+    expect(singBox.transports).toEqual(["AnyTLS"]);
+    expect(singBox.requirements).toBe("sing-box ≥1.14.3");
+    expect(catalog(baseUrl, "macos", "ru", {methods: [], installed: engineIds})).toEqual([]);
+    expect(advanced(baseUrl, "ru", {methods: [], installed: engineIds})).toEqual([]);
+    const empty = renderCatalogPage(connection, baseUrl, "macos", "ru", {methods: [], installed: engineIds});
+    expect(empty).toContain('class="empty-apps"');
+    expect(empty).not.toContain('class="app" data-app=');
   });
 
   test("uses the requested three primary applications on every operating system", () => {
@@ -87,7 +125,11 @@ describe("versioned application catalog", () => {
   test("browser catalog is responsive, app-oriented and does not expose the connection name", () => {
     const html = renderCatalogPage(connection, baseUrl, "ios", "ru");
     expect(html).toContain("Подключите своё устройство");
-    expect(html).toContain("Способ обновления маршрутов виден сразу");
+    expect(html).toContain("доступные способы подключения и поддержка маршрутов Outpost");
+    expect(html).toContain("Способы подключения");
+    expect(html).toContain("Маршруты Outpost — полностью");
+    expect(html).toContain("Маршруты Outpost — с ограничениями");
+    expect(html).toContain("Без маршрутов Outpost");
     expect(html).toContain('data-platform="macos"');
     expect(html).toContain('data-platform-panel="android"');
     expect(html).toContain('data-app="stash"');

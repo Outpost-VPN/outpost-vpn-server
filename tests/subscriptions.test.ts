@@ -92,10 +92,21 @@ describe("technology subscription renderers", () => {
     expect(links[1]).toContain("type=xhttp");
     expect(links[1]).toContain("mode=packet-up");
     expect(links[2]).toContain("type=grpc");
-    expect(output.headers.autorouting).toContain("/s/subscription-secret/routes");
+    expect(output.headers.autorouting).toBe(`incy://autorouting/onadd/${output.headers["profile-web-page-url"]}/routes`);
     expect(output.headers["fragmentation-enable"]).toBe("1");
     expect(output.headers["no-limit-enabled"]).toBe("1");
     expect(output.headers["cache-control"]).toContain("no-store");
+  });
+
+  test("Happ receives its documented routing line with the published route payload", () => {
+    const output = linksRenderer.render({...context, linkClient: "happ"});
+    expect(output.headers.autorouting).toBeUndefined();
+    const prefix = "happ://routing/onadd/";
+    const [routing, ...links] = output.body.trimEnd().split("\n");
+    expect(routing).toStartWith(prefix);
+    const profile = JSON.parse(Buffer.from(routing!.slice(prefix.length), "base64").toString("utf8"));
+    expect(profile).toEqual(JSON.parse(renderLinkRoutes(context.routes).body));
+    expect(links.join("\n") + "\n").toBe(linksRenderer.render(context).body);
   });
 
   test("link routes keep the documented INCY routing schema", () => {

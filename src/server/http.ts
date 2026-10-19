@@ -438,8 +438,8 @@ export class HttpApplication {
     }
     const requestedPlatform = ctx.url.searchParams.get("platform");
     if (!requestedPlatform) {
-      const format = universalSubscriptionFormat(ctx.request);
-      if (format) return this.profile(ctx, format, head);
+      const profile = universalSubscription(ctx.request);
+      if (profile) return this.profile(ctx, profile.format, head, profile.appId);
     }
     const baseUrl = `${config.origin}/s/${token}`;
     const platform = requestedPlatform ?? detectPlatform(ctx.request.headers.get("user-agent") ?? "");
@@ -474,6 +474,7 @@ export class HttpApplication {
       clientProfile: clientProfile ?? format,
       enabledEngines,
       clientPlatform: detectPlatform(ctx.request.headers.get("user-agent") ?? ""),
+      linkClient: appId === "happ" ? "happ" : "incy",
       network: this.system.networkSettings(),
     });
     const body = appId === "stash"
@@ -705,12 +706,15 @@ function json(value: unknown, status = 200, headers?: HeadersInit) {
 
 function empty() { return new Response(null, { status: 204 }); }
 
-function universalSubscriptionFormat(request: Request): SubscriptionFormat | null {
+function universalSubscription(request: Request): {format: SubscriptionFormat; appId?: string} | null {
   const agent = (request.headers.get("user-agent") ?? "").toLowerCase();
-  if (/mihomo|clash|everywhere|flclash|stash/.test(agent)) return "mihomo";
-  if (/sing-box|singbox|sfa|sfi|sfm/.test(agent)) return "sing-box";
-  if (/incy|happ/.test(agent)) return "links";
-  if (/(?:^|\W)(?:xray|v2rayn|v2rayng)(?:\W|$)/.test(agent)) return "xray-json";
+  if (/mihomo|clash|everywhere|flclash|stash/.test(agent)) return {format: "mihomo"};
+  if (/sing-box|singbox|sfa|sfi|sfm/.test(agent)) return {format: "sing-box"};
+  if (/incy|happ/.test(agent)) {
+    const appId = /happ/.test(agent) ? "happ" : "incy";
+    return {format: application(appId)!.format, appId};
+  }
+  if (/(?:^|\W)(?:xray|v2rayn|v2rayng)(?:\W|$)/.test(agent)) return {format: "xray-json"};
   return null;
 }
 
