@@ -13,13 +13,19 @@ have independent implementations on different engines and ports.
 
 The sidebar provides separate **Protocols** (`/admin/protocols`, configured
 connection methods) and **Engines** (`/admin/engines`, runtimes) pages. Russian UI
-uses «Движки». Each method displays telemetry coverage and expandable client/profile
-requirements using the shared capability model. All five engines contribute to
-per-user totals and combined activity, without a method breakdown. Mihomo/sing-box
-use approximate session accounting; see [user telemetry](USER-TELEMETRY.md).
-A special profile is a configuration format, not a paid
-plan; native exports also identify their lack of Outpost routing rules. Cronet is
-required for Naive, not for an AnyTLS-only sing-box profile.
+uses «Движки». Methods show a green/red service state beside their title, compatible
+client families/required versions and route delivery. Complete Mihomo/sing-box/Xray
+profiles include Outpost rules; URI routing depends on the importing client;
+Base64, NaiveProxy and AmneziaVPN native exports do not include them. This metadata
+lives in the shared client-profile catalog. Cronet is required for Naive, not for
+an AnyTLS-only sing-box profile.
+
+The drag handle replaces priority numbers/arrows and also supports keyboard arrows.
+`Reorder` owns gestures, hit testing, motion and cancellation for both methods and
+routes; each list owns its draft and persistence. Protocol order is saved on drop;
+routes retain their separate draft/publish contract and pinned system boundaries.
+All five engines contribute to per-user totals and combined activity; see
+[user telemetry](USER-TELEMETRY.md). Traffic details are not repeated in method rows.
 
 Each engine has its own version-check icon and an install/update icon next to its
 version. Engine updates are independent of panel releases: official release assets

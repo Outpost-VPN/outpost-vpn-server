@@ -60,21 +60,21 @@ export def setLanguage value, persist = true
 	current
 
 const ru = {
+	"methods.drag": "Перетащить способ. Стрелки вверх и вниз меняют порядок"
+	"methods.not_working": "Не работает"
+	"methods.routes_in_profile": "Маршруты Outpost — в профиле"
+	"methods.routes_client": "Ссылки — зависит от клиента"
+	"methods.routes_without": '{client} — без маршрутов'
+	"methods.routing_embedded": "Маршруты Outpost включены в полный профиль"
+	"methods.routing_client": "Маршруты передаются отдельно; применение зависит от клиента"
+	"methods.routing_none": "Маршруты Outpost не передаются"
+
 	'engines.check_one': 'Проверить новую версию {engine}'
 	'engines.bundle_pending': 'Ожидается отдельная подписанная сборка движка'
 	'engines.artifact_pending': 'Для этой версии пока нет готового файла с SHA-256'
 	"engines.not_checked": "Новые релизы ещё не проверялись"
 	"engines.upstream": "Последняя версия проекта"
 	"engines.check_failed": "Не удалось проверить релизы. Повторите проверку."
-	"methods.native_profile": "Отдельный конфигурационный файл; правила маршрутизации Outpost в него не входят."
-	"methods.compatible_client": "Совместимый клиент этого формата"
-	"methods.special_profile": "Клиент и подписка · специальный профиль"
-	"methods.basic_profile": "Клиент и подписка · обычный профиль"
-	"methods.approximate_traffic_details": "Трафик добавляется в общий расход пользователя по снимкам сессий. Возможен небольшой недоучёт коротких сессий."
-	"methods.traffic_details": "Трафик добавляется в общий расход пользователя независимо от способа подключения."
-	"methods.approximate_traffic": "Трафик учитывается примерно"
-	"methods.traffic": "Трафик учитывается"
-	"methods.profile_hint": "Специальный профиль — формат конфигурации, а не отдельный платный доступ. Поддержка зависит от версии и сборки движка в приложении."
 	"nav.engines": "Движки"
 	"methods.apply_hint": "Изменение серверных параметров кратко перезапускает работающий движок и затрагивает все его способы подключения. Для использования способа движок должен работать."
 	"methods.peer_hint": "Параметры и доступы AmneziaWG обновляются без перезапуска движка. После смены порта обновите профиль на устройствах."
@@ -85,9 +85,6 @@ const ru = {
 	"methods.order_hint": "Приоритет способов в совместимых подписках"
 	"methods.add": "Добавить способ"
 	"methods.edit": "Настроить способ"
-	"methods.up": "Повысить приоритет"
-	"methods.down": "Понизить приоритет"
-	"methods.enabled": "Включён на сервере"
 	"methods.disabled": "Выключен"
 	"methods.engine_stopped": "Движок остановлен или не проверено"
 	"methods.empty": "Способов пока нет. Установите движок и добавьте способ подключения."

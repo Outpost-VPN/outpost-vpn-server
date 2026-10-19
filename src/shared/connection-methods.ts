@@ -39,16 +39,16 @@ export function defaultMethods(order: readonly EngineId[] = engineIds, paths?: {
 }
 
 export const clientProfiles = {
-  mihomo: { name: "Mihomo YAML", protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
-  "mihomo-modern": { name: "Mihomo · modern YAML", protocols: ["hysteria2", "xhttp", "grpc", "anytls", "trusttunnel", "amneziawg"], minimumCore: "Mihomo ≥1.19.32" },
-  "sing-box": { name: "sing-box JSON", protocols: ["hysteria2", "grpc"], minimumCore: "" },
-  "sing-box-modern": { name: "sing-box · modern JSON", protocols: ["hysteria2", "grpc", "anytls", "naive"], minimumCore: "sing-box ≥1.14.3", requirements: {naive: "Naive: Cronet"} },
-  "xray-json": { name: "Xray JSON", protocols: ["xhttp", "grpc"], minimumCore: "" },
-  xray: { name: "VLESS · Base64", protocols: ["xhttp", "grpc"], minimumCore: "" },
-  links: { name: "URI links", protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
-  naive: { name: "NaiveProxy JSON", protocols: ["naive"], minimumCore: "NaiveProxy / sing-box ≥1.14.3", requirements: {naive: "Naive: Cronet"} },
-  amneziawg: { name: "AmneziaWG .conf", protocols: ["amneziawg"], minimumCore: "AmneziaVPN ≥5.0.1.5 / AWG 3.1" },
-} satisfies Record<string, { name: string; protocols: readonly ProtocolId[]; minimumCore: string; requirements?: Partial<Record<ProtocolId, string>> }>;
+  mihomo: { client: "Mihomo", routing: "embedded", name: "Mihomo YAML", protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
+  "mihomo-modern": { client: "Mihomo", routing: "embedded", name: "Mihomo · modern YAML", protocols: ["hysteria2", "xhttp", "grpc", "anytls", "trusttunnel", "amneziawg"], minimumCore: "Mihomo ≥1.19.32" },
+  "sing-box": { client: "sing-box", routing: "embedded", name: "sing-box JSON", protocols: ["hysteria2", "grpc"], minimumCore: "" },
+  "sing-box-modern": { client: "sing-box", routing: "embedded", name: "sing-box · modern JSON", protocols: ["hysteria2", "grpc", "anytls", "naive"], minimumCore: "sing-box ≥1.14.3", requirements: {naive: "Naive: Cronet"} },
+  "xray-json": { client: "Xray", routing: "embedded", name: "Xray JSON", protocols: ["xhttp", "grpc"], minimumCore: "" },
+  xray: { client: "VLESS Base64", routing: "none", name: "VLESS · Base64", protocols: ["xhttp", "grpc"], minimumCore: "" },
+  links: { client: "URI", routing: "client", name: "URI links", protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
+  naive: { client: "NaiveProxy", routing: "none", name: "NaiveProxy JSON", protocols: ["naive"], minimumCore: "NaiveProxy / sing-box ≥1.14.3", requirements: {naive: "Naive: Cronet"} },
+  amneziawg: { client: "AmneziaVPN", routing: "none", name: "AmneziaWG .conf", protocols: ["amneziawg"], minimumCore: "AmneziaVPN ≥5.0.1.5 / AWG 3.1" },
+} satisfies Record<string, { client: string; routing: "embedded" | "client" | "none"; name: string; protocols: readonly ProtocolId[]; minimumCore: string; requirements?: Partial<Record<ProtocolId, string>> }>;
 export type ClientProfile = keyof typeof clientProfiles;
 export const clientProfileFormat = (profile: ClientProfile) => profile.replace(/-modern$/, "");
 
@@ -61,6 +61,17 @@ export function clientProfileRequirements(id: ClientProfile, selected?: readonly
 export function methodClientProfiles(method: Pick<ConnectionMethod, "protocol">) {
   return Object.entries(clientProfiles).filter(([, profile]) => (profile.protocols as readonly ProtocolId[]).includes(method.protocol))
     .map(([id, profile]) => ({...profile, id: id as ClientProfile, minimumCore: clientProfileRequirements(id as ClientProfile, [method.protocol])}));
+}
+
+export function methodUsage(method: Pick<ConnectionMethod, "protocol">) {
+  const profiles = methodClientProfiles(method);
+  const routed = profiles.filter((profile) => profile.routing === "embedded");
+  const clients = [...new Set(routed.map((profile) => profile.client))].map((client) => {
+    const variants = routed.filter((profile) => profile.client === client);
+    return variants.find((profile) => !profile.minimumCore)?.client ?? variants[0]!.minimumCore;
+  });
+  const standalone = profiles.filter((profile) => profile.routing === "none");
+  return {clients, routed, standalone, profiles};
 }
 
 export function compatibleMethods(methods: readonly ConnectionMethod[], profile: ClientProfile, installed: readonly EngineId[]) {

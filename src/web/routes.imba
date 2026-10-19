@@ -1,3 +1,5 @@
+import {Reorder} from './reorder.imba'
+import {reorder} from '../shared/reorder.ts'
 import {intl, t} from './i18n.imba'
 import {fmt, localNetworkValues, routeActions, routeIcons, routeMatchers} from './context.imba'
 
@@ -319,17 +321,8 @@ tag outpost-route-row
 	get fixed?
 		rule.matcher == 'SUFFIX' and rule.value == '*'
 
-	def key e
-		if e.key == 'ArrowUp'
-			e.preventDefault!
-			routes.step(rule, -1)
-		elif e.key == 'ArrowDown'
-			e.preventDefault!
-			routes.step(rule, 1)
-
-	<self.route-row .system=rule.locked .changed=changed .hinting=hinting .busy=busy .dragging=(drag == rule.id) .over=(over == rule.id and drag != rule.id) data-id=rule.id aria-busy=busy>
-		<button.handle type="button" disabled=rule.locked @touch.moved(5px,'y')=routes.touch(rule,e) @keydown=key aria-label=(rule.locked ? t('Системное правило закреплено') : t('Перетащить правило. Стрелки вверх и вниз меняют порядок'))>
-			<outpost-icon name=(rule.locked ? 'lock-key' : 'dots-six-vertical')>
+	<self.route-row .system=rule.locked .changed=changed .hinting=hinting .busy=busy .dragging=(drag == rule.id) .over=(over == rule.id and drag != rule.id) data-reorder-id=rule.id aria-busy=busy>
+		<outpost-reorder-handle.handle order=routes.ordering item=rule disabled=(rule.locked or routes.busy?) icon=(rule.locked ? 'lock-key' : 'dots-six-vertical') label=(rule.locked ? t('Системное правило закреплено') : t('Перетащить правило. Стрелки вверх и вниз меняют порядок'))>
 		<span.number>
 			index + 1
 			if changed
@@ -372,7 +365,7 @@ tag outpost-route-row
 		&.dragging z-index:5; background:#F8FBFF; box-shadow:inset 3px 0 0 #0B56D9; opacity:.78
 		&.over box-shadow: inset 0 2px 0 #0B56D9
 		&.busy opacity:.62
-		.handle, .remove
+		.remove
 			width: 32px
 			height: 32px
 			display: grid
@@ -382,19 +375,7 @@ tag outpost-route-row
 			border-radius: 8px
 			background: transparent
 			color: #8A9AB7
-		.handle
-			width: 24px
-			cursor: grab
-			font-size: 18px
-			touch-action: none
-			user-select: none
-			@hover background: #F2F6FC
-			@active cursor: grabbing
-			@disabled
-				cursor: default
-				background: transparent
-				color: #B6BFCE
-		.remove@disabled cur:wait
+		.remove@disabled cursor:default
 		.remove outpost-icon.ph-spinner-gap animation:spin 1s linear infinite
 		.number
 			width: 32px
@@ -659,10 +640,7 @@ tag outpost-ruleset-banner
 
 tag outpost-routes
 	store = null
-	drag = null
-	over = null
-	origin = []
-	motions = {}
+	ordering = new Reorder(self)
 	creating = false
 	saving = false
 	publishing = false
@@ -801,63 +779,24 @@ tag outpost-routes
 			return {rule: parent, index: slot(parent)} if !fixed(parent) and parent.action != rule.action and covers(rule, parent)
 		null
 
-	def touch rule, e
-		return if rule.locked
-		if !drag
-			drag = rule.id
-			over = rule.id
-			origin = store.data.routes.draft.map do(item) item.id
-		const target = hit(e.clientY)
-		if target
-			over = target.id
-			move(drag, target.id, target.after) if target.id != drag
-		if e.ended?
-			origin = []
-			persist!
-			end!
+	get ordered do store.data.routes.draft
 
-	def places
-		const value = {}
-		for row in self.querySelectorAll('.route-row')
-			value[row.getAttribute('data-id')] = row.getBoundingClientRect!.top
-		value
-
-	def animate positions, source
-		window.requestAnimationFrame do
-			for row in self.querySelectorAll('.route-row')
-				const id = row.getAttribute('data-id')
-				if id != source and positions[id] != undefined
-					const offset = positions[id] - row.getBoundingClientRect!.top
-					if Math.abs(offset) > .5
-						motions[id].cancel! if motions[id]
-						motions[id] = row.animate([{transform: "translateY({offset}px)"}, {transform: 'translateY(0)'}], {duration: 180, easing: 'cubic-bezier(.22,1,.36,1)'})
+	def movable id
+		const rule = ordered.find do(item) item.id == id
+		rule and !rule.locked and !fixed(rule) and !busy?
 
 	def move source, target, after = false
-		return if !source or !target or source == target
-		const rules = store.data.routes.draft
-		const positions = places!
-		const from = rules.findIndex do(rule) rule.id == source
-		return if from < 0 or rules[from].locked
-		const next = rules.slice!
-		const moved = next.splice(from, 1)[0]
-		let to = next.findIndex do(rule) rule.id == target
-		return if to < 0
-		after = false if fixed(next[to])
-		to++ if after
-		const last = next.findIndex do(rule) fixed(rule)
-		to = Math.min(to, last) if last >= 0
-		next.splice(to, 0, moved)
-		return if next.map(do(rule) rule.id).join('|') == rules.map(do(rule) rule.id).join('|')
-		store.data.routes.draft = next
-		imba.commit!
-		animate(positions, source)
+		return unless movable(source)
+		const rule = ordered.find do(item) item.id == target
+		return unless rule
+		store.data.routes.draft = reorder(ordered, source, target, after and !fixed(rule))
 
-	def hit y
-		for row in self.querySelectorAll('.route-row')
-			const rect = row.getBoundingClientRect!
-			if y >= rect.top and y <= rect.bottom
-				return {id: row.getAttribute('data-id'), after: y > rect.top + rect.height / 2}
-		null
+	def restore ids
+		const rules = new Map(ordered.map(do(rule) [rule.id, rule]))
+		const restored = ids.map(do(id) rules.get(id)).filter(Boolean)
+		store.data.routes.draft = restored if restored.length == ordered.length
+
+	def unmount do ordering.end!
 
 	def persist
 		return if saving
@@ -872,28 +811,8 @@ tag outpost-routes
 		finally
 			saving = false
 
-	def step rule, delta
-		const rules = store.data.routes.draft
-		const from = rules.findIndex do(item) item.id == rule.id
-		const to = from + delta
-		return if from < 0 or to < 0 or to >= rules.length or rule.locked
-		return if rules[to].locked
-		return if delta > 0 and fixed(rules[to])
-		move(rule.id, rules[to].id, delta > 0)
-		persist!
-
-	def end
-		if drag and origin.length
-			const current = store.data.routes.draft
-			const rules = new Map(current.map(do(rule) [rule.id, rule]))
-			const restored = origin.map(do(id) rules.get(id)).filter(Boolean)
-			store.data.routes.draft = restored if restored.length == current.length
-			imba.commit!
-		drag = null
-		over = null
-		origin = []
-
 	<self>
+		<global @keydown.esc=ordering.cancel @blur=ordering.cancel>
 		<div.route-top>
 			<span.eyebrow> t('УПРАВЛЕНИЕ ТРАФИКОМ')
 			<outpost-header title=t('routes.title') subtitle=t('Один порядок правил — сервер подберёт формат при запросе подписки')>
@@ -911,7 +830,7 @@ tag outpost-routes
 			if creating
 				<outpost-route-create key="new-route" store=store routes=self index=2>
 			for rule in shown
-				<outpost-route-row key=rule.id routes=self rule=rule index=slot(rule) changed=changed(rule) exception=exception(rule,position(rule)) drag=drag over=over busy=removing.has(rule.id)>
+				<outpost-route-row key=rule.id routes=self rule=rule index=slot(rule) changed=changed(rule) exception=exception(rule,position(rule)) drag=ordering.drag over=ordering.over busy=removing.has(rule.id)>
 			if error
 				<div.route-error role="alert">
 					<outpost-icon name="warning-circle">

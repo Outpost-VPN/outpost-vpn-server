@@ -1,32 +1,46 @@
-import {engines, engineTrafficApproximate} from '../shared/engines.ts'
+import {engines, engineRunning} from '../shared/engines.ts'
 import {protocols} from '../shared/protocols.ts'
-import {managedEdge, singletonEngine, methodFields, methodClientProfiles} from '../shared/connection-methods.ts'
+import {managedEdge, singletonEngine, methodFields, methodUsage} from '../shared/connection-methods.ts'
+import {reorder} from '../shared/reorder.ts'
+import {Reorder} from './reorder.imba'
 import {t} from './i18n.imba'
 
 tag outpost-method-list
 	store = null
 	busy = false
 	error = null
+	draft = null
+	ordering = new Reorder(self)
 
 	get methods do store.data.methods.items
+	get busy? do busy
+	get ordered
+		return methods unless draft
+		const items = new Map(methods.map(do(method) [method.id, method]))
+		[...draft.map(do(id) items.get(id)).filter(Boolean), ...methods.filter(do(method) !draft.includes(method.id))]
 
 	def edit method = null
 		store.selected = method
 		store.open('method')
 
-	def status method
-		return t('methods.disabled') unless method.enabled
-		const engine = engines[method.engine]
-		const service = store.data.system.services.find do(item) item.name == engine.service
-		service..status == 'active' ? t('methods.enabled') : t('methods.engine_stopped')
+	def working method
+		method.enabled and engineRunning(store.data.system.services, method.engine)
 
-	def move index, delta
-		return if busy
-		const ids = methods.map do(method) method.id
-		const next = index + delta
-		return if next < 0 or next >= ids.length
-		const id = ids.splice(index, 1)[0]
-		ids.splice(next, 0, id)
+	def movable id do !busy and methods.some(do(method) method.id == id)
+
+	def move source, target, after = false
+		return unless movable(source)
+		draft = reorder(ordered, source, target, after).map do(method) method.id
+
+	def restore ids do draft = null
+	def unmount do ordering.end!
+
+	def persist
+		return if busy or !draft
+		const ids = ordered.map do(method) method.id
+		if ids.join('|') == methods.map(do(method) method.id).join('|')
+			draft = null
+			return
 		busy = true
 		error = null
 		try
@@ -35,10 +49,12 @@ tag outpost-method-list
 		catch issue
 			error = issue.message
 		finally
+			draft = null
 			busy = false
 			imba.commit!
 
 	<self>
+		<global @keydown.esc=ordering.cancel @blur=ordering.cancel>
 		<header.list-head>
 			<div>
 				<h2> t('methods.title')
@@ -48,30 +64,26 @@ tag outpost-method-list
 				<span> t('methods.add')
 		if error
 			<p.outpost-error role="alert"> error
-		<section.method-list>
-			for method, index in methods
-				<article.method-row key=method.id>
-					<div.priority>
-						<span> index + 1
-						<button type="button" disabled=(busy or index == 0) @click=(do move(index, -1)) aria-label=t('methods.up') title=t('methods.up')><outpost-icon name="arrow-up">
-						<button type="button" disabled=(busy or index == methods.length - 1) @click=(do move(index, 1)) aria-label=t('methods.down') title=t('methods.down')><outpost-icon name="arrow-down">
+		<section.method-list aria-busy=busy>
+			for method in ordered
+				<article.method-row key=method.id data-reorder-id=method.id .dragging=(ordering.drag == method.id) .over=(ordering.over == method.id and ordering.drag != method.id)>
+					<outpost-reorder-handle order=ordering item=method disabled=busy>
 					<div.identity>
-						<h3> method.name
+						<div.heading>
+							<h3> method.name
+							<span.state .working=working(method) title=(method.enabled ? t('methods.network_hint') : t('methods.disabled'))> t(working(method) ? 'system.active' : 'methods.not_working')
 						<p> "{protocols[method.protocol].name} · {engines[method.engine].name}"
 					<div.endpoint>
 						<strong> "{protocols[method.protocol].networks.join('/').toUpperCase!} {method.settings.port}"
 						if method.settings.path
 							<code> method.settings.path
-					<div.state .enabled=method.enabled> status(method)
-					<button.configure type="button" @click=(do edit(method)) aria-label="{t('methods.edit')}: {method.name}" title=t('methods.edit')><outpost-icon name="gear-six">
-					<outpost-method-support method=method>
+					<outpost-method-usage method=method>
+					<button.icon-button.configure type="button" @click=(do edit(method)) aria-label="{t('methods.edit')}: {method.name}" title=t('methods.edit')><outpost-icon name="gear-six">
 			unless methods.length
 				<p.empty> t('methods.empty')
 		<p.note>
 			<outpost-icon name="info">
 			<span> t('methods.subscription_hint')
-		<p.note> t('methods.network_hint')
-		<p.note> t('methods.profile_hint')
 
 	css self
 		d:block
@@ -79,26 +91,27 @@ tag outpost-method-list
 		.list-head h2 fs:19px c:var(--outpost-navy)
 		.list-head p mt:5px fs:13px c:var(--outpost-muted)
 		.method-list bd:1px solid var(--outpost-line) rd:12px bgc:white of:hidden
-		.method-row d:grid gtc:72px minmax(160px,1fr) minmax(140px,.8fr) minmax(130px,.7fr) 36px g:18px ai:center p:20px
+		.method-row d:grid gtc:28px minmax(190px,1fr) minmax(100px,.55fr) minmax(220px,1.2fr) 36px g:18px ai:center p:20px
 		.method-row + .method-row border-top:1px solid var(--outpost-line)
-		.priority d:flex ai:center g:3px c:var(--outpost-muted)
-		.priority span w:20px fs:13px
-		.priority button, .configure s:25px d:grid ja:center p:0 bd:0 rd:6px bgc:transparent c:var(--outpost-brand) cursor:pointer
-		.priority button@disabled c:var(--outpost-muted) o:.35 cursor:default
-		.configure s:34px bd:1px solid var(--outpost-line)
-		outpost-method-support gc:2 / -1
+		.method-row.dragging bgc:var(--outpost-soft) bxs:inset 3px 0 0 var(--outpost-brand) o:.8
+		.method-row.over bxs:inset 0 2px 0 var(--outpost-brand)
+		.heading d:flex ai:center flex-wrap:wrap g:5px 10px
 		h3 c:var(--outpost-navy) fs:15px fw:700
 		.identity p mt:5px fs:12px c:var(--outpost-muted)
 		.endpoint strong, .endpoint code d:block fs:12px
 		.endpoint code mt:5px c:var(--outpost-muted) overflow-wrap:anywhere
-		.state fs:12px c:var(--outpost-muted)
-		.state.enabled c:var(--outpost-navy)
+		.state fs:11px fw:600 c:var(--outpost-danger) white-space:nowrap
+		.state.working c:var(--outpost-success)
 		.note d:flex ai:flex-start g:8px mt:14px fs:12px lh:1.5 c:var(--outpost-muted)
 		.empty p:30px c:var(--outpost-muted)
+		@media(max-width: 1100px)
+			.method-row gtc:28px minmax(0,1fr) minmax(100px,.5fr) 36px g:12px
+			outpost-method-usage gc:2 / -1 gr:2
+			.configure gc:4 gr:1
 		@media(max-width: 760px)
-			.method-row gtc:72px minmax(0,1fr) 34px g:12px
+			.method-row gtc:28px minmax(0,1fr) 36px
 			.endpoint gc:2 gr:2
-			.state gc:2 gr:3
+			outpost-method-usage gc:2 / -1 gr:3
 			.configure gc:3 gr:1
 			.list-head ai:flex-start fld:column
 
@@ -219,7 +232,7 @@ tag outpost-method-editor
 							<label.checkbox>
 								<input type="checkbox" bind=draft.enabled>
 								<span> t('methods.enabled_label')
-							<outpost-method-support method=draft>
+							<outpost-method-usage method=draft>
 					<p.hint> t('methods.credentials_hint')
 					<p.hint> draft.engine == 'amneziawg' ? t('methods.peer_hint') : t('methods.apply_hint')
 				<footer.outpost-modal-footer>
@@ -242,37 +255,30 @@ tag outpost-method-editor
 		.hint mt:20px
 		.danger c:var(--outpost-danger)
 
-tag outpost-method-support
+tag outpost-method-usage
 	method = null
 
-	get profiles do methodClientProfiles(method)
-	get basic? do profiles.some do(profile) !profile.minimumCore
-	get approximate? do engineTrafficApproximate(method.engine)
-	get detail do t(approximate? ? 'methods.approximate_traffic_details' : 'methods.traffic_details')
+	get usage do methodUsage(method)
+	get details
+		usage.profiles.map(do(profile) "{profile.name}: {t('methods.routing_' + profile.routing)}").join('\n')
+	get alternatives
+		const labels = usage.standalone.map do(profile) t('methods.routes_without', {client: profile.client})
+		labels.unshift(t('methods.routes_client')) if usage.profiles.some(do(profile) profile.routing == 'client')
+		labels.join(' · ')
 
 	<self>
-		<span.traffic title=detail>
-			<outpost-icon name="chart-line">
-			<span> t(approximate? ? 'methods.approximate_traffic' : 'methods.traffic')
-		<details>
-			<summary> t(basic? ? 'methods.basic_profile' : 'methods.special_profile')
-			<p> detail
-			<ul>
-				for profile in profiles
-					<li>
-						<strong> profile.name
-						<span> profile.minimumCore or t('methods.compatible_client')
-						if ['naive', 'amneziawg'].includes(profile.id)
-							<small> t('methods.native_profile')
+		<div.clients title=usage.profiles.map(do(profile) profile.minimumCore or profile.name).join('\n')>
+			<outpost-icon name="devices">
+			<span> usage.clients.join(' · ')
+		<div.routing title=details>
+			<outpost-icon name="path">
+			<span> t('methods.routes_in_profile')
+		if alternatives
+			<small> alternatives
 
 	css self
-		d:flex ai:baseline flex-wrap:wrap g:8px 20px fs:12px lh:1.5 c:var(--outpost-muted)
-		.traffic d:inline-flex ai:center g:5px
-		.traffic .ph fs:14px
-		details fl:1 1 220px
-		summary c:var(--outpost-brand) cursor:pointer w:fit-content
-		p mt:8px
-		ul list-style:none p:0 mt:8px d:grid g:7px
-		li d:flex flex-wrap:wrap g:3px 8px
-		strong c:var(--outpost-text) fw:600
-		small fl:1 1 100% fs:11px
+		d:grid g:5px fs:12px lh:1.5 c:var(--outpost-muted)
+		.clients, .routing d:flex ai:baseline g:6px
+		.clients c:var(--outpost-text)
+		outpost-icon fs:13px fl:0 0 auto
+		small fs:11px

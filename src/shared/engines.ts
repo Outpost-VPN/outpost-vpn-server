@@ -13,7 +13,7 @@ export const engineServices = engineIds.map((id) => engines[id].service);
 export const requiredEngineIds = engineIds.filter((id) => !engines[id].optional);
 export const telemetryEngines: readonly EngineId[] = engineIds;
 export const engineTracksTraffic = (id: EngineId) => telemetryEngines.includes(id);
-export const engineTrafficApproximate = (id: EngineId) => id === "mihomo" || id === "sing-box";
+export const engineRunning = (services: readonly {name: string; status: string}[], id: EngineId) => services.some((service) => service.name === engines[id].service && service.status === "active");
 export const serviceNames = ["outpost", "nginx", ...engineServices];
 export const isEngine = (value: unknown): value is EngineId => typeof value === "string" && Object.hasOwn(engines, value);
 export const engineFile = (id: EngineId) => engines[id].file;

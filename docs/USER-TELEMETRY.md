@@ -32,7 +32,7 @@ snapshot or restarting the panel does not count bytes again. Schema migration 6
 preserves existing counters, samples and presence. Session cursors absent for
 48 hours are discarded; historical totals keep the existing rollup policy.
 
-Mihomo and sing-box are labelled approximate because snapshots may omit short
+Mihomo and sing-box accounting is approximate because snapshots may omit short
 sessions or their final bytes. No source-IP attribution is used, so users behind
 the same NAT remain distinct. Counters describe traffic observed by the runtime;
 they are not a hosting-provider network billing measurement.

@@ -1,4 +1,5 @@
 import {engineViews} from './context.imba'
+import {engineRunning} from '../shared/engines.ts'
 import {t} from './i18n.imba'
 
 tag outpost-engines
@@ -23,8 +24,7 @@ tag outpost-engine-row
 	error = null
 
 	get working?
-		const service = store.data.system.services.find do(item) item.name == engine.service
-		service..status == 'active'
+		engineRunning(store.data.system.services, engine.id)
 
 	get caption do working? ? t('Остановить {engine}', {engine: engine.name}) : t('Запустить {engine}', {engine: engine.name})
 	get upgrade do "{engine.installed ? t('settings.update.upgrade') : t('settings.update.install')} {engine.name} {engine.desired}"
