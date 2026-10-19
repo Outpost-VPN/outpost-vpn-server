@@ -1,4 +1,5 @@
-import { createConnection, createServer } from "node:net";
+import { binary, command, expectBody, waitForPort, freePorts, listen, ProcessGroup } from "./lib/native-integration";
+import { createServer } from "node:net";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,7 +9,8 @@ import { mihomoRenderer, type SubscriptionContext } from "../src/server/adapters
 
 const root = resolve(import.meta.dir, "..");
 const directory = mkdtempSync(join(tmpdir(), "outpost-transport-integration-"));
-const children: Bun.Subprocess[] = [];
+const processes = new ProcessGroup();
+const launch = processes.launch.bind(processes);
 const uuid = "f8e5bb4d-483a-4f57-b2fe-cda0d799cb83";
 const xhttpPath = "/xhttp-integration-secret";
 const grpcService = "grpc-integration-secret";
@@ -30,7 +32,7 @@ const origin = createServer((socket) => {
 });
 const originPort = await listen(origin);
 
-const [edgePort, xhttpPort, grpcPort, xhttpSocksPort, grpcSocksPort, mihomoPort, deadUdpPort] = await freePorts(7);
+const [edgePort, xhttpPort, grpcPort, xhttpSocksPort, grpcSocksPort, mihomoPort, deadUdpPort] = await freePorts(7) as [number, number, number, number, number, number, number];
 
 try {
   const authority = join(directory, "authority.pem");
@@ -109,8 +111,7 @@ http {
   if (!only || only === "fallback") await verifyMihomoFallback(edgePort, mihomoPort, deadUdpPort);
   console.log(`Transport integration passed through one TLS edge on TCP/${edgePort}`);
 } finally {
-  for (const child of children.reverse()) child.kill();
-  await Promise.all(children.map((child) => child.exited));
+  await processes.close();
   await new Promise<void>((resolve) => origin.close(() => resolve()));
   rmSync(directory, { recursive: true, force: true });
 }
@@ -145,7 +146,7 @@ async function verifyXrayTransport(
   }, null, 2));
   const child = launch([xray, "run", "-config", clientConfig]);
   await waitForPort(socksPort);
-  await expectBody([curl, "--silent", "--show-error", "--fail", "--max-time", "8", "--socks5-hostname", `127.0.0.1:${socksPort}`, `http://127.0.0.1:${originPort}/`], "Outpost transport integration");
+  await expectBody([curl, "--noproxy", "", "--silent", "--show-error", "--fail", "--max-time", "8", "--socks5-hostname", `127.0.0.1:${socksPort}`, `http://127.0.0.1:${originPort}/`], "Outpost transport integration");
   child.kill();
   await child.exited;
 }
@@ -159,7 +160,7 @@ async function verifyMihomoFallback(
     connection: {
       id: "integration", serial: 1, name: "Integration", color: "blue", avatar: "avatar-person",
       status: "active", generation: 1, created_at: "", updated_at: "", activated_at: "", first_used_at: null,
-      last_fetched_at: null, first_seen_at: null, last_seen_at: null, absence_notified_at: null, archived_at: null,
+      last_fetched_at: null, first_seen_at: null, last_seen_at: null, absence_notified_at: null, suspended_at: null, archived_at: null,
     },
     credentials: {
       connectionId: "integration",
@@ -196,94 +197,7 @@ async function verifyMihomoFallback(
   writeFileSync(profilePath, YAML.stringify(profile));
   const child = launch([mihomo, "-d", home, "-f", profilePath]);
   await waitForPort(mixedPort);
-  await expectBody([curl, "--silent", "--show-error", "--fail", "--max-time", "8", "--proxy", `http://127.0.0.1:${mixedPort}`, `http://127.0.0.1:${originPort}/`], "Outpost transport integration", 30);
+  await expectBody([curl, "--noproxy", "", "--silent", "--show-error", "--fail", "--max-time", "8", "--proxy", `http://127.0.0.1:${mixedPort}`, `http://127.0.0.1:${originPort}/`], "Outpost transport integration", 30);
   child.kill();
   await child.exited;
-}
-
-function binary(environment: string, fallback: string) {
-  const bundled = resolve(root, ".cache", "native-tools", fallback);
-  const value = process.env[environment] || (Bun.file(bundled).size ? bundled : Bun.which(fallback));
-  if (!value) throw new Error(`${fallback} not found; set ${environment}`);
-  return value;
-}
-
-function launch(argv: string[]) {
-  const child = Bun.spawn(argv, { stdout: "inherit", stderr: "inherit" });
-  children.push(child);
-  return child;
-}
-
-async function command(argv: string[]) {
-  const child = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
-  const [output, error, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-  if (code !== 0) throw new Error(`${argv[0]} failed: ${error.trim()}`);
-  return output;
-}
-
-async function expectBody(argv: string[], expected: string, attempts = 20) {
-  let last = "";
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    const child = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
-    ]);
-    if (code === 0 && stdout.includes(expected)) return;
-    last = stderr.trim() || stdout.trim() || `exit ${code}`;
-    await Bun.sleep(200);
-  }
-  throw new Error(`Proxy request did not succeed: ${last}`);
-}
-
-async function waitForPort(port: number) {
-  for (let attempt = 0; attempt < 50; attempt++) {
-    if (await portIsOpen(port)) return;
-    await Bun.sleep(100);
-  }
-  throw new Error(`Port ${port} did not open`);
-}
-
-function portIsOpen(port: number) {
-  return new Promise<boolean>((resolve) => {
-    const socket = createConnection({ host: "127.0.0.1", port });
-    let settled = false;
-    const done = (value: boolean) => {
-      if (settled) return;
-      settled = true;
-      socket.destroy();
-      resolve(value);
-    };
-    socket.setTimeout(250, () => done(false));
-    socket.once("connect", () => done(true));
-    socket.once("error", () => done(false));
-  });
-}
-
-async function freePorts(count: number) {
-  const ports = new Set<number>();
-  while (ports.size < count) ports.add(await freePort());
-  return [...ports];
-}
-
-function freePort() {
-  return new Promise<number>((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") return reject(new Error("Cannot allocate a local port"));
-      server.close((error) => error ? reject(error) : resolve(address.port));
-    });
-  });
-}
-
-function listen(server: ReturnType<typeof createServer>) {
-  return new Promise<number>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") return reject(new Error("Cannot start the local origin"));
-      resolve(address.port);
-    });
-  });
 }

@@ -10,6 +10,8 @@
 - `/internal/*` закрыт на публичном Nginx edge;
 - Xray API, Hysteria stats и root-agent слушают только localhost/Unix socket;
 - root-agent валидирует action, service, engine и каждый filesystem path;
+- независимые обновления движков разрешаются только для известных источников: root installer заново проверяет официальный release/digest, SHA-256 файла, а для отдельного AWG bundle — также Minisign; произвольные URL из панели не используются;
+- новая версия движка проверяет текущую конфигурацию; отказ конфигурации или health-check возвращает прежнюю версию, остановленные службы не запускаются;
 - scoped token `status:read` видит только минимальный status endpoint; owner dashboard доступен только browser session владельца;
 - внутренние setup claim и owner-recovery token хранятся только как SHA-256 hash; claim повторно проверяется при старте и завершении WebAuthn registration и однократно потребляется после создания владельца;
 - одноразовые приглашения доверенных администраторов хранятся только как SHA-256 hash, действуют 24 часа и повторно проверяются после WebAuthn verification; отдельный passkey использует тот же owner account и даёт полный доступ к панели;

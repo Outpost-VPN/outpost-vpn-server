@@ -1,3 +1,5 @@
+import {engines as definitions} from '../shared/engines.ts'
+import {tokenScopes} from '../shared/api-scopes.ts'
 import './mcp.imba'
 import {basicSetup} from 'codemirror'
 import {EditorState} from '@codemirror/state'
@@ -7,7 +9,8 @@ import {indentUnit} from '@codemirror/language'
 import {json, jsonParseLinter} from '@codemirror/lang-json'
 import {yaml} from '@codemirror/lang-yaml'
 import {linter, lintGutter} from '@codemirror/lint'
-import {t} from './i18n.imba'
+import {t, language} from './i18n.imba'
+import {renderCompatibility} from '../shared/client-compatibility.ts'
 import {diagnostics, fmt} from './context.imba'
 
 const connectionPlatforms = [
@@ -190,7 +193,8 @@ tag outpost-connect-modal
 
 	get choices
 		return [] unless connection
-		connection.applications.filter do(item) item.platforms.includes(platform)
+		const items = connection.applications.filter do(item) item.platforms.includes(platform)
+		items.sort do(left,right) left.orderFor[platform] - right.orderFor[platform]
 
 	get primary
 		choices.filter do(item) item.primaryFor.includes(platform)
@@ -218,12 +222,6 @@ tag outpost-connect-modal
 		return t('connect.free') if current.pricing.model == 'free'
 		return t('connect.freemium') if current.pricing.model == 'freemium'
 		current.pricing.billing == 'subscription' ? t('connect.paid_subscription') : t('connect.paid_once')
-
-	get update
-		current and current.updateMode == 'automatic' ? t('connect.auto') : t('connect.manual')
-
-	get fidelity
-		current and current.routeFidelity == 'exact' ? t('connect.exact') : t('connect.limited')
 
 	def mount
 		const agent = window.navigator.userAgent.toLowerCase!
@@ -471,13 +469,7 @@ tag outpost-connect-modal
 															<span> t('connect.install')
 															<outpost-icon name="arrow-square-out">
 												<p> current.description
-												<div.profile-facts>
-													<span .warning=(current.updateMode == 'manual')>
-														<outpost-icon name="arrows-clockwise">
-														<em> update
-													<span>
-														<outpost-icon name="list-checks">
-														<em> fidelity
+												<div.profile-facts innerHTML=renderCompatibility(current, language())>
 												<details.device-actions>
 													<summary>
 														<span> t('connect.this_device')
@@ -499,12 +491,13 @@ tag outpost-connect-modal
 									<div.expert-screen>
 										<div.expert-list>
 											for item in connection.advanced
-												<button.expert-choice type="button" @click=(do advanced(item))>
+												<article.expert-choice>
 													<span.expert-icon><outpost-icon name=(advancedIcons[item.id] or 'file-code')>
-													<span.expert-format>
+													<div.expert-format>
 														<strong.technical> item.name
 														<small> item.description
-													<span.expert-copy>
+														<div.expert-facts innerHTML=renderCompatibility(item, language())>
+													<button.expert-copy type="button" @click=(do advanced(item))>
 														<outpost-icon name=(copied == "advanced-{item.id}" ? 'check' : 'copy')>
 														<em> copied == "advanced-{item.id}" ? t('Скопировано') : t('connect.copy')
 						else
@@ -611,12 +604,7 @@ tag outpost-connect-modal
 		.profile-copy > p mt:7px maw:500px c:var(--outpost-muted) fs:12px lh:1.5
 		.price d:inline-flex px:7px py:4px rd:6px bgc:var(--outpost-success-soft) c:var(--outpost-success) fs:10px fw:750
 		.price.paid bgc:var(--outpost-warning-soft) c:var(--outpost-warning)
-		.profile-facts d:grid g:7px mt:15px
-		.profile-facts span d:flex ai:center g:7px c:var(--outpost-muted) fs:11px
-		.profile-facts span em font-style:normal
-		.profile-facts span b c:var(--outpost-text) fw:700
-		.profile-facts span outpost-icon c:var(--outpost-brand) fs:16px
-		.profile-facts span.warning outpost-icon c:var(--outpost-warning)
+		.profile-facts mt:15px
 		.device-actions miw:0 mt:18px bd:1px solid color-mix(in srgb,var(--outpost-brand) 16%,var(--outpost-line)) rd:9px bgc:color-mix(in srgb,var(--outpost-brand-soft) 52%,var(--outpost-white))
 		.device-actions summary d:flex ai:center g:8px p:9px 11px c:var(--outpost-muted) fs:9px fw:750 cursor:pointer list-style:none
 		.device-actions summary::-webkit-details-marker d:none
@@ -636,16 +624,18 @@ tag outpost-connect-modal
 			unicode-bidi: isolate
 		.expert-screen p:36px 46px 42px
 		.expert-list d:grid g:9px
-		.expert-choice w:100% d:grid gtc:38px minmax(0,1fr) auto ai:center g:13px p:12px 14px bd:1px solid var(--outpost-line) rd:10px bgc:color-mix(in srgb,var(--outpost-soft) 72%,var(--outpost-white)) c:var(--outpost-text) ff:inherit ta:start cursor:pointer tween:border-color .16s ease, background .16s ease, color .16s ease
+		.expert-choice w:100% d:grid gtc:38px minmax(0,1fr) auto ai:center g:13px p:12px 14px bd:1px solid var(--outpost-line) rd:10px bgc:color-mix(in srgb,var(--outpost-soft) 72%,var(--outpost-white)) c:var(--outpost-text) ff:inherit ta:start tween:border-color .16s ease, background .16s ease, color .16s ease
 		.expert-choice@hover border-color:var(--outpost-brand) bgc:var(--outpost-brand-soft)
 		.expert-icon s:38px d:grid jai:center bd:1px solid color-mix(in srgb,var(--outpost-brand) 18%,var(--outpost-line)) rd:9px bgc:var(--outpost-white) c:var(--outpost-brand) fs:18px
 		.expert-format miw:0
-		.expert-format strong, .expert-format small d:block
-		.expert-format strong fs:12px fw:800
-		.expert-format small mt:4px c:var(--outpost-muted) fs:10px lh:1.4
-		.expert-copy d:flex ai:center g:7px c:var(--outpost-brand) fs:11px fw:750 ws:nowrap
+		.expert-format > strong, .expert-format > small d:block
+		.expert-format > strong fs:12px fw:800
+		.expert-format > small mt:4px c:var(--outpost-muted) fs:10px lh:1.4
+		.expert-facts mt:10px
+		.expert-copy d:flex ai:center g:7px p:0 bd:0 bgc:transparent ff:inherit cursor:pointer c:var(--outpost-brand) fs:11px fw:750 ws:nowrap
 		.expert-copy outpost-icon fs:16px
 		.expert-copy em font-style:normal
+		.expert-copy@focus-visible ol:2px solid var(--outpost-brand) olo:4px rd:4px
 		.activation-state d:grid justify-items:center p:28px 12px ta:center
 		.activation-state > outpost-icon c:var(--outpost-brand) fs:44px animation:spin 1s linear infinite
 		.activation-state strong mt:18px c:var(--outpost-text) fs:18px
@@ -664,7 +654,6 @@ tag outpost-connect-modal
 		.app-profile@!760 gtc:1fr justify-items:center g:22px p:26px 22px ta:center
 		.profile-copy@!760 w:100%
 		.profile-heading@!760 jc:center
-		.profile-facts@!760 justify-items:center
 		.device-actions@!760 maw:390px mx:auto ta:left
 		.expert-screen@!760 p:28px 22px 32px
 		.connect-modal .outpost-modal-body@!760 p:0
@@ -981,7 +970,7 @@ tag outpost-engine-modal
 			<header.outpost-modal-header>
 				<span.outpost-modal-mark><outpost-icon name="code">
 				<div>
-					<h2> t('Конфигурация {engine}', {engine: engine == 'xray' ? 'Xray' : 'Hysteria 2'})
+					<h2> t('Конфигурация {engine}', {engine: definitions[engine].name})
 					<p> t('Проверка шаблона выполняется во время ввода.')
 				<button.outpost-modal-close type="button" @click=store.close aria-label=t('action.close')><outpost-icon name="x">
 			<div.outpost-modal-body>
@@ -998,8 +987,8 @@ tag outpost-engine-modal
 				<div.outpost-field.raw-field>
 					<div.editor-head>
 						<span> t('Шаблон')
-						<small> t('{format} · Enter сохраняет отступ · Tab — 2 пробела', {format: engine == 'xray' ? 'JSON' : 'YAML'})
-					<outpost-code-editor bind=template syntax=(engine == 'xray' ? 'json' : 'yaml') change=(do(value) edit(value))>
+						<small> t('{format} · Enter сохраняет отступ · Tab — 2 пробела', {format: definitions[engine].format})
+					<outpost-code-editor bind=template syntax=definitions[engine].format.toLowerCase! change=(do(value) edit(value))>
 				if checking
 					<div.validation-state.validation-checking aria-live="polite">
 						<outpost-icon name="spinner-gap">
@@ -1206,8 +1195,7 @@ tag outpost-token-modal
 	copied = false
 
 	get permissions
-		return ['status:read','traffic:read','connections:read','routes:read','operations:read','system:read','settings:read'] if access == 'read'
-		['status:read','traffic:read','connections:read','connections:write','connections:secret','connections:rotate','routes:read','routes:write','operations:read','operations:write','system:read','settings:read','settings:write']
+		tokenScopes[access]
 
 	get summary
 		return t('network.token.read') if access == 'read'

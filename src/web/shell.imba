@@ -1,6 +1,8 @@
 import {t} from './i18n.imba'
 import {deviceImages, fmt} from './context.imba'
 
+const engineIcons = {hysteria: '/assets/engines/hysteria.svg', xray: '/assets/engines/xray.svg', mihomo: '/assets/engines/mihomo.jpg', 'sing-box': '/assets/apps/sing-box.svg', amneziawg: '/assets/engines/amneziawg.svg'}
+
 const marks = {
 	brand: '/brand-mark.png'
 	success: '/brand-mark-success.png'
@@ -10,6 +12,9 @@ tag outpost-icon < i
 	name = ''
 
 	<self.ph .{"ph-{name}"}>
+
+	css self
+		d:inline-grid ja:center lh:1 fl:0 0 auto font-style:normal
 
 tag outpost-device-glyph
 	kind = 'phone'
@@ -42,22 +47,18 @@ tag outpost-brand-mark
 tag outpost-engine-mark
 	kind = ''
 
-	<self .hysteria=(kind == 'hysteria') .xray=(kind == 'xray') aria-hidden="true">
-		<span.glyph> kind == 'hysteria' ? 'H' : 'X'
+	<self .hysteria=(kind == 'hysteria') aria-hidden="true">
+		<img src=engineIcons[kind] alt="">
 
-	css
-		position: relative
-		display: inline-grid
-		place-items: center
-		width: 34px
-		height: 34px
-		color: currentColor
-		.glyph display:block; color:currentColor; font-family:Arial,sans-serif; font-size:25px; font-weight:850; line-height:1; letter-spacing:0
+	css self
+		s:34px d:inline-grid ja:center
+		img s:100% object-fit:contain d:block
+		&.hysteria img color-scheme:light
 
 tag outpost-logo
 	version = null
 
-	<self .stacked=!!version>
+	<self.outpost-logo .stacked=!!version>
 		<outpost-brand-mark>
 		<span.copy>
 			<span.name> t('app.name')
@@ -65,12 +66,7 @@ tag outpost-logo
 				<small.version> t('Версия {version}', {version: version})
 
 	css
-		display: flex
-		align-items: center
-		gap: 14px
-		color: #071536
 		.copy display:grid
-		.name font-size:28px; font-weight:750; line-height:1
 		&.stacked gap:12px
 		&.stacked outpost-brand-mark width:48px; height:48px; flex:0 0 48px
 		&.stacked .copy gap:2px
@@ -140,7 +136,7 @@ tag outpost-sidebar
 	get serverIssue
 		return t('Данные не удалось обновить: {error}', {error: store.stale}) if store.stale
 		return null unless store.data and store.data.system
-		const failed = store.data.system.services.find do(item) item.status != 'active'
+		const failed = store.data.system.services.find do(item) !['active', 'not-installed'].includes(item.status)
 		return t('{service} не отвечает', {service: fmt.serviceName(failed.name)}) if failed
 		const transport = store.data.system.transports and store.data.system.transports.find do(item) item.status == 'inactive'
 		return t('{transport} не слушает localhost', {transport: transport.name}) if transport
@@ -186,6 +182,9 @@ tag outpost-sidebar
 			<button.nav-item type="button" .active=active('/routes') @click=(do store.goto('/routes')) aria-label=t('nav.routes') aria-current=(active('/routes') ? 'page' : null)>
 				<outpost-icon name="path">
 				<span> t('nav.routes')
+			<button.nav-item type="button" .active=active('/engines') @click=(do store.goto('/engines')) aria-label=t('nav.engines') aria-current=(active('/engines') ? 'page' : null)>
+				<outpost-icon name="cpu">
+				<span> t('nav.engines')
 			<button.nav-item type="button" .active=active('/journal') @click=(do store.goto('/journal')) aria-label=t('system.log') aria-current=(active('/journal') ? 'page' : null)>
 				<outpost-icon name="book-open">
 				<span> t('system.log')
@@ -302,7 +301,7 @@ tag outpost-sidebar
 			left: 0
 			z-index: 50
 			display: grid
-			grid-template-columns: repeat(6, minmax(0, 1fr))
+			grid-template-columns: repeat(7, minmax(0, 1fr))
 			gap: 2px
 			padding: 6px 8px calc(6px + env(safe-area-inset-bottom))
 			border-right: 0
@@ -357,6 +356,8 @@ tag outpost-shell
 				<outpost-connections store=store>
 			elif store.path == '/routes'
 				<outpost-routes store=store>
+			elif store.path == '/engines'
+				<outpost-engines store=store>
 			elif store.path == '/protocols'
 				<outpost-protocols store=store>
 			elif store.path == '/journal'

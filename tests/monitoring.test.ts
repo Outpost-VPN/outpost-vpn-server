@@ -210,6 +210,9 @@ describe("system monitoring", () => {
       { name: "nginx", status: "active" },
       { name: "hysteria-server", status: "inactive" },
       { name: "xray", status: "active" },
+      { name: "outpost-mihomo", status: "not-installed" },
+      { name: "outpost-sing-box", status: "not-installed" },
+      { name: "outpost-amneziawg", status: "not-installed" },
     ]);
     expect(stored.tls).toEqual({ status: "valid", expiresAt: "2026-09-01T00:00:00.000Z" });
     expect(stored.metrics).toEqual({ cpu: { percent: 12 } });

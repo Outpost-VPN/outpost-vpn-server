@@ -36,9 +36,10 @@ for (const filename of await readdir(deviceSource)) {
     await copyFile(join(deviceSource, filename), join(deviceTarget, filename));
   }
 }
-for (const filename of await readdir(appSource)) {
-  if (/^[a-z0-9-]+\.(?:jpg|png|svg)$/.test(filename)) {
-    await copyFile(join(appSource, filename), join(appTarget, filename));
+for (const [from, to] of [[appSource, appTarget], [join(root, "assets", "engines"), join(assetTarget, "engines")]]) {
+  await mkdir(to!, {recursive: true});
+  for (const filename of await readdir(from!)) {
+    if (/^[a-z0-9-]+\.(?:jpg|png|svg)$/.test(filename)) await copyFile(join(from!, filename), join(to!, filename));
   }
 }
 for (const filename of ["brand-mark.png", "brand-mark-success.png"]) {

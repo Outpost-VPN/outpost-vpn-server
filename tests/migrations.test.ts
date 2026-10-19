@@ -6,16 +6,18 @@ import { tmpdir } from "node:os";
 import { OutpostDatabase } from "../src/server/db/database";
 import { migrations } from "../src/server/db/schema";
 import { SystemService } from "../src/server/services/system";
+import {TrafficService} from "../src/server/services/traffic";
 import { database } from "./helpers";
 
 describe("clean prerelease schema", () => {
   test("keeps incremental owner language and connection suspension migrations", () => {
-    expect(migrations).toHaveLength(5);
+    expect(migrations).toHaveLength(6);
     expect(migrations[0]).toMatchObject({ version: 1, name: "initial" });
     expect(migrations[1]).toMatchObject({ version: 2, name: "owner-language" });
     expect(migrations[2]).toMatchObject({ version: 3, name: "connection-suspension" });
     expect(migrations[3]).toMatchObject({ version: 4, name: "client-network-settings" });
     expect(migrations[4]).toMatchObject({ version: 5, name: "owner-invitations" });
+    expect(migrations[5]).toMatchObject({ version: 6, name: "all-engine-telemetry" });
 
     const fixture = database();
     try {
@@ -107,6 +109,11 @@ describe("clean prerelease schema", () => {
           '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z',
           '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
         );
+        INSERT INTO traffic_cursors VALUES ('connection', 'xray', 100, 200, '2026-01-01T00:00:00.000Z');
+        INSERT INTO traffic_samples (bucket, bucket_at, connection_id, engine, upload, download)
+          VALUES ('5m', '2026-01-01T00:00:00.000Z', 'connection', 'xray', 100, 200);
+        INSERT INTO connection_presence VALUES ('connection', 'xray', 'online', 'traffic', NULL, 0,
+          '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
       `);
     } finally {
       legacy.close();
@@ -116,7 +123,11 @@ describe("clean prerelease schema", () => {
     try {
       expect(upgraded.raw.query<{ language: string }, []>("SELECT language FROM owners").get()?.language).toBe("zh-CN");
       expect(upgraded.setting("interface", {})).toEqual({ compact: true });
-      expect(upgraded.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM schema_migrations").get()?.version).toBe(5);
+      expect(upgraded.raw.query<{ version: number }, []>("SELECT MAX(version) AS version FROM schema_migrations").get()?.version).toBe(migrations.at(-1)!.version);
+      const traffic = new TrafficService(upgraded);
+      traffic.recordCumulative("xray", {connectionId: "connection", upload: 110, download: 220});
+      expect(traffic.overview("all").totals).toEqual({upload: 110, download: 220});
+      expect(upgraded.raw.query("SELECT status FROM connection_presence WHERE engine = 'xray'").get()).toEqual({status: "online"});
       expect(upgraded.raw.query<{ kind: string; status: string }, []>("SELECT kind, status FROM connection_sync_jobs WHERE id = 'job'").get())
         .toEqual({ kind: "activate", status: "completed" });
       expect(upgraded.raw.query("PRAGMA foreign_key_check").all()).toEqual([]);

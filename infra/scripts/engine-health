@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "${1:-}")
+test "${#info[@]}" = 9 || exit 1
+ports=()
+health_ports=$(/opt/outpost/current/bin/outpostctl engine-health-ports "${1:-}")
+if test -n "$health_ports"; then mapfile -t ports <<<"$health_ports"; fi
+for _ in {1..50}; do
+  ready=1
+  systemctl is-active --quiet "${info[0]}" || ready=0
+  for endpoint in "${ports[@]}"; do
+    port=${endpoint%/*}
+    protocol=${endpoint#*/}
+    if test "$protocol" = tcp; then flags=-Hlnpt; else flags=-Hlnpu; fi
+    sockets=$(ss "$flags" "sport = :$port")
+    # The listener must belong to the selected systemd unit, including child
+    # processes such as the userspace AWG daemon, rather than an occupied port.
+    owned=0
+    while [[ "$sockets" =~ pid=([0-9]+) ]]; do
+      pid=${BASH_REMATCH[1]}
+      if grep -Fq "/${info[0]}.service" "/proc/$pid/cgroup" 2>/dev/null; then owned=1; fi
+      sockets=${sockets#*pid="$pid"}
+    done
+    test "$owned" = 1 || ready=0
+  done
+  if test "$ready" = 1; then exit 0; fi
+  sleep 0.1
+done
+echo "Engine listener health check failed" >&2
+exit 1

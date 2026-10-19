@@ -1,6 +1,8 @@
 import YAML, { isSeq, type Document } from "yaml";
+import { engines, type EngineId } from "../../shared/engines";
+import {engineApi} from "./engine-api";
 
-export type EngineName = "hysteria" | "xray";
+export type EngineName = EngineId;
 
 const hysteriaPresetV1 = `
 listen: :443
@@ -108,18 +110,58 @@ const xrayPresetV2 = JSON.stringify({
   },
 }, null, 2);
 
+export const defaultMihomoTemplate = `
+mode: rule
+log-level: warning
+ipv6: false
+external-controller: ${engineApi.mihomo}
+secret: "{{OUTPOST_CONTROLLER_SECRET}}"
+listeners: "{{OUTPOST_LISTENERS}}"
+rules:
+  - IP-CIDR,127.0.0.0/8,REJECT,no-resolve
+  - IP-CIDR,10.0.0.0/8,REJECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,REJECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,REJECT,no-resolve
+  - AND,((NETWORK,UDP),(DST-PORT,443)),REJECT
+  - MATCH,DIRECT
+`.trim();
+
+const singBoxPresetV1 = JSON.stringify({
+  log: { level: "warn", timestamp: true },
+  inbounds: "{{OUTPOST_INBOUNDS}}",
+  outbounds: [{ type: "direct", tag: "direct" }],
+  route: { rules: [
+    { ip_is_private: true, action: "reject" },
+    { network: "udp", port: 443, action: "reject" },
+  ], final: "direct" },
+}, null, 2);
+
+export const defaultSingBoxTemplate = JSON.stringify({...JSON.parse(singBoxPresetV1), services: "{{OUTPOST_API}}"}, null, 2);
+
+export const defaultAmneziaTemplate = JSON.stringify({ server: "{{OUTPOST_AWG_SERVER}}", peers: "{{OUTPOST_AWG_PEERS}}" }, null, 2);
+
 const presets: Record<EngineName, ReadonlyMap<number, string>> = {
   hysteria: new Map([[1, hysteriaPresetV1], [2, hysteriaPresetV2]]),
   xray: new Map([[1, xrayPresetV1], [2, xrayPresetV2]]),
+  mihomo: new Map([[1, defaultMihomoTemplate]]),
+  "sing-box": new Map([[1, singBoxPresetV1], [2, defaultSingBoxTemplate]]),
+  amneziawg: new Map([[1, defaultAmneziaTemplate]]),
 };
 
 export const currentEnginePresetVersions: Record<EngineName, number> = {
   hysteria: 2,
   xray: 2,
+  mihomo: 1,
+  "sing-box": 2,
+  amneziawg: 1,
 };
 
 export const defaultHysteriaTemplate = hysteriaPresetV2;
 export const defaultXrayTemplate = xrayPresetV2;
+export const defaultEngineTemplates: Record<EngineName, string> = {
+  hysteria: defaultHysteriaTemplate, xray: defaultXrayTemplate,
+  mihomo: defaultMihomoTemplate, "sing-box": defaultSingBoxTemplate, amneziawg: defaultAmneziaTemplate,
+};
 
 export interface EnginePresetConflict {
   path: string;
@@ -195,11 +237,11 @@ export function mergeEnginePreset(engine: EngineName, userTemplate: string, from
 }
 
 export function parseEngineTemplate(engine: EngineName, template: string): unknown {
-  return engine === "xray" ? JSON.parse(template) : YAML.parse(encodeYamlPlaceholders(template));
+  return engines[engine].format === "JSON" ? JSON.parse(template) : YAML.parse(encodeYamlPlaceholders(template));
 }
 
 function stringifyEngineTemplate(engine: EngineName, value: unknown, sourceTemplate: string, sourceValue: unknown) {
-  if (engine === "xray") return JSON.stringify(value, null, 2);
+  if (engines[engine].format === "JSON") return JSON.stringify(value, null, 2);
   const document = YAML.parseDocument(encodeYamlPlaceholders(sourceTemplate));
   if (document.errors.length) throw document.errors[0];
   syncYamlDocument(document, [], sourceValue, value);

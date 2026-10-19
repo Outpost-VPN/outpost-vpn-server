@@ -1,0 +1,36 @@
+name: Release smoke test
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/workflows/release-smoke.yml
+      - scripts/integration-release.sh
+      - scripts/release-smoke-fixture.ts
+
+permissions:
+  contents: read
+
+jobs:
+  release-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: agent/go.sum
+      - name: Build the candidate and test real update/restore services
+        run: |
+          bun install --frozen-lockfile
+          bun run release:linux
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends age curl iptables jq minisign nginx sqlite3 ufw unzip
+          archive="$(find release -maxdepth 1 -name '*.tar.gz' -type f -print -quit)"
+          test -n "$archive"
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT env "PATH=$PATH" bash scripts/integration-release.sh "$archive"

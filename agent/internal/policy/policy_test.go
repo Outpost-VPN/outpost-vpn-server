@@ -2,6 +2,17 @@ package policy
 
 import "testing"
 
+func TestTelemetryIsReadOnlyAndFixedToManagedInterface(t *testing.T) {
+	if err := Validate(Request{Action: "telemetry.read", Payload: map[string]any{"engine": "amneziawg"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, payload := range []map[string]any{{"engine": "xray"}, {"engine": "amneziawg", "interface": "wg0"}, {"engine": "amneziawg", "command": "dump"}} {
+		if Validate(Request{Action: "telemetry.read", Payload: payload}) == nil {
+			t.Fatal("accepted caller-controlled telemetry command")
+		}
+	}
+}
+
 func TestServiceAllowlist(t *testing.T) {
 	good := Request{Action: "service.restart", Payload: map[string]any{"service": "xray"}}
 	if err := Validate(good); err != nil {
@@ -206,5 +217,26 @@ func TestNoArbitraryAction(t *testing.T) {
 	request := Request{Action: "shell", Payload: map[string]any{"command": "id"}}
 	if err := Validate(request); err == nil {
 		t.Fatal("arbitrary action accepted")
+	}
+}
+
+func TestOptionalEngineCatalog(t *testing.T) {
+	for id, engine := range Engines {
+		request := Request{Action: "config.apply", Payload: map[string]any{"engine": id, "source": "/var/lib/outpost/runtime/profile", "target": "/etc/outpost/engines/" + engine.File, "restart": false}}
+		if err := Validate(request); err != nil {
+			t.Fatalf("catalog engine %s rejected: %v", id, err)
+		}
+		request.Payload["target"] = "/etc/outpost/engines/wrong.json"
+		if Validate(request) == nil {
+			t.Fatalf("wrong target accepted for %s", id)
+		}
+		request = Request{Action: "config.sync", Payload: map[string]any{"engine": id, "source": "/var/lib/outpost/runtime/profile"}}
+		if err := Validate(request); err != nil {
+			t.Fatalf("sync policy differs from catalog for %s", id)
+		}
+	}
+	outside := Request{Action: "config.sync", Payload: map[string]any{"engine": "amneziawg", "source": "/etc/shadow"}}
+	if Validate(outside) == nil {
+		t.Fatal("sync accepted a source outside the runtime directory")
 	}
 }

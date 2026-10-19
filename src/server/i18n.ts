@@ -2,6 +2,15 @@ import { accept, locale, resolve, type Locale } from "../shared/i18n";
 
 const messages: Record<Locale, Record<string, string>> = {
   en: {
+    "Версия не совпадает с доступным обновлением": "Version does not match the available engine update",
+    "Можно установить только более новую версию движка": "Only a newer engine version can be installed",
+    "Файлы движка будут проверены по SHA-256": "Engine files will be verified with SHA-256",
+    "Работающий движок перезапустится; остановленный останется остановленным": "A running engine will restart; a stopped engine will remain stopped",
+    "Выбранный движок будет установлен и запущен": "The selected engine will be installed and started",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "Creates outpost-awg, IPv4 forwarding and NAT for 10.78.0.0/16",
+    "Сначала установите движок": "Install the engine first",
+    "Сначала установите sing-box в разделе протоколов": "Install sing-box in Protocols first",
+    "Сначала установите AmneziaWG в разделе протоколов": "Install AmneziaWG in Protocols first",
     "Сессия истекла — войдите снова": "Your session has expired. Sign in again.",
     "API token не имеет нужного scope": "The API token does not have the required scope.",
     "Действие доступно только владельцу панели": "This action is available only to the panel owner.",
@@ -50,8 +59,54 @@ const messages: Record<Locale, Record<string, string>> = {
     "Укажите доменный суффикс, например example.com или ru": "Enter a domain suffix such as example.com or ru.",
     "Укажите код GeoSite/GeoIP без префикса, например google или ru": "Enter a GeoSite/GeoIP code without a prefix, such as google or ru.",
   },
-  ru: {},
+  ru: {
+    "This name is reserved by client routing policies": "Это название зарезервировано для правил маршрутизации клиента",
+    "Invalid connection method": "Проверьте настройки способа подключения",
+    "Connection method not found": "Способ подключения не найден",
+    "Create a new method to change its engine or protocol": "Для другого ядра или протокола создайте новый способ подключения",
+    "Specify every connection method exactly once": "Укажите каждый способ подключения ровно один раз",
+    "Install the selected engine first": "Сначала установите выбранное ядро",
+    "Unsupported server protocol for this engine": "Это ядро не поддерживает выбранный серверный протокол",
+    "Choose a unique connection method name": "Выберите уникальное название способа подключения",
+    "This managed listener already exists": "Этот способ для выбранного ядра уже настроен",
+    "This listener uses the managed HTTPS edge address and path": "Порт и путь этого способа управляются общим HTTPS-входом сервера",
+    "Use an unprivileged public port (1024–65535)": "Выберите публичный порт от 1024 до 65535",
+    "Port is reserved for an existing service": "Этот порт зарезервирован для существующей службы",
+    "Invalid XHTTP path": "Некорректный путь XHTTP",
+    "Invalid gRPC service name": "Некорректное имя сервиса gRPC",
+    "This protocol has no transport path": "Для этого протокола путь не используется",
+    "Another connection method already uses this port and network": "Другой способ подключения уже использует этот порт и транспорт",
+    "No enabled connection methods are compatible with this client profile": "Нет включённых способов, совместимых с этим клиентским профилем",
+    "Client profile does not match the subscription format": "Клиентский профиль не соответствует формату подписки",
+  },
   "zh-CN": {
+    "Версия не совпадает с доступным обновлением": "版本与可用引擎更新不匹配",
+    "Можно установить только более новую версию движка": "只能安装更新的引擎版本",
+    "This name is reserved by client routing policies": "此名称已为客户端路由策略保留",
+    "Invalid connection method": "请检查连接方式的设置",
+    "Connection method not found": "未找到连接方式",
+    "Create a new method to change its engine or protocol": "如需更改核心或协议，请创建新的连接方式",
+    "Specify every connection method exactly once": "请将每种连接方式列出一次",
+    "Install the selected engine first": "请先安装所选核心",
+    "Unsupported server protocol for this engine": "此核心不支持所选服务端协议",
+    "Choose a unique connection method name": "请使用唯一的连接方式名称",
+    "This managed listener already exists": "所选核心的此受管监听器已存在",
+    "This listener uses the managed HTTPS edge address and path": "此监听器的端口和路径由共享 HTTPS 入口管理",
+    "Use an unprivileged public port (1024–65535)": "请选择 1024–65535 范围内的公网端口",
+    "Port is reserved for an existing service": "此端口已为现有服务保留",
+    "Invalid XHTTP path": "XHTTP 路径无效",
+    "Invalid gRPC service name": "gRPC 服务名称无效",
+    "This protocol has no transport path": "此协议不使用传输路径",
+    "Another connection method already uses this port and network": "其他连接方式已使用此端口和网络传输",
+    "No enabled connection methods are compatible with this client profile": "没有已启用且与此客户端配置兼容的连接方式",
+    "Client profile does not match the subscription format": "客户端配置与订阅格式不匹配",
+    "Файлы движка будут проверены по SHA-256": "将使用 SHA-256 验证引擎文件",
+    "Работающий движок перезапустится; остановленный останется остановленным": "运行中的引擎将重启；已停止的引擎保持停止",
+    "Выбранный движок будет установлен и запущен": "将安装并启动所选引擎",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "将创建 outpost-awg 并为 10.78.0.0/16 启用 IPv4 转发和 NAT",
+    "Сначала установите движок": "请先安装引擎",
+    "Сначала установите sing-box в разделе протоколов": "请先在协议页面安装 sing-box",
+    "Сначала установите AmneziaWG в разделе протоколов": "请先在协议页面安装 AmneziaWG",
     "Сессия истекла — войдите снова": "会话已过期，请重新登录。",
     "API token не имеет нужного scope": "API 令牌没有所需的权限范围。",
     "Действие доступно только владельцу панели": "此操作仅限面板所有者。",
@@ -101,6 +156,33 @@ const messages: Record<Locale, Record<string, string>> = {
     "Укажите код GeoSite/GeoIP без префикса, например google или ru": "请输入不带前缀的 GeoSite/GeoIP 代码，例如 google 或 ru。",
   },
   fa: {
+    "Версия не совпадает с доступным обновлением": "نسخه با به‌روزرسانی موجود موتور مطابقت ندارد",
+    "Можно установить только более новую версию движка": "فقط نسخه جدیدتر موتور قابل نصب است",
+    "This name is reserved by client routing policies": "این نام برای سیاست‌های مسیریابی کلاینت رزرو شده است",
+    "Invalid connection method": "تنظیمات روش اتصال را بررسی کنید",
+    "Connection method not found": "روش اتصال پیدا نشد",
+    "Create a new method to change its engine or protocol": "برای تغییر موتور یا پروتکل، روش اتصال جدیدی بسازید",
+    "Specify every connection method exactly once": "هر روش اتصال را دقیقاً یک بار مشخص کنید",
+    "Install the selected engine first": "ابتدا موتور انتخابی را نصب کنید",
+    "Unsupported server protocol for this engine": "این موتور از پروتکل سرور انتخابی پشتیبانی نمی‌کند",
+    "Choose a unique connection method name": "نامی یکتا برای روش اتصال انتخاب کنید",
+    "This managed listener already exists": "این شنونده برای موتور انتخابی از قبل تنظیم شده است",
+    "This listener uses the managed HTTPS edge address and path": "درگاه و مسیر این شنونده توسط ورودی مشترک HTTPS مدیریت می‌شود",
+    "Use an unprivileged public port (1024–65535)": "یک درگاه عمومی از ۱۰۲۴ تا ۶۵۵۳۵ انتخاب کنید",
+    "Port is reserved for an existing service": "این درگاه برای سرویس موجود رزرو شده است",
+    "Invalid XHTTP path": "مسیر XHTTP نامعتبر است",
+    "Invalid gRPC service name": "نام سرویس gRPC نامعتبر است",
+    "This protocol has no transport path": "این پروتکل مسیر انتقال ندارد",
+    "Another connection method already uses this port and network": "روش اتصال دیگری از این درگاه و انتقال استفاده می‌کند",
+    "No enabled connection methods are compatible with this client profile": "هیچ روش فعال و سازگاری با این پروفایل کلاینت وجود ندارد",
+    "Client profile does not match the subscription format": "پروفایل کلاینت با قالب اشتراک مطابقت ندارد",
+    "Файлы движка будут проверены по SHA-256": "فایل‌های موتور با SHA-256 بررسی می‌شوند",
+    "Работающий движок перезапустится; остановленный останется остановленным": "موتور فعال بازراه‌اندازی می‌شود؛ موتور متوقف‌شده متوقف می‌ماند",
+    "Выбранный движок будет установлен и запущен": "موتور انتخاب‌شده نصب و راه‌اندازی می‌شود",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "رابط outpost-awg، مسیریابی IPv4 و NAT برای 10.78.0.0/16 ایجاد می‌شوند",
+    "Сначала установите движок": "ابتدا موتور را نصب کنید",
+    "Сначала установите sing-box в разделе протоколов": "ابتدا sing-box را در بخش پروتکل‌ها نصب کنید",
+    "Сначала установите AmneziaWG в разделе протоколов": "ابتدا AmneziaWG را در بخش پروتکل‌ها نصب کنید",
     "Сессия истекла — войдите снова": "نشست شما منقضی شده است. دوباره وارد شوید.",
     "API token не имеет нужного scope": "توکن API مجوز لازم را ندارد.",
     "Действие доступно только владельцу панели": "این عملیات فقط برای مالک پنل در دسترس است.",
@@ -152,6 +234,26 @@ const messages: Record<Locale, Record<string, string>> = {
 };
 
 const codes: Record<string, string> = {
+  "Версия не совпадает с доступным обновлением": "engine.candidate_changed",
+  "Можно установить только более новую версию движка": "engine.downgrade",
+  "This name is reserved by client routing policies": "method.reserved_name",
+  "Invalid connection method": "method.invalid",
+  "Connection method not found": "method.not_found",
+  "Create a new method to change its engine or protocol": "method.identity_locked",
+  "Specify every connection method exactly once": "method.invalid_order",
+  "Install the selected engine first": "method.engine_missing",
+  "Unsupported server protocol for this engine": "method.unsupported",
+  "Choose a unique connection method name": "method.duplicate_name",
+  "This managed listener already exists": "method.duplicate_listener",
+  "This listener uses the managed HTTPS edge address and path": "method.managed_edge",
+  "Use an unprivileged public port (1024–65535)": "method.invalid_port",
+  "Port is reserved for an existing service": "method.reserved_port",
+  "Invalid XHTTP path": "method.invalid_path",
+  "Invalid gRPC service name": "method.invalid_path",
+  "This protocol has no transport path": "method.unused_path",
+  "Another connection method already uses this port and network": "method.port_conflict",
+  "No enabled connection methods are compatible with this client profile": "method.no_compatible_methods",
+  "Client profile does not match the subscription format": "method.profile_mismatch",
   "Сессия истекла — войдите снова": "auth.session_expired",
   "API token не имеет нужного scope": "auth.insufficient_scope",
   "Действие доступно только владельцу панели": "auth.owner_required",
@@ -202,7 +304,7 @@ export function requestLanguage(request: Request, url: URL, owner?: { language?:
 }
 
 export function localize(message: string, language: Locale) {
-  if (language === "ru") return message;
+  if (language === "ru") return messages.ru[message] ?? message;
   const translated = messages[language][message] ?? messages.en[message];
   if (translated) return translated;
   if (!/[А-Яа-яЁё]/.test(message)) return message;
@@ -213,6 +315,13 @@ export function localize(message: string, language: Locale) {
 
 const presentationMessages: Record<Exclude<Locale, "ru">, Record<string, string>> = {
   en: {
+    "Файлы движка будут проверены по SHA-256": "Engine files will be verified with SHA-256",
+    "Работающий движок перезапустится; остановленный останется остановленным": "A running engine will restart; a stopped engine will remain stopped",
+    "Выбранный движок будет установлен и запущен": "The selected engine will be installed and started",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "Creates outpost-awg, IPv4 forwarding and NAT for 10.78.0.0/16",
+    "Сначала установите движок": "Install the engine first",
+    "Сначала установите sing-box в разделе протоколов": "Install sing-box in Protocols first",
+    "Сначала установите AmneziaWG в разделе протоколов": "Install AmneziaWG in Protocols first",
     "Перезапустить службу": "Restart service",
     "Проверить и перечитать Nginx": "Validate and reload Nginx",
     "Сначала будет выполнен nginx -t": "nginx -t will run first",
@@ -241,6 +350,13 @@ const presentationMessages: Record<Exclude<Locale, "ru">, Record<string, string>
     "operation.completed": "Done",
   },
   "zh-CN": {
+    "Файлы движка будут проверены по SHA-256": "将使用 SHA-256 验证引擎文件",
+    "Работающий движок перезапустится; остановленный останется остановленным": "运行中的引擎将重启；已停止的引擎保持停止",
+    "Выбранный движок будет установлен и запущен": "将安装并启动所选引擎",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "将创建 outpost-awg 并为 10.78.0.0/16 启用 IPv4 转发和 NAT",
+    "Сначала установите движок": "请先安装引擎",
+    "Сначала установите sing-box в разделе протоколов": "请先在协议页面安装 sing-box",
+    "Сначала установите AmneziaWG в разделе протоколов": "请先在协议页面安装 AmneziaWG",
     "Перезапустить службу": "重启服务",
     "Проверить и перечитать Nginx": "验证并重新加载 Nginx",
     "Сначала будет выполнен nginx -t": "将先运行 nginx -t",
@@ -269,6 +385,13 @@ const presentationMessages: Record<Exclude<Locale, "ru">, Record<string, string>
     "operation.completed": "完成",
   },
   fa: {
+    "Файлы движка будут проверены по SHA-256": "فایل‌های موتور با SHA-256 بررسی می‌شوند",
+    "Работающий движок перезапустится; остановленный останется остановленным": "موتور فعال بازراه‌اندازی می‌شود؛ موتور متوقف‌شده متوقف می‌ماند",
+    "Выбранный движок будет установлен и запущен": "موتور انتخاب‌شده نصب و راه‌اندازی می‌شود",
+    "Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16": "رابط outpost-awg، مسیریابی IPv4 و NAT برای 10.78.0.0/16 ایجاد می‌شوند",
+    "Сначала установите движок": "ابتدا موتور را نصب کنید",
+    "Сначала установите sing-box в разделе протоколов": "ابتدا sing-box را در بخش پروتکل‌ها نصب کنید",
+    "Сначала установите AmneziaWG в разделе протоколов": "ابتدا AmneziaWG را در بخش پروتکل‌ها نصب کنید",
     "Перезапустить службу": "راه‌اندازی مجدد سرویس",
     "Проверить и перечитать Nginx": "اعتبارسنجی و بارگذاری دوبارهٔ Nginx",
     "Сначала будет выполнен nginx -t": "ابتدا nginx -t اجرا می‌شود",
@@ -323,6 +446,10 @@ function presentationText(value: string, language: Exclude<Locale, "ru">) {
   if (connection) return language === "en" ? `Rotate connection “${connection[1]}”`
     : language === "zh-CN" ? `轮换连接“${connection[1]}”`
       : `تعویض اطلاعات اتصال «${connection[1]}»`;
+  const install = value.match(/^Установить (.+) ([0-9][^ ]*)$/);
+  if (install) return language === "en" ? `Install ${install[1]} ${install[2]}` : language === "zh-CN" ? `安装 ${install[1]} ${install[2]}` : `نصب ${install[1]} ${install[2]}`;
+  const ports = value.match(/^Публичные порты: (.+)$/);
+  if (ports) return language === "en" ? `Public ports: ${ports[1]}` : language === "zh-CN" ? `公共端口：${ports[1]}` : `درگاه‌های عمومی: ${ports[1]}`;
   const update = value.match(/^Обновить (.+) до (.+)$/);
   if (update) return language === "en" ? `Update ${update[1]} to ${update[2]}`
     : language === "zh-CN" ? `将 ${update[1]} 更新至 ${update[2]}`

@@ -138,6 +138,7 @@ tag outpost-connections
 			<div>
 				<outpost-icon name="chart-line-up">
 				<span> "{fmt.bytes(store.data.traffic.totals.upload + store.data.traffic.totals.download)} {fmt.period(store.trafficPeriod).short}"
+		<outpost-telemetry-note store=store>
 		if !store.data.connections.length
 			<div.empty> t('connections.empty')
 		else

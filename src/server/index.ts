@@ -20,7 +20,7 @@ const server = Bun.serve({
 
 console.info(`Outpost ${config.version} слушает ${server.url.origin}${config.adminPath}/`);
 
-const trafficTimer = setInterval(() => void app.collectTraffic(), 30_000);
+const trafficTimer = setInterval(() => void app.collectTraffic(), 5_000);
 const monitoringTimer = setInterval(() => void app.collectMonitoring(), 60_000);
 const connectionSyncTimer = setInterval(() => void app.syncConnections(), 5_000);
 const rulesetTimer = setInterval(() => void app.refreshRulesets(), config.rulesetCheckHours * 60 * 60 * 1_000);

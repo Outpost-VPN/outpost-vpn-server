@@ -1,4 +1,6 @@
 [Unit]
+Wants=outpost-firewall.service
+After=outpost-firewall.service
 Description=Outpost Xray
 After=network-online.target
 Wants=network-online.target

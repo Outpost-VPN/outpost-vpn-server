@@ -1,3 +1,4 @@
+import { engineName, serviceName } from "../../shared/engines";
 import type { OutpostDatabase, SqlValue } from "../db/database";
 import type {
   JournalCategory,
@@ -78,6 +79,8 @@ const definitions: Record<string, EventDefinition> = {
   "rulesets.update_failed": incident("system", "Не удалось обновить GeoIP/Geosite", (d) => named(d, "error"), "warning", true),
 
   "engine.order_changed": change("engines", "Порядок подключения движков изменён", engineOrderDescription),
+  "method.configured": change("engines", "Способы подключения изменены"),
+  "method.reordered": change("engines", "Приоритет способов подключения изменён"),
   "engine.config_applied": change("engines", (d) => `Конфигурация ${engineLabel(d.engine)} применена`, versionDescription),
   "engine.config_rolled_back": change("engines", (d) => `Конфигурация ${engineLabel(d.engine)} восстановлена`, versionDescription, true),
   "engine.telemetry_unavailable": incident("engines", (d) => `Телеметрия ${engineLabel(d.engine)} недоступна`, "Статусы подключений временно неизвестны", "warning"),
@@ -407,19 +410,8 @@ function engineOrderDescription(data: EventData) {
   return Array.isArray(data.order) ? data.order.map(engineLabel).join(" → ") : "";
 }
 
-function engineLabel(engine: unknown) {
-  if (engine === "hysteria") return "Hysteria 2";
-  if (engine === "xray") return "Xray";
-  return typeof engine === "string" ? engine : "движка";
-}
-
-function serviceLabel(service: unknown) {
-  const labels: Record<string, string> = {
-    "outpost": "Outpost", "hysteria-server": "Hysteria 2", xray: "Xray", nginx: "Nginx",
-    "vless-xhttp": "VLESS XHTTP", "vless-grpc": "VLESS gRPC",
-  };
-  return typeof service === "string" ? labels[service] ?? service : "службы";
-}
+function engineLabel(engine: unknown) { return engineName(engine, "движка"); }
+function serviceLabel(service: unknown) { return serviceName(service, "службы"); }
 
 function versionDescription(data: EventData) {
   const from = data.fromVersion ?? data.previousVersion;

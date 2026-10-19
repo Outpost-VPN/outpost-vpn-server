@@ -1,3 +1,5 @@
+import { engineIds } from "../src/shared/engines";
+import { protocols } from "../src/shared/protocols";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -14,7 +16,7 @@ const context: SubscriptionContext = {
   connection: {
     id: "native-check", serial: 1, name: "Native check", color: "blue", avatar: "avatar-person",
     status: "active", generation: 1, created_at: "", updated_at: "", activated_at: "", first_used_at: null,
-    last_fetched_at: null, first_seen_at: null, last_seen_at: null, absence_notified_at: null, archived_at: null,
+    last_fetched_at: null, first_seen_at: null, last_seen_at: null, absence_notified_at: null, suspended_at: null, archived_at: null,
   },
   credentials: {
     connectionId: "native-check",
@@ -60,6 +62,11 @@ try {
     await check(binary("OUTPOST_SING_BOX_BINARY", "sing-box"), ["check", "-c", files.singBox]);
     await check(binary("OUTPOST_XRAY_BINARY", "xray"), ["run", "-test", "-config", files.xray]);
   }
+  const modern = { ...context, engineOrder: engineIds, enabledEngines: engineIds, protocols: Object.keys(protocols) as Array<keyof typeof protocols> };
+  writeFileSync(files.mihomo, mihomoRenderer.render(modern).body);
+  writeFileSync(files.singBox, singBoxRenderer.render(modern).body);
+  await check(binary("OUTPOST_MIHOMO_BINARY", "mihomo"), ["-t", "-d", mihomoHome, "-f", files.mihomo]);
+  await check(binary("OUTPOST_SING_BOX_BINARY", "sing-box"), ["check", "-c", files.singBox]);
   console.log(`Native subscription validation passed for ${config.domain}`);
 } finally {
   rmSync(directory, { recursive: true, force: true });

@@ -6,12 +6,11 @@ import { networkDefaults, settingsPatchSchema, type NetworkSettings } from "../.
 import type { OutpostDatabase } from "../db/database";
 import { now } from "../db/database";
 import { config } from "../config";
-import type { EngineId } from "../models";
+import { engineIds, engines, engineMetadata, serviceNames, type EngineId } from "../../shared/engines";
 import { ServiceError } from "./connections";
 import { JournalService, type JournalQuery } from "./journal";
 import { ApplicationUpdateService } from "./application-updates";
 
-const engineIds: EngineId[] = ["hysteria", "xray"];
 
 export class SystemService {
   readonly journal: JournalService;
@@ -39,10 +38,8 @@ export class SystemService {
       transports?: { xhttp?: boolean; grpc?: boolean };
       checkedAt?: string;
     }>("monitor_snapshot", {});
-    const services = monitored.services ?? ["outpost", "nginx", "hysteria-server", "xray"].map((name) => ({ name, status: "unknown" }));
-    const versions = this.db.raw.query<{ engine: string; installed_version: string | null; desired_version: string; checksum: string }, []>(
-      "SELECT engine, installed_version, desired_version, checksum FROM engine_versions ORDER BY engine",
-    ).all();
+    const services = this.db.engines.services(monitored.services);
+    const versions = this.db.engines.versions();
     const database = safeSize(config.databasePath);
     const backups = listBackups();
     const address = await resolve();
@@ -59,7 +56,9 @@ export class SystemService {
         { name: "VLESS gRPC", status: transportStatus(monitored.transports?.grpc), listen: "127.0.0.1:10001", secret: config.grpcService },
       ],
       versions,
-      engineOrder: this.engineOrder(),
+      engineReleases: this.db.engines.releaseChecks(),
+      engines: engineMetadata,
+      telemetryLimited: this.db.engines.limitedTelemetry,
       tls: {
         status: monitored.tls?.status ?? "unknown",
         domain: config.domain,
@@ -93,8 +92,7 @@ export class SystemService {
       transports?: { xhttp?: boolean; grpc?: boolean };
       checkedAt?: string;
     }>("monitor_snapshot", {});
-    const services = monitored.services ?? ["outpost", "nginx", "hysteria-server", "xray"]
-      .map((name) => ({ name, status: "unknown" }));
+    const services = this.db.engines.services(monitored.services);
     const rulesets = this.db.setting<{ status: string; activeVersion: string | null; checkedAt: string | null; lastError: string | null }>(
       "rulesets",
       { status: "idle", activeVersion: null, checkedAt: null, lastError: null },
@@ -105,7 +103,7 @@ export class SystemService {
     ];
     return {
       version: config.version,
-      healthy: services.every((service) => service.status === "active")
+      healthy: services.every((service) => ["active", "not-installed"].includes(service.status))
         && transports.every((transport) => transport.status !== "inactive")
         && monitored.tls?.status === "valid",
       services,
@@ -123,33 +121,6 @@ export class SystemService {
       },
       checkedAt: monitored.checkedAt ?? null,
     };
-  }
-
-  engineOrder(): EngineId[] {
-    const stored = this.db.setting<unknown>("engine_order", engineIds);
-    if (!Array.isArray(stored)) return [...engineIds];
-    const valid = stored.filter((item): item is EngineId => typeof item === "string" && engineIds.includes(item as EngineId));
-    return [...new Set(valid), ...engineIds.filter((item) => !valid.includes(item))];
-  }
-
-  updateEngineOrder(ids: unknown, actor = "owner") {
-    if (!Array.isArray(ids) || ids.length !== engineIds.length || ids.some((item) => typeof item !== "string")) {
-      throw new ServiceError(400, "Укажите все доступные движки в нужном порядке");
-    }
-    const next = ids as EngineId[];
-    if (new Set(next).size !== engineIds.length || engineIds.some((item) => !next.includes(item))) {
-      throw new ServiceError(400, "Порядок движков содержит неизвестные или повторяющиеся элементы");
-    }
-    const before = this.engineOrder();
-    return this.journal.change(
-      "engine.order_changed",
-      () => {
-        this.db.setSetting("engine_order", next);
-        return { engineOrder: next };
-      },
-      () => ({ actor, action: "engines.reorder", resource: "engines", before, after: next }),
-      () => ({ actor, source: "engines", subjectType: "engine_order", data: { order: next } }),
-    );
   }
 
   settings() {

@@ -1,15 +1,25 @@
+import { subscriptionMethods, methodLink, mihomoOutbound, singBoxOutbound, xrayMethodOutbound } from "./method-outbounds";
+import type { ConnectionMethod, ClientProfile } from "../../shared/connection-methods";
+import { amneziaClient } from "./amneziawg";
+import { type ProtocolId } from "../../shared/protocols";
+import { protocolCredential } from "./protocol-credentials";
 import YAML from "yaml";
 import { networkDefaults, type NetworkSettings } from "../../shared/settings";
 import { config } from "../config";
 import type { ClientRouteRule, Connection, ConnectionCredential, EngineId, SubscriptionFormat } from "../models";
 
 export interface SubscriptionContext {
+  methods?: readonly ConnectionMethod[];
+  clientProfile?: ClientProfile;
   connection: Connection;
   credentials: ConnectionCredential;
   routes: ClientRouteRule[];
   subscriptionToken: string;
-  engineOrder: readonly EngineId[];
+  engineOrder?: readonly EngineId[];
   clientPlatform?: string;
+  linkClient?: "incy" | "happ";
+  protocols?: readonly ProtocolId[];
+  enabledEngines?: readonly EngineId[];
   network?: NetworkSettings;
 }
 
@@ -19,10 +29,25 @@ export interface RenderedSubscription {
   headers: Record<string, string>;
 }
 
+// The universal URL keeps beta.4's Base64 wire format for existing clients.
+// New imports use the explicit application/profile catalog instead.
+export type SubscriptionWireFormat = SubscriptionFormat | "xray";
+
 export interface SubscriptionRenderer {
-  readonly id: SubscriptionFormat;
+  readonly id: SubscriptionWireFormat;
   render(context: SubscriptionContext): RenderedSubscription;
 }
+
+export const naiveRenderer: SubscriptionRenderer = {
+  id: "naive",
+  render(context) {
+    const method = subscriptionMethods(context, "naive")[0]!;
+    const user = protocolCredential(context.credentials, "naive");
+    return output(JSON.stringify({ listen: "socks://127.0.0.1:1080",
+      proxy: `https://${encodeURIComponent(user.username)}:${encodeURIComponent(user.password)}@${config.domain}:${method.settings.port}`,
+    }, null, 2) + "\n", "application/json; charset=utf-8");
+  },
+};
 
 const MIHOMO_QUIC_REJECT_RULE = "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT";
 const MIHOMO_IPV6_REJECT_RULE = "IP-CIDR6,::/0,REJECT,no-resolve";
@@ -31,29 +56,23 @@ const SING_BOX_IPV6_REJECT_RULE = { ip_version: 6, action: "reject" } as const;
 const XRAY_QUIC_REJECT_RULE = { type: "field", network: "udp", port: 443, outboundTag: "block" } as const;
 const XRAY_IPV6_REJECT_RULE = { type: "field", ip: ["::/0"], outboundTag: "block" } as const;
 
-export function endpoints(context: SubscriptionContext) {
-  const label = encodeURIComponent(context.connection.name);
-  const host = config.publicIp || config.domain;
-  const xhttp = encodeURIComponent(config.xhttpPath);
-  const grpc = encodeURIComponent(config.grpcService);
-  return {
-    hysteria: `hysteria2://${encodeURIComponent(context.credentials.hysteria.password)}@${host}:443/?sni=${config.domain}&insecure=0#${label}%20Hysteria`,
-    xhttp: `vless://${context.credentials.xray.id}@${host}:443?encryption=none&security=tls&sni=${config.domain}&fp=chrome&type=xhttp&path=${xhttp}&mode=packet-up#${label}%20XHTTP`,
-    grpc: `vless://${context.credentials.xray.id}@${host}:443?encryption=none&security=tls&sni=${config.domain}&fp=chrome&type=grpc&serviceName=${grpc}&mode=gun#${label}%20gRPC`,
-  };
-}
-
 export const linksRenderer: SubscriptionRenderer = {
   id: "links",
   render(context) {
-    const endpoint = endpoints(context);
+    const methods = subscriptionMethods(context, "links");
+    const links = methods.map((method) => methodLink(method, context));
     const routeUrl = `${config.origin}/s/${context.subscriptionToken}/routes`;
-    return output(`${ordered(context.engineOrder, { hysteria: endpoint.hysteria, xray: [endpoint.xhttp, endpoint.grpc] }).join("\n")}\n`, "text/plain; charset=utf-8", {
+    const routing: Record<string, string> = {};
+    if (context.linkClient === "happ") {
+      const profile = Buffer.from(renderLinkRoutes(context.routes, context.network).body, "utf8").toString("base64");
+      links.unshift(`happ://routing/onadd/${profile}`);
+    } else routing.autorouting = `incy://autorouting/onadd/${routeUrl}`;
+    return output(`${links.join("\n")}\n`, "text/plain; charset=utf-8", {
       "profile-title": utf8Header(`Outpost · ${context.connection.name}`),
       "profile-update-interval": "12",
       "profile-web-page-url": `${config.origin}/s/${context.subscriptionToken}`,
       "subscription-userinfo": "upload=0;download=0;total=0;expire=0",
-      autorouting: routeUrl,
+      ...routing,
       "fragmentation-enable": "1",
       "fragmentation-packets": "tlshello",
       "fragmentation-length": "10-30",
@@ -63,61 +82,12 @@ export const linksRenderer: SubscriptionRenderer = {
   },
 };
 
-export const xrayRenderer: SubscriptionRenderer = {
-  id: "xray",
-  render(context) {
-    const endpoint = endpoints(context);
-    return output(Buffer.from(`${endpoint.xhttp}\n${endpoint.grpc}\n`, "utf8").toString("base64"), "text/plain; charset=utf-8", {
-      "profile-title": utf8Header(`Outpost · ${context.connection.name}`),
-      "profile-update-interval": "12",
-    });
-  },
-};
-
 export const mihomoRenderer: SubscriptionRenderer = {
   id: "mihomo",
   render(context) {
     const network = context.network ?? networkDefaults;
-    const host = config.publicIp || config.domain;
-    const credential = context.credentials;
     const rules = context.routes.filter(enabled);
-    const proxies = ordered<Record<string, unknown>>(context.engineOrder, {
-      hysteria: [{
-        name: "Hysteria 2",
-        type: "hysteria2",
-        server: host,
-        port: 443,
-        password: credential.hysteria.password,
-        sni: config.domain,
-        "skip-cert-verify": false,
-        alpn: ["h3"],
-      }],
-      xray: [{
-        name: "VLESS XHTTP",
-        type: "vless",
-        server: host,
-        port: 443,
-        uuid: credential.xray.id,
-        udp: true,
-        tls: true,
-        servername: config.domain,
-        "client-fingerprint": "chrome",
-        network: "xhttp",
-        "xhttp-opts": { path: config.xhttpPath, mode: "packet-up" },
-      }, {
-        name: "VLESS gRPC",
-        type: "vless",
-        server: host,
-        port: 443,
-        uuid: credential.xray.id,
-        udp: true,
-        tls: true,
-        servername: config.domain,
-        "client-fingerprint": "chrome",
-        network: "grpc",
-        "grpc-opts": { "grpc-service-name": config.grpcService },
-      }],
-    });
+    const proxies = subscriptionMethods(context, "mihomo").map((method) => mihomoOutbound(method, context));
     const names = proxies.map((proxy) => proxy.name);
     const profile = {
       "mixed-port": 7890,
@@ -170,6 +140,7 @@ export const singBoxRenderer: SubscriptionRenderer = {
     const host = config.publicIp || config.domain;
     const rules = context.routes.filter(enabled);
     const sets = singBoxSets(rules);
+    const transports = subscriptionMethods(context, "sing-box").map((method) => singBoxOutbound(method, context));
     const profile = {
       log: { level: "warn", timestamp: true },
       dns: {
@@ -181,27 +152,11 @@ export const singBoxRenderer: SubscriptionRenderer = {
       },
       inbounds: [{ type: "tun", tag: "tun-in", address: network.ipv6 ? ["172.19.0.1/30", "fdfe:dcba:9876::1/126"] : ["172.19.0.1/30"], auto_route: true, strict_route: true }],
       outbounds: [
-        {
-          type: "hysteria2",
-          tag: "hysteria2",
-          server: host,
-          server_port: 443,
-          password: context.credentials.hysteria.password,
-          tls: { enabled: true, server_name: config.domain },
-        },
-        {
-          type: "vless",
-          tag: "vless-grpc",
-          server: host,
-          server_port: 443,
-          uuid: context.credentials.xray.id,
-          tls: { enabled: true, server_name: config.domain, utls: { enabled: true, fingerprint: "chrome" } },
-          transport: { type: "grpc", service_name: config.grpcService },
-        },
+        ...transports,
         {
           type: "urltest",
           tag: "proxy",
-          outbounds: singBoxOrder(context.engineOrder),
+          outbounds: transports.map((transport) => transport.tag),
           url: "https://www.gstatic.com/generate_204",
           interval: "5m",
           tolerance: 50,
@@ -231,8 +186,7 @@ export const xrayJsonRenderer: SubscriptionRenderer = {
     const host = config.publicIp || config.domain;
     const rules = context.routes.filter(enabled);
     const outbounds = [
-      xrayOutbound("proxy-xhttp", host, context.credentials.xray.id, "xhttp"),
-      xrayOutbound("proxy-grpc", host, context.credentials.xray.id, "grpc"),
+      ...subscriptionMethods(context, "xray-json").map((method) => xrayMethodOutbound(method, context)),
       { protocol: "freedom", tag: "direct" },
       { protocol: "blackhole", tag: "block" },
     ];
@@ -260,11 +214,27 @@ export const xrayJsonRenderer: SubscriptionRenderer = {
   },
 };
 
-export const renderers: Record<SubscriptionFormat, SubscriptionRenderer> = {
+export const legacyXrayRenderer: SubscriptionRenderer = {
+  id: "xray",
+  render(context) {
+    const links = subscriptionMethods(context, "xray-json").map((method) => methodLink(method, context));
+    return output(Buffer.from(`${links.join("\n")}\n`, "utf8").toString("base64"), "text/plain; charset=utf-8", {
+      "profile-title": utf8Header(`Outpost · ${context.connection.name}`),
+      "profile-update-interval": "12",
+    });
+  },
+};
+
+export const renderers: Record<SubscriptionWireFormat, SubscriptionRenderer> = {
   mihomo: mihomoRenderer,
   "sing-box": singBoxRenderer,
-  xray: xrayRenderer,
   "xray-json": xrayJsonRenderer,
+  xray: legacyXrayRenderer,
+  naive: naiveRenderer,
+  amneziawg: { id: "amneziawg", render(context) {
+    const method = subscriptionMethods(context, "amneziawg")[0]!;
+    return output(amneziaClient(context.credentials, context.connection.serial, config.publicIp || config.domain, undefined, method.settings.port), "text/plain; charset=utf-8", { "content-disposition": "attachment; filename=outpost-amneziawg.conf" });
+  } },
   links: linksRenderer,
 };
 
@@ -277,17 +247,6 @@ export function renderLinkRoutes(rules: ClientRouteRule[], network = networkDefa
 
 function output(body: string, contentType: string, headers: Record<string, string> = {}): RenderedSubscription {
   return { body, contentType, headers: { "cache-control": "private, no-store", ...headers } };
-}
-
-function ordered<T>(order: readonly EngineId[], values: { hysteria: T | T[]; xray: T | T[] }) {
-  return order.flatMap((engine) => {
-    const value = values[engine];
-    return Array.isArray(value) ? value : [value];
-  });
-}
-
-function singBoxOrder(order: readonly EngineId[]) {
-  return ordered(order, { hysteria: "hysteria2", xray: "vless-grpc" });
 }
 
 function enabled(rule: ClientRouteRule) {
@@ -387,22 +346,6 @@ function singBoxRule(rule: ClientRouteRule) {
           : { rule_set: [`geoip-${rule.value.toLowerCase()}`] };
   if (rule.action === "BLOCK") return { ...match, action: "reject" };
   return { ...match, action: "route", outbound: rule.action === "DIRECT" ? "direct" : "proxy" };
-}
-
-function xrayOutbound(tag: string, host: string, id: string, network: "xhttp" | "grpc") {
-  return {
-    protocol: "vless",
-    tag,
-    settings: { vnext: [{ address: host, port: 443, users: [{ id, encryption: "none" }] }] },
-    streamSettings: {
-      network,
-      security: "tls",
-      tlsSettings: { serverName: config.domain, fingerprint: "chrome" },
-      ...(network === "xhttp"
-        ? { xhttpSettings: { path: config.xhttpPath, mode: "packet-up" } }
-        : { grpcSettings: { serviceName: config.grpcService, multiMode: false } }),
-    },
-  };
 }
 
 function xrayRule(rule: ClientRouteRule) {

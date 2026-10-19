@@ -12,6 +12,8 @@ const dist = join(root, "dist");
 rmSync(stage, { recursive: true, force: true });
 mkdirSync(join(stage, "bin"), { recursive: true });
 
+if (process.platform !== "linux" || process.arch !== "x64") throw new Error("Release builds require a Linux amd64 runner");
+await command(["bun", "scripts/build-amneziawg.ts"]);
 await command(["bun", "run", "build:web"]);
 await command(["bun", "build", "src/server/index.ts", "--compile", "--target=bun-linux-x64-baseline", `--outfile=${join(dist, "outpost")}`]);
 await command(["bun", "build", "src/cli/index.ts", "--compile", "--target=bun-linux-x64-baseline", `--outfile=${join(dist, "outpostctl")}`]);
@@ -38,6 +40,7 @@ for (const name of ["outpost", "outpostctl", "outpost-agent"]) {
 }
 cpSync(join(root, "public"), join(stage, "public"), { recursive: true });
 cpSync(join(root, "infra"), join(stage, "infra"), { recursive: true });
+cpSync(join(dist, "engines", "amneziawg"), join(stage, "infra", "engines", "amneziawg"), { recursive: true });
 for (const name of ["LICENSE", "THIRD_PARTY_NOTICES.md", "README.md"]) {
   if (existsSync(join(root, name))) cpSync(join(root, name), join(stage, name));
 }

@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { verifiedDownload } from "./lib/verified-download";
+import { engines } from "../src/shared/engines";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -16,14 +17,19 @@ if (!platform || !architecture) throw new Error(`Unsupported native validation h
 mkdirSync(output, { recursive: true });
 
 try {
-  const mihomo = await release("MetaCubeX/mihomo", "v1.19.30");
-  const mihomoName = `mihomo-${platform}-${architecture}-v1.19.30.gz`;
+  const hysteria = await release(engines.hysteria.repository, engines.hysteria.tag);
+  const hysteriaAsset = asset(hysteria, exact(`hysteria-${platform}-${architecture}`));
+  writeFileSync(join(output, "hysteria"), await verified(hysteriaAsset));
+  chmodSync(join(output, "hysteria"), 0o755);
+
+  const mihomo = await release("MetaCubeX/mihomo", engines.mihomo.tag);
+  const mihomoName = `mihomo-${platform}-${architecture}-v${engines.mihomo.version}.gz`;
   const mihomoAsset = asset(mihomo, exact(mihomoName));
   const mihomoArchive = await verified(mihomoAsset);
   writeFileSync(join(output, "mihomo"), gunzipSync(mihomoArchive));
 
-  const singBox = await release("SagerNet/sing-box", "v1.13.19");
-  const singName = `sing-box-1.13.19-${platform}-${architecture}.tar.gz`;
+  const singBox = await release("SagerNet/sing-box", engines["sing-box"].tag);
+  const singName = `sing-box-${engines["sing-box"].version}-${platform}-${architecture}.tar.gz`;
   const singAsset = asset(singBox, exact(singName));
   const singArchive = join(temporary, singAsset.name);
   writeFileSync(singArchive, await verified(singAsset));
@@ -31,8 +37,9 @@ try {
   mkdirSync(singExtracted);
   await command(["tar", "-xzf", singArchive, "-C", singExtracted]);
   copyFileSync(find(singExtracted, "sing-box"), join(output, "sing-box"));
+  if (platform === "linux") copyFileSync(find(singExtracted, "libcronet.so"), join(output, "libcronet.so"));
 
-  const xray = await release("XTLS/Xray-core", "v26.7.28");
+  const xray = await release("XTLS/Xray-core", engines.xray.tag);
   const xrayName = platform === "darwin"
     ? architecture === "arm64" ? "Xray-macos-arm64-v8a.zip" : "Xray-macos-64.zip"
     : architecture === "arm64" ? "Xray-linux-arm64-v8a.zip" : "Xray-linux-64.zip";
@@ -44,7 +51,7 @@ try {
   await command(["unzip", "-q", xrayArchive, "-d", xrayExtracted]);
   copyFileSync(find(xrayExtracted, "xray"), join(output, "xray"));
 
-  for (const name of ["mihomo", "sing-box", "xray"]) chmodSync(join(output, name), 0o755);
+  for (const name of ["hysteria", "mihomo", "sing-box", "xray"]) chmodSync(join(output, name), 0o755);
   console.log(output);
 } finally {
   rmSync(temporary, { recursive: true, force: true });
@@ -76,12 +83,7 @@ function exact(value: string) {
 
 async function verified(asset: Asset) {
   if (!asset.digest?.startsWith("sha256:")) throw new Error(`GitHub did not provide a SHA-256 digest for ${asset.name}`);
-  const response = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(120_000) });
-  if (!response.ok) throw new Error(`Cannot download ${asset.name}`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  const digest = createHash("sha256").update(bytes).digest("hex");
-  if (digest !== asset.digest.slice(7)) throw new Error(`SHA-256 mismatch for ${asset.name}`);
-  return bytes;
+  return verifiedDownload(asset.browser_download_url, asset.digest.slice(7));
 }
 
 function find(directory: string, name: string): string {

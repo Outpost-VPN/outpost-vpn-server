@@ -1,6 +1,8 @@
 package policy
 
 import (
+	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -8,16 +10,27 @@ import (
 	"strings"
 )
 
-var allowedServices = map[string]bool{
-	"outpost":         true,
-	"nginx":           true,
-	"hysteria-server": true,
-	"xray":            true,
+//go:embed engines.json
+var engineManifest []byte
+
+type EngineDefinition struct {
+	Service  string `json:"service"`
+	File     string `json:"file"`
+	Optional bool   `json:"optional"`
 }
 
-var allowedEngineServices = map[string]bool{
-	"hysteria-server": true,
-	"xray":            true,
+var Engines = map[string]EngineDefinition{}
+var allowedServices = map[string]bool{"outpost": true, "nginx": true}
+var allowedEngineServices = map[string]bool{}
+
+func init() {
+	if err := json.Unmarshal(engineManifest, &Engines); err != nil {
+		panic(err)
+	}
+	for _, engine := range Engines {
+		allowedServices[engine.Service] = true
+		allowedEngineServices[engine.Service] = true
+	}
 }
 
 var allowedRoots = []string{
@@ -33,6 +46,11 @@ type Request struct {
 
 func Validate(request Request) error {
 	switch request.Action {
+	case "telemetry.read":
+		if request.Payload["engine"] != "amneziawg" || len(request.Payload) != 1 {
+			return errors.New("only managed AmneziaWG telemetry is allowed")
+		}
+		return nil
 	case "service.restart":
 		service, ok := request.Payload["service"].(string)
 		if !ok || !allowedServices[service] {
@@ -57,7 +75,7 @@ func Validate(request Request) error {
 		return nil
 	case "engine.update":
 		engine, ok := request.Payload["engine"].(string)
-		if !ok || (engine != "hysteria" && engine != "xray") {
+		if !ok || !isEngine(engine) {
 			return errors.New("engine is not allowed")
 		}
 		version, ok := request.Payload["version"].(string)
@@ -126,6 +144,12 @@ func Validate(request Request) error {
 			return errors.New("plain backup must not include a passphrase")
 		}
 		return nil
+	case "config.sync":
+		engine, ok := request.Payload["engine"].(string)
+		if !ok || !isEngine(engine) {
+			return errors.New("known engine is required")
+		}
+		return requirePath(request.Payload, "source", "/var/lib/outpost/runtime")
 	case "config.apply":
 		if err := requirePath(request.Payload, "source", "/var/lib/outpost"); err != nil {
 			return err
@@ -134,8 +158,11 @@ func Validate(request Request) error {
 			return err
 		}
 		engine, ok := request.Payload["engine"].(string)
-		if !ok || (engine != "hysteria" && engine != "xray") {
+		if !ok || !isEngine(engine) {
 			return errors.New("engine is not allowed")
+		}
+		if request.Payload["target"] != "/etc/outpost/engines/"+Engines[engine].File {
+			return errors.New("configuration target does not match engine")
 		}
 		if restart, ok := request.Payload["restart"]; ok {
 			if _, valid := restart.(bool); !valid {
@@ -159,6 +186,8 @@ func Validate(request Request) error {
 	}
 	return nil
 }
+
+func isEngine(value string) bool { _, ok := Engines[value]; return ok }
 
 func safeVersion(value string) bool {
 	if len(value) < 1 || len(value) > 40 || value[0] < '0' || value[0] > '9' {

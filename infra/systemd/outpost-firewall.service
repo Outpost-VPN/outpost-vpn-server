@@ -1,0 +1,13 @@
+[Unit]
+Description=Outpost managed listener ingress
+Requires=ufw.service
+After=ufw.service
+Before=hysteria-server.service xray.service outpost-mihomo.service outpost-sing-box.service outpost-amneziawg.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/outpost/current/infra/scripts/engine-firewall --all
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

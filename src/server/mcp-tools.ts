@@ -1,3 +1,5 @@
+import {methodInputSchema} from "../shared/connection-methods";
+import {engineIds} from "../shared/engines";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { version } from "../version";
@@ -116,6 +118,39 @@ export function createMcpServer(api: OutpostApi) {
     action,
     payload,
   })));
+
+
+  server.registerTool("engines_get", {
+    title: "Ядра Outpost", description: "Читает установленные и закреплённые версии ядер, checksum обновлений и серверные возможности. Требует engines:read.",
+    annotations: {readOnlyHint:true},
+  }, async () => result(await api.get("/api/v1/engines")));
+  server.registerTool("engines_check", {
+    title: "Проверить версии движков",
+    description: "Проверяет официальные версии и проверяемые файлы независимых обновлений. Передайте engine для одного движка. Требует engines:write; ничего не устанавливает. AWG использует отдельную подписанную сборку движка.",
+    inputSchema: {engine: z.enum(engineIds as [string, ...string[]]).optional()},
+    annotations: {readOnlyHint: true},
+  }, async ({engine}) => result(await api.post(engine ? `/api/v1/engines/${engine}/check` : "/api/v1/engines/check")));
+
+  server.registerTool("methods_get", {
+    title: "Способы подключения", description: "Читает настроенные способы, их приоритет, серверные возможности и предлагаемые настройки. Требует engines:read.",
+    annotations: {readOnlyHint:true},
+  }, async () => result(await api.get("/api/v1/methods")));
+  server.registerTool("method_create", {
+    title: "Добавить способ подключения", description: "Создаёт способ на установленном ядре и применяет его конфигурацию. Требует engines:write. Серверные изменения могут перезапустить работающее ядро; согласуйте прерывание его подключений. После изменения клиентам нужно обновить подписку.",
+    inputSchema: methodInputSchema.shape, annotations: {destructiveHint:false},
+  }, async (input) => result(await api.post("/api/v1/methods", input)));
+  server.registerTool("method_update", {
+    title: "Настроить способ подключения", description: "Применяет полный набор настроек существующего способа. Ядро и протокол сохраняются. Требует engines:write. Серверные изменения могут перезапустить работающее ядро и затронуть все его способы; согласуйте прерывание подключений.",
+    inputSchema: {method_id:z.string().min(1).max(80), method:methodInputSchema}, annotations: {destructiveHint:false, idempotentHint:true},
+  }, async ({method_id, method}) => result(await api.patch("/api/v1/methods/" + encodeURIComponent(method_id), method)));
+  server.registerTool("method_delete", {
+    title: "Удалить способ подключения", description: "Удаляет серверный способ, сохраняя другие способы и доступы пользователей. Требует engines:write. Это прерывает работу удаляемого способа и может перезапустить его ядро; согласуйте прерывание подключений.",
+    inputSchema: {method_id:z.string().min(1).max(80)}, annotations: {destructiveHint:true},
+  }, async ({method_id}) => result(await api.delete("/api/v1/methods/" + encodeURIComponent(method_id))));
+  server.registerTool("methods_reorder", {
+    title: "Приоритет способов подключения", description: "Сохраняет полный порядок способов. Службы не перезапускаются; новый порядок приходит с обновлением совместимой подписки. Требует engines:write.",
+    inputSchema: {ids:z.array(z.string().min(1).max(80))}, annotations: {destructiveHint:false, idempotentHint:true},
+  }, async ({ids}) => result(await api.post("/api/v1/methods/reorder", {ids})));
 
   return server;
 }

@@ -1,3 +1,5 @@
+import { enginePorts } from "../../shared/protocols";
+import { engines, engineServices, isEngine, serviceNames, serviceName } from "../../shared/engines";
 import { createHash } from "node:crypto";
 import { createConnection } from "node:net";
 import type { OutpostDatabase } from "../db/database";
@@ -9,7 +11,7 @@ import { JournalService } from "./journal";
 
 export type OperationAction = "service.restart" | "service.start" | "service.stop" | "engine.update" | "nginx.reload" | "update.apply" | "backup.export" | "connection.rotate";
 
-type PreviewContext = { connectionName?: string };
+type PreviewContext = { connectionName?: string; engineInstalled?: boolean };
 type ConnectionRotator = (connectionId: string, actor: string) => Promise<Record<string, unknown>>;
 
 const previews: Record<OperationAction, (payload: Record<string, unknown>, context: PreviewContext) => unknown> = {
@@ -28,11 +30,19 @@ const previews: Record<OperationAction, (payload: Record<string, unknown>, conte
     changes: [`Текущие подключения через ${serviceLabel(payload.service)} прервутся, а новые перейдут к следующему способу по порядку`],
     payload,
   }),
-  "engine.update": (payload) => ({
-    title: `Обновить ${String(payload.engine) === "xray" ? "Xray" : "Hysteria 2"} до ${String(payload.version ?? "")}`,
-    changes: ["Архив будет проверен по SHA-256, затем перезапустится только выбранный движок"],
-    payload,
-  }),
+  "engine.update": (payload, context) => {
+    const name = isEngine(payload.engine) ? engines[payload.engine].name : String(payload.engine);
+    const version = String(payload.version ?? "");
+    return {
+      title: context.engineInstalled ? `Обновить ${name} до ${version}` : `Установить ${name} ${version}`,
+      changes: [
+        "Файлы движка будут проверены по SHA-256",
+        context.engineInstalled ? "Работающий движок перезапустится; остановленный останется остановленным" : "Выбранный движок будет установлен и запущен",
+        ...(!context.engineInstalled && isEngine(payload.engine) ? [`Публичные порты: ${enginePorts(payload.engine).join(", ")}`] : []),
+        ...(!context.engineInstalled && payload.engine === "amneziawg" ? ["Будут созданы интерфейс outpost-awg, IPv4 forwarding и NAT для 10.78.0.0/16"] : []),
+      ], payload,
+    };
+  },
   "nginx.reload": (payload) => ({ title: "Проверить и перечитать Nginx", changes: ["Сначала будет выполнен nginx -t"], payload }),
   "update.apply": (payload) => ({
     title: `Обновить Outpost до ${String(payload.version ?? "")}`,
@@ -63,6 +73,8 @@ export class OperationService {
     journal?: JournalService,
     private runner: typeof callAgent = callAgent,
     private rotateConnection?: ConnectionRotator,
+    private prepareEngine?: (engine: string) => Promise<unknown>,
+    private serializeEngine?: (task: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>,
   ) {
     this.journal = journal ?? new JournalService(db);
     this.reconcileUpdates();
@@ -139,16 +151,18 @@ export class OperationService {
         : action === "update.apply" ? "operation.update_verifying"
           : "operation.delegating";
       this.update(id, "running", 15, message);
-      const delegated = action === "update.apply" ? { ...payload, operationId: id } : payload;
-      const result = action === "connection.rotate"
-        ? await this.rotate(payload, actor)
-        : config.demo
-          ? await new Promise<Record<string, unknown>>((resolve) => setTimeout(() => resolve({ ok: true, demo: true }), 350))
-          : await this.runner({ action, payload: delegated });
-      if (action === "engine.update") {
-        this.db.raw.query("UPDATE engine_versions SET installed_version = ?, updated_at = ? WHERE engine = ?")
-          .run(String(payload.version), now(), String(payload.engine));
-      }
+      const run = async () => {
+        if (action === "engine.update" && this.prepareEngine) await this.prepareEngine(String(payload.engine));
+        const delegated = action === "update.apply" ? { ...payload, operationId: id } : payload;
+        const result = action === "connection.rotate"
+          ? await this.rotate(payload, actor)
+          : config.demo
+            ? await new Promise<Record<string, unknown>>((resolve) => setTimeout(() => resolve({ ok: true, demo: true }), 350))
+            : await this.runner({ action, payload: delegated });
+        if (action === "engine.update" && isEngine(payload.engine)) this.db.engines.recordInstallation(payload.engine, String(payload.version));
+        return result;
+      };
+      const result = action === "engine.update" && this.serializeEngine ? await this.serializeEngine(run) : await run();
       if (config.demo && (action === "service.start" || action === "service.stop")) {
         this.demoService(String(payload.service), action === "service.start");
       }
@@ -206,27 +220,28 @@ export class OperationService {
       context.connectionName = connection.name;
     }
     if (action === "service.restart") {
-      const services = ["outpost", "nginx", "hysteria-server", "xray"];
+      const services = serviceNames;
       if (!services.includes(String(payload.service))) throw new ServiceError(400, "Эту службу нельзя перезапустить");
     }
     if (action === "service.start" || action === "service.stop") {
-      const services = ["hysteria-server", "xray"];
+      const services = engineServices;
       if (!services.includes(String(payload.service))) throw new ServiceError(400, "Эту службу нельзя запускать или останавливать");
+      if (action === "service.start" && this.db.engines.missingService(String(payload.service))) throw new ServiceError(409, "Сначала установите движок");
     }
     if (action === "engine.update") {
       const engine = String(payload.engine ?? "");
       const version = String(payload.version ?? "");
       const checksum = String(payload.checksum ?? "");
-      if (!['hysteria', 'xray'].includes(engine)) throw new ServiceError(400, "Неизвестный движок");
+      if (!isEngine(engine)) throw new ServiceError(400, "Неизвестный движок");
       if (!/^[0-9][0-9A-Za-z.-]{0,39}$/.test(version)) throw new ServiceError(400, "Некорректная версия движка");
       if (!/^[0-9a-f]{64}$/.test(checksum)) throw new ServiceError(400, "Некорректная контрольная сумма");
-      const pinned = this.db.raw.query<{ installed_version: string | null; desired_version: string; checksum: string }, string>(
-        "SELECT installed_version, desired_version, checksum FROM engine_versions WHERE engine = ?",
-      ).get(engine);
+      const pinned = this.db.engines.version(engine);
       if (!pinned || pinned.desired_version !== version || pinned.checksum !== checksum) {
-        throw new ServiceError(409, "Версия не совпадает с закреплённым обновлением");
+        throw new ServiceError(409, "Версия не совпадает с доступным обновлением");
       }
       if (pinned.installed_version === version) throw new ServiceError(409, "Эта версия уже установлена");
+      if (pinned.installed_version && compareVersions(version, pinned.installed_version) < 0) throw new ServiceError(409, "Можно установить только более новую версию движка");
+      context.engineInstalled = Boolean(pinned.installed_version);
     }
     if (action === "update.apply") {
       const version = String(payload.version ?? "");
@@ -302,7 +317,7 @@ export class OperationService {
     const overrides = this.db.setting<Record<string, boolean>>("demo_service_states", {});
     this.db.setSetting("demo_service_states", { ...overrides, [service]: active });
     const snapshot = this.db.setting<{ services?: Array<{ name: string; status: string }>; [key: string]: unknown }>("monitor_snapshot", {});
-    const services = snapshot.services ?? ["outpost", "nginx", "hysteria-server", "xray"].map((name) => ({ name, status: "active" }));
+    const services = this.db.engines.services(snapshot.services);
     this.db.setSetting("monitor_snapshot", {
       ...snapshot,
       services: services.map((item) => item.name === service ? { ...item, status: active ? "active" : "inactive" } : item),
@@ -365,10 +380,7 @@ function safeError(error: unknown) {
   return message.slice(0, 500);
 }
 
-function serviceLabel(value: unknown) {
-  const labels: Record<string, string> = { "hysteria-server": "Hysteria 2", xray: "Xray" };
-  return labels[String(value ?? "")] ?? String(value ?? "");
-}
+function serviceLabel(value: unknown) { return serviceName(value); }
 
 function payloadHash(action: string, payload: unknown) {
   return createHash("sha256").update(`${action}\0${stableJson(payload)}`).digest("hex");
@@ -386,9 +398,9 @@ export async function callAgent(request: { action: string; payload: Record<strin
   return new Promise<Record<string, unknown>>((resolve, reject) => {
     const socket = createConnection(socketPath);
     let response = "";
-    const timeout = request.action === "setup.finalize" || request.action === "update.apply" || request.action === "backup.restore"
+    const timeout = request.action === "telemetry.read" ? 4_000 : request.action === "setup.finalize" || request.action === "update.apply" || request.action === "backup.restore"
       ? 180_000
-      : request.action === "engine.update" ? 120_000 : 30_000;
+      : request.action === "engine.update" ? 240_000 : 30_000;
     socket.setTimeout(timeout);
     // Bun closes the readable side after net.Socket.end(), so a delayed agent
     // reply is lost. The newline terminates the request without half-closing it.

@@ -40,6 +40,8 @@ rollback_install() {
   fi
   rm -f /etc/letsencrypt/renewal-hooks/deploy/outpost /usr/local/bin/outpostctl
   rm -f /etc/systemd/system/outpost.service /etc/systemd/system/outpost-agent.service
+  if test -x /opt/outpost/current/infra/scripts/engine-firewall; then /opt/outpost/current/infra/scripts/engine-firewall --clear >/dev/null 2>&1 || true; fi
+  rm -f /etc/systemd/system/outpost-firewall.service
   rm -f /etc/systemd/system/xray.service /etc/systemd/system/hysteria-server.service
   rm -rf /opt/outpost /etc/outpost /var/lib/outpost "$acme_webroot"
   if test "$ufw_was_active" -eq 0; then
@@ -92,7 +94,7 @@ rollback_armed=1
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends nginx snapd ufw unzip curl ca-certificates age sqlite3 minisign openssl
+apt-get install -y --no-install-recommends nginx snapd ufw unzip curl ca-certificates age sqlite3 minisign openssl iproute2 iptables
 systemctl enable --now snapd.socket
 snap wait system seed.loaded
 snap install core >/dev/null 2>&1 || snap refresh core >/dev/null

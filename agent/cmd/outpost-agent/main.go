@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"filippo.io/age"
 
@@ -87,6 +89,11 @@ func handle(connection net.Conn) {
 
 func execute(request policy.Request) (string, error) {
 	switch request.Action {
+	case "telemetry.read":
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		output, err := exec.CommandContext(ctx, "/opt/outpost/engines/amneziawg/current/awg", "show", "outpost-awg", "transfer").CombinedOutput()
+		return string(output), err
 	case "service.restart":
 		return run("systemctl", "restart", request.Payload["service"].(string))
 	case "service.start":
@@ -127,6 +134,17 @@ func execute(request policy.Request) (string, error) {
 			request.Payload["restoreId"].(string),
 			passphrase,
 		)
+	case "config.sync":
+		engine := request.Payload["engine"].(string)
+		definition := policy.Engines[engine]
+		restart := "0"
+		if _, err := run("systemctl", "is-active", "--quiet", definition.Service); err == nil {
+			restart = "1"
+			if engine == "amneziawg" {
+				restart = "sync"
+			}
+		}
+		return run("/opt/outpost/current/infra/scripts/apply-config", request.Payload["source"].(string), "/etc/outpost/engines/"+definition.File, engine, restart)
 	case "config.apply":
 		restart := "1"
 		if value, ok := request.Payload["restart"].(bool); ok && !value {
@@ -144,6 +162,9 @@ func execute(request policy.Request) (string, error) {
 		if err != nil {
 			return installed, err
 		}
+		if _, err := run("systemctl", "is-active", "--quiet", "xray"); err != nil {
+			return installed, nil
+		}
 		output, err := run("/opt/outpost/engines/xray/current/xray", "api", "adu", "--server=127.0.0.1:10085", request.Payload["source"].(string))
 		if err == nil && xrayUserUpdateSucceeded(output, "Added", 2) {
 			return installed + "; " + output, nil
@@ -154,6 +175,9 @@ func execute(request policy.Request) (string, error) {
 		installed, err := install(request.Payload["rendered"].(string), "/etc/outpost/engines/xray.json")
 		if err != nil {
 			return installed, err
+		}
+		if _, err := run("systemctl", "is-active", "--quiet", "xray"); err != nil {
+			return installed, nil
 		}
 		xhttpOutput, xhttpErr := run("/opt/outpost/engines/xray/current/xray", "api", "rmu", "--server=127.0.0.1:10085", "-tag=vless-xhttp", request.Payload["email"].(string))
 		grpcOutput, grpcErr := run("/opt/outpost/engines/xray/current/xray", "api", "rmu", "--server=127.0.0.1:10085", "-tag=vless-grpc", request.Payload["email"].(string))

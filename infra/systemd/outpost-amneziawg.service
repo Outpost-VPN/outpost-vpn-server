@@ -1,0 +1,28 @@
+[Unit]
+Wants=outpost-firewall.service
+After=outpost-firewall.service
+Description=Outpost AmneziaWG 3.1 userspace server
+After=network-online.target outpost.service
+Wants=network-online.target
+ConditionPathExists=/opt/outpost/engines/amneziawg/current/amneziawg-go
+
+[Service]
+Type=notify
+NotifyAccess=all
+User=root
+ExecStart=/opt/outpost/current/infra/scripts/amneziawg-service
+Restart=on-failure
+RestartSec=3
+KillMode=mixed
+TimeoutStopSec=15
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/run
+ReadOnlyPaths=/etc/outpost /opt/outpost/engines
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_KILL
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

@@ -60,6 +60,46 @@ export def setLanguage value, persist = true
 	current
 
 const ru = {
+	"methods.drag": "Перетащить способ. Стрелки вверх и вниз меняют порядок"
+	"methods.not_working": "Не работает"
+	"methods.routing_profile": 'В подписке для клиентов на {clients} маршруты Outpost включены в профиль. Клиент должен импортировать профиль целиком, вместе с правилами.'
+	"methods.routing_links": 'Отдельная ссылка подключения не содержит маршрутов. В подписке со ссылками маршруты передаются отдельно — их загрузит только клиент с поддержкой маршрутов Outpost.'
+	"methods.routing_native": 'Файл для {client} не содержит маршрутов Outpost. Для подключения с нашими маршрутами используйте профиль подписки для указанного выше движка.'
+
+	'engines.check_one': 'Проверить новую версию {engine}'
+	'engines.bundle_pending': 'Ожидается отдельная подписанная сборка движка'
+	'engines.artifact_pending': 'Для этой версии пока нет готового файла с SHA-256'
+	"engines.not_checked": "Новые релизы ещё не проверялись"
+	"engines.upstream": "Последняя версия проекта"
+	"engines.check_failed": "Не удалось проверить релизы. Повторите проверку."
+	"nav.engines": "Движки"
+	"methods.apply_hint": "Изменение серверных параметров кратко перезапускает работающий движок и затрагивает все его способы подключения. Для использования способа движок должен работать."
+	"methods.peer_hint": "Параметры и доступы AmneziaWG обновляются без перезапуска движка. После смены порта обновите профиль на устройствах."
+	"methods.delete": "Удалить способ"
+	"methods.title": "Способы подключения"
+	"methods.engines": "Движки"
+	"methods.page_hint": "Способы подключения к серверу, их настройки и совместимость"
+	"methods.order_hint": "Приоритет способов в совместимых подписках"
+	"methods.add": "Добавить способ"
+	"methods.edit": "Настроить способ"
+	"methods.disabled": "Выключен"
+	"methods.engine_stopped": "Движок остановлен или не проверено"
+	"methods.empty": "Способов пока нет. Установите движок и добавьте способ подключения."
+	"methods.subscription_hint": "Подписка включает только включённые способы, совместимые с выбранным клиентским профилем. Изменения придут при обновлении подписки."
+	"methods.network_hint": "Состояние сервера не подтверждает доступность из вашей сети: её нужно проверить на устройстве."
+	"methods.engine": "Серверный движок"
+	"methods.protocol": "Протокол и транспорт"
+	"methods.name": "Название"
+	"methods.port": "Публичный порт"
+	"methods.grpc_service": "Имя gRPC-сервиса"
+	"methods.http_path": "Путь XHTTP"
+	"methods.fingerprint": "TLS fingerprint клиента"
+	"methods.enabled_label": "Включить этот способ"
+	"methods.credentials_hint": "Доступы пользователей управляются централизованно. Пароли и ключи добавляются Outpost автоматически."
+	"methods.edge_hint": "Этот способ использует общий HTTPS-вход Nginx. Его порт и путь управляются настройками сервера."
+	"methods.no_choices": "Для этого движка все доступные одиночные listeners уже созданы. Выберите другой движок или настройте существующий способ."
+	"methods.engines_hint": "Установка, версии и состояние программ. Способы подключения настраиваются отдельно."
+	"methods.count": "Настроено способов"
 	'app.name': 'Outpost'
 	'title.setup': 'Первоначальная настройка'
 	'title.onboarding': 'Настройка доступа'
@@ -147,7 +187,10 @@ const ru = {
 	'system.active': 'Работает'
 	'system.unknown': 'Состояние неизвестно'
 	'engines.eyebrow': 'СИСТЕМА'
-	'engines.title': 'Протоколы'
+	'engines.telemetry_limited': 'Счётчики трафика и точная активность подключений пока доступны только для Hysteria и Xray. Для новых протоколов активность может отображаться как неизвестная.'
+	'engines.not_installed': 'Не установлен'
+	'engines.client_profiles': 'После установки движка откройте страницу подключения → «Для опытных» и выберите совместимый профиль. Перед импортом проверьте требуемую версию движка клиента.'
+	'engines.title': 'Движки'
 	'engines.subtitle': 'Технологии, версии и конфигурации подключений'
 	'engines.healthy': 'Оба движка работают'
 	'engines.attention': 'Один из движков требует внимания'
@@ -164,15 +207,13 @@ const ru = {
 	'engines.no_updates': 'Обновлений нет'
 	'engines.updates_available': 'Доступны обновления'
 	'engines.current_versions': 'Используются актуальные версии'
-	'engines.checked': 'Версии проверены только что'
-	'engines.check': 'Проверить версии'
-	'engines.checking': 'Проверяем…'
+	"engines.checked": "Проверено"
 	'engines.recent': 'Последние конфигурации'
 	'engines.baseline': 'базовая конфигурация'
 	'engines.published': 'опубликована'
 	'engines.history': 'Открыть историю'
 	'engines.history_title': 'История конфигураций'
-	'engines.history_hint': 'Последние опубликованные ревизии Hysteria 2 и Xray.'
+	'engines.history_hint': 'Последние опубликованные конфигурации движков.'
 	'engines.history_empty': 'Пользовательских ревизий пока нет — используются базовые конфигурации.'
 	'engines.note': 'Изменения сначала проверяются, затем применяются с автоматическим откатом при ошибке.'
 	'auth.badge': 'Панель владельца'
@@ -476,10 +517,6 @@ Object.assign dictionaries.ru, {
 	'connect.freemium': 'Бесплатно · есть платные функции'
 	'connect.paid_once': 'Платно · разовая покупка'
 	'connect.paid_subscription': 'Платно · подписка'
-	'connect.auto': 'Маршруты обновляются автоматически'
-	'connect.manual': 'Маршруты обновляются вручную'
-	'connect.exact': 'Точный порядок маршрутов'
-	'connect.limited': 'Маршруты сгруппированы по действиям'
 	'connect.transports': 'Транспорты'
 	'connect.available': 'Доступно для'
 	'connect.copy': 'Скопировать профиль'
@@ -520,10 +557,6 @@ Object.assign dictionaries.en, {
 	'connect.freemium': 'Free · paid features available'
 	'connect.paid_once': 'Paid · one-time purchase'
 	'connect.paid_subscription': 'Paid · subscription'
-	'connect.auto': 'Routes update automatically'
-	'connect.manual': 'Routes update manually'
-	'connect.exact': 'Exact route order'
-	'connect.limited': 'Routes grouped by action'
 	'connect.transports': 'Transports'
 	'connect.available': 'Available for'
 	'connect.copy': 'Copy profile'
@@ -564,10 +597,6 @@ Object.assign dictionaries['zh-CN'], {
 	'connect.freemium': '免费 · 提供付费功能'
 	'connect.paid_once': '付费 · 一次性购买'
 	'connect.paid_subscription': '付费 · 订阅'
-	'connect.auto': '路由自动更新'
-	'connect.manual': '路由需手动更新'
-	'connect.exact': '精确的路由顺序'
-	'connect.limited': '路由按操作分组'
 	'connect.transports': '传输方式'
 	'connect.available': '可用于'
 	'connect.copy': '复制配置'
@@ -608,10 +637,6 @@ Object.assign dictionaries.fa, {
 	'connect.freemium': 'رایگان · امکانات پولی دارد'
 	'connect.paid_once': 'پولی · خرید یک‌باره'
 	'connect.paid_subscription': 'پولی · اشتراک'
-	'connect.auto': 'مسیرها خودکار به‌روزرسانی می‌شوند'
-	'connect.manual': 'مسیرها دستی به‌روزرسانی می‌شوند'
-	'connect.exact': 'ترتیب دقیق مسیرها'
-	'connect.limited': 'مسیرها بر اساس عمل گروه‌بندی می‌شوند'
 	'connect.transports': 'روش‌های انتقال'
 	'connect.available': 'در دسترس برای'
 	'connect.copy': 'کپی پروفایل'

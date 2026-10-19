@@ -8,13 +8,27 @@ import {
   EngineConfigService,
   renderHysteria,
   renderXray,
+  renderEngine,
   validateTemplate,
 } from "../src/server/adapters/engines";
 import { renderXrayUserAdd } from "../src/server/services/engine-runtime";
 import { database } from "./helpers";
 import { config } from "../src/server/config";
+import {defaultEngineTemplates} from "../src/server/adapters/engine-presets";
+import {engineApi, engineApiSecret} from "../src/server/adapters/engine-api";
+import {runtimePorts} from "../src/server/adapters/engine-ports";
 
 describe("protected engine templates", () => {
+  test("keeps the authenticated sing-box telemetry service on loopback and out of public ingress", () => {
+    const template = defaultEngineTemplates["sing-box"];
+    const rendered = renderEngine("sing-box", template, [], []);
+    const service = JSON.parse(rendered).services[0];
+    expect(service).toMatchObject({type: "api", listen: "127.0.0.1", listen_port: 10086, secret: engineApiSecret("sing-box")});
+    expect(`${service.listen}:${service.listen_port}`).toBe(engineApi["sing-box"]);
+    expect(runtimePorts("sing-box", rendered)).toEqual([]);
+    expect(runtimePorts("sing-box", rendered, true)).toEqual(["10086/tcp"]);
+    expect(validateTemplate("sing-box", template.replace("{{OUTPOST_API}}", "custom")).valid).toBeFalse();
+  });
   test("requires every protected block exactly once", () => {
     expect(validateTemplate("hysteria", defaultHysteriaTemplate).valid).toBeTrue();
     expect(validateTemplate("hysteria", defaultHysteriaTemplate.replace("{{OUTPOST_TLS_KEY}}", "raw-key"))).toEqual({

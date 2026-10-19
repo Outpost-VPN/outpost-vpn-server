@@ -280,6 +280,7 @@ tag outpost-home
 			<span.eyebrow> t('ОБЗОР')
 			<outpost-header title=t('overview.title') subtitle=t('overview.subtitle')>
 		<outpost-home-server store=store>
+		<outpost-telemetry-note store=store>
 		<outpost-home-traffic store=store>
 		<outpost-home-connections store=store>
 

@@ -1,6 +1,6 @@
 {
   "name": "outpost-vpn-server",
-  "version": "0.2.0-beta.6",
+  "version": "0.2.0-beta.7",
   "packageManager": "bun@1.4.2",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -18,6 +18,8 @@
     "assets": "bun scripts/assets.ts",
     "check": "bunx tsc --noEmit && bun run build:web && bun test",
     "check:subscriptions-native": "bun scripts/validate-subscriptions.ts",
+    "check:additional-transports": "bun scripts/integration-additional-transports.ts",
+    "check:amneziawg": "bun scripts/integration-amneziawg.ts",
     "check:transports-integration": "bun scripts/integration-transports.ts",
     "test": "bun test",
     "test:agent": "cd agent && go test ./...",
@@ -36,6 +38,7 @@
     "@simplewebauthn/server": "^13.2.2",
     "codemirror": "^6.0.2",
     "imba": "^2.0.0-alpha.247",
+    "protobufjs": "^7.5.4",
     "qrcode": "^1.5.4",
     "yaml": "^2.8.1",
     "zod": "^4.1.5"

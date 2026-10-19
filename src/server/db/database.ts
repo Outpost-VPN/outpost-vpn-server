@@ -1,6 +1,8 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { EngineInventory } from "../services/engine-inventory";
+import { ConnectionMethodStore } from "../services/connection-methods";
 import { config } from "../config";
 import type { JournalEventInput } from "../models";
 import { defaultRoutes, migrations } from "./schema";
@@ -9,13 +11,18 @@ export type SqlValue = string | number | bigint | boolean | Uint8Array | null;
 
 export class OutpostDatabase {
   readonly raw: Database;
+  readonly engines: EngineInventory;
+  readonly methods: ConnectionMethodStore;
 
   constructor(path = config.databasePath) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.raw = new Database(path, { create: true, strict: true });
     this.raw.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
     this.migrate();
+    this.engines = new EngineInventory(this);
+    this.methods = new ConnectionMethodStore(this);
     this.seed();
+    this.methods.migrate();
   }
 
   migrate() {
@@ -58,15 +65,7 @@ export class OutpostDatabase {
     this.publishInitialRoutes();
     this.setDefault("interface", { compact: false });
     this.setDefault("system", { timezone: "UTC", updateChannel: "stable" });
-    this.setDefault("engine_order", ["hysteria", "xray"]);
-    this.raw.query(`
-      INSERT OR IGNORE INTO engine_versions (engine, installed_version, desired_version, checksum, updated_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run("hysteria", "2.12.1", "2.12.1", "ffc032c7ca6b78676d337097ca7f61bebc3a90a4f3a656693adf368f304cdbc7", now());
-    this.raw.query(`
-      INSERT OR IGNORE INTO engine_versions (engine, installed_version, desired_version, checksum, updated_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run("xray", "26.7.28", "26.7.28", "8195d909f1109b8f3d99eefe401a3c451d7bf4af71f24d3815420f77e5dd2a40", now());
+    this.engines.reconcilePins();
   }
 
   private publishInitialRoutes() {

@@ -20,7 +20,9 @@ jobs:
           shellcheck infra/scripts/bootstrap infra/scripts/install infra/scripts/finalize-domain \
             infra/scripts/outpostctl infra/scripts/deploy-remote infra/scripts/apply-update \
             infra/scripts/export-backup infra/scripts/export-backup-plain infra/scripts/restore-backup \
-            infra/renewal-hooks/deploy/outpost
+            infra/renewal-hooks/deploy/outpost infra/scripts/update-engine infra/scripts/install-engines \
+            infra/scripts/apply-config infra/scripts/engine-health infra/scripts/engine-firewall infra/scripts/amneziawg-service \
+            scripts/integration-engine-update.sh scripts/integration-release.sh
       - run: bun run check
       - name: Validate generated subscriptions with native engines
         env:
@@ -33,6 +35,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends nginx
           bun run check:transports-integration
+          bun run check:additional-transports
       - run: bun run build:server
       - run: bun run build:cli:linux
 

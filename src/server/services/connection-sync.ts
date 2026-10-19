@@ -33,6 +33,10 @@ export class ConnectionSyncService {
     private engines: ConnectionEngine,
   ) {}
 
+  reconcile<T>(task: () => Promise<T>) {
+    return this.withLock("engine-snapshot", task);
+  }
+
   recoverInterrupted() {
     const timestamp = now();
     this.db.raw.query(`
@@ -182,7 +186,7 @@ export class ConnectionSyncService {
         `).run(timestamp, job.id, timestamp);
     if (!claimed.changes) return false;
     const current = this.job(job.id);
-    return this.withLock(connectionId, async () => {
+    return this.withLock("engine-snapshot", async () => {
       try {
         if (current.kind === "activate") await this.engines.add(connectionId, current.generation);
         if (current.kind === "rotate") await this.engines.rotate(connectionId, current.previous_generation!, current.generation);

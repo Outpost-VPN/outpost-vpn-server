@@ -1,3 +1,6 @@
+import type { ClientProfile } from "../shared/connection-methods";
+import { ConnectionMethodService } from "./services/connection-methods";
+import { engines, engineMetadata, isEngine, type EngineId } from "../shared/engines";
 import { ZodError } from "zod";
 import QRCode from "qrcode";
 import { chmod, mkdir, unlink } from "node:fs/promises";
@@ -5,13 +8,14 @@ import { join } from "node:path";
 import { config } from "./config";
 import type { OutpostDatabase } from "./db/database";
 import { AuthService } from "./auth/webauthn";
-import { renderLinkRoutes, renderers } from "./adapters/subscriptions";
+import { renderLinkRoutes, renderers, type SubscriptionWireFormat } from "./adapters/subscriptions";
 import {
   advanced,
   advancedDefinition,
   application,
   catalog,
   catalogVersion,
+  ApplicationProfile,
   detectPlatform,
   renderCatalogPage,
 } from "./adapters/catalog";
@@ -23,7 +27,8 @@ import { SystemService } from "./services/system";
 import { EngineRuntimeService } from "./services/engine-runtime";
 import { EngineConfigService } from "./adapters/engines";
 import { JournalService, type JournalScope } from "./services/journal";
-import type { JournalCategory, SubscriptionFormat } from "./models";
+import type { JournalCategory } from "./models";
+import type {ProtocolId} from "../shared/protocols";
 import { MonitoringService, prepareSetupMonitoring } from "./services/monitoring";
 import { ConnectionSyncService } from "./services/connection-sync";
 import { SetupService } from "./services/setup";
@@ -56,6 +61,7 @@ export class HttpApplication {
   readonly system: SystemService;
   readonly engines: EngineRuntimeService;
   readonly engineConfigs: EngineConfigService;
+  readonly methods: ConnectionMethodService;
   readonly journal: JournalService;
   readonly monitoring: MonitoringService;
   readonly connectionSync: ConnectionSyncService;
@@ -66,7 +72,7 @@ export class HttpApplication {
 
   constructor(
     readonly db: OutpostDatabase,
-    connectionEngine?: Pick<EngineRuntimeService, "add" | "rotate" | "revoke">,
+    connectionEngine?: Pick<EngineRuntimeService, "add" | "rotate" | "revoke"> & Partial<Pick<EngineRuntimeService, "reconfigure">>,
   ) {
     if (config.setup) prepareSetupMonitoring(db);
     this.dashboardEvents = new DashboardEvents();
@@ -76,15 +82,23 @@ export class HttpApplication {
     this.connections = new ConnectionService(db, this.journal);
     this.rulesets = new RuleSetService(db, this.journal, { activeRoutes: () => this.routes.published() });
     this.routes = new RouteService(db, this.journal, this.rulesets);
-    this.traffic = new TrafficService(db, configuredCollectors(), this.journal, !config.setup);
+    this.traffic = new TrafficService(db, configuredCollectors(this.connections), this.journal, !config.setup);
     this.engines = new EngineRuntimeService(db);
     this.connectionSync = new ConnectionSyncService(db, this.connections, connectionEngine ?? this.engines);
+    this.methods = new ConnectionMethodService(db, (engine, methods) => connectionEngine?.reconfigure
+      ? connectionEngine.reconfigure(engine, methods) : this.engines.reconfigure(engine, methods));
     this.engineConfigs = new EngineConfigService(db, this.journal);
     this.operations = new OperationService(db, this.journal, undefined, async (connectionId, operationActor) => {
       const result = await this.connectionSync.rotate(connectionId, operationActor);
       if (result.state !== "ready") throw new Error(result.error ?? "Не удалось перевыпустить подключение");
       return { ok: true, connectionId, generation: result.connection.generation };
-    });
+    }, async (engine) => {
+      if (!isEngine(engine) || !engines[engine].optional) return;
+      const installed = this.db.engines.has(engine);
+      if (installed) return this.engines.reconcile(engine);
+      const stored = this.engineConfigs.state(engine)[engine]!;
+      return this.engineConfigs.apply(engine, stored.template, this.activeCredentials(), "system:install", "engine.config_applied", undefined, undefined, false);
+    }, (task) => this.connectionSync.reconcile(task));
     this.system = new SystemService(db, this.journal);
     this.monitoring = new MonitoringService(db, this.journal, undefined, undefined, { setup: config.setup });
     this.operations.subscribe(() => this.dashboardEvents.publish("operations"));
@@ -232,6 +246,7 @@ export class HttpApplication {
         system,
         settings: this.system.settings(),
         engineConfigs: this.engineConfigs.state(),
+        methods: this.methods.state(),
         tokens: this.auth.apiTokens(),
         operations,
         security: this.auth.security(cookie(ctx.request, "outpost_session")),
@@ -317,10 +332,28 @@ export class HttpApplication {
       const limit = optionalPositiveInteger(ctx.url.searchParams.get("limit"));
       return json(this.journal.list({ scope, category, q, before, limit, language: ctx.language }));
     });
-    this.post("/api/v1/engines/reorder", false, async (ctx) => {
-      ownerOnly(ctx);
-      const body = await ctx.json<{ ids?: unknown }>();
-      return json(this.system.updateEngineOrder(body.ids, actor(ctx)));
+    this.get("/api/v1/engines", false, () => json({versions: this.db.engines.versions(), releases: this.db.engines.releaseChecks(), definitions: engineMetadata, capabilities: this.methods.state().capabilities}));
+    this.post("/api/v1/engines/check", false, async (ctx) => json(await this.db.engines.checkReleases(actor(ctx))));
+    this.post("/api/v1/engines/:engine/check", false, async (ctx) => {
+      if (!isEngine(ctx.params.engine)) throw new ServiceError(404, "Неизвестный движок");
+      return json(await this.db.engines.checkReleases(actor(ctx), undefined, ctx.params.engine));
+    });
+    this.get("/api/v1/methods", false, () => json(this.methods.state()));
+    this.post("/api/v1/methods", false, async (ctx) => {
+      const body = await ctx.json();
+      return json(await this.connectionSync.reconcile(() => this.methods.save(body, actor(ctx))), 201);
+    });
+    this.post("/api/v1/methods/reorder", false, async (ctx) => {
+      const body = await ctx.json<{ ids: unknown }>();
+      return json(await this.connectionSync.reconcile(() => this.methods.reorder(body.ids, actor(ctx))));
+    });
+    this.patch("/api/v1/methods/:id", false, async (ctx) => {
+      const body = await ctx.json();
+      return json(await this.connectionSync.reconcile(() => this.methods.save(body, actor(ctx), ctx.params.id!)));
+    });
+    this.delete("/api/v1/methods/:id", false, async (ctx) => {
+      await this.connectionSync.reconcile(() => this.methods.remove(ctx.params.id!, actor(ctx)));
+      return empty();
     });
     this.get("/api/v1/settings", false, () => json(this.system.settings()));
     this.patch("/api/v1/settings", false, async (ctx) => json(this.system.updateSettings(await ctx.json(), actor(ctx))));
@@ -335,20 +368,20 @@ export class HttpApplication {
 
     this.get("/api/v1/engines/configurations", false, () => json(this.engineConfigs.state()));
     this.post("/api/v1/engines/configurations/preview", false, async (ctx) => {
-      const body = await ctx.json<{ engine: "hysteria" | "xray"; template: string }>();
+      const body = await ctx.json<{ engine: EngineId; template: string }>();
       return json(this.engineConfigs.preview(engineName(body.engine), engineTemplate(body.template), this.activeCredentials()));
     });
     this.post("/api/v1/engines/configurations/apply", false, async (ctx) => {
-      const body = await ctx.json<{ engine: "hysteria" | "xray"; template: string }>();
-      return json(await this.engineConfigs.apply(engineName(body.engine), engineTemplate(body.template), this.activeCredentials(), actor(ctx)));
+      const body = await ctx.json<{ engine: EngineId; template: string }>();
+      return json(await this.connectionSync.reconcile(() => this.engineConfigs.apply(engineName(body.engine), engineTemplate(body.template), this.activeCredentials(), actor(ctx))));
     });
     this.post("/api/v1/engines/configurations/:engine/rollback/:version", false, async (ctx) => {
-      return json(await this.engineConfigs.rollback(
+      return json(await this.connectionSync.reconcile(() => this.engineConfigs.rollback(
         engineName(ctx.params.engine!),
         Number(ctx.params.version),
         this.activeCredentials(),
         actor(ctx),
-      ));
+      )));
     });
 
     this.get("/api/v1/operations", false, (ctx) => json({ operations: localizePresentation(this.operations.list(), ctx.language) }));
@@ -407,42 +440,47 @@ export class HttpApplication {
     }
     const requestedPlatform = ctx.url.searchParams.get("platform");
     if (!requestedPlatform) {
-      const format = universalSubscriptionFormat(ctx.request);
-      if (format) return this.profile(ctx, format, head);
+      const profile = universalSubscription(ctx.request);
+      if (profile) return this.profile(ctx, profile, head);
     }
     const baseUrl = `${config.origin}/s/${token}`;
     const platform = requestedPlatform ?? detectPlatform(ctx.request.headers.get("user-agent") ?? "");
-    const html = renderCatalogPage(connection, baseUrl, platform, ctx.language);
+    const html = renderCatalogPage(connection, baseUrl, platform, ctx.language, this.methodAvailability());
     return contentResponse(ctx.request, html, "text/html; charset=utf-8", head);
   }
 
   private async applicationProfile(ctx: RequestContext, head = false) {
     const item = application(ctx.params.appId!);
     if (!item) throw new ServiceError(404, "Приложение не найдено");
-    return this.profile(ctx, item.format, head, item.id);
+    return this.profile(ctx, new ApplicationProfile(item, ctx.url.searchParams.get("profile")), head);
   }
 
   private async advancedProfile(ctx: RequestContext, head = false) {
     const item = advancedDefinition(ctx.params.target!);
     if (!item) throw new ServiceError(404, "Профиль не найден");
-    return this.profile(ctx, item.format, head);
+    return this.profile(ctx, {format: item.format, clientProfile: item.clientProfile}, head);
   }
 
-  private async profile(ctx: RequestContext, format: SubscriptionFormat, head: boolean, appId?: string) {
+  private async profile(ctx: RequestContext, client: {format: SubscriptionWireFormat; appId?: string; clientProfile?: ClientProfile; protocols?: readonly ProtocolId[]}, head: boolean) {
     const token = ctx.params.token!;
     const connection = this.connections.bySubscriptionToken(token);
     const credentials = this.connections.credentials(connection.id);
     const routes = this.rulesets.materialize(this.routes.published());
-    const rendered = renderers[format].render({
+    const enabledEngines = this.db.engines.installed();
+    const rendered = renderers[client.format].render({
       connection,
       credentials,
       routes,
       subscriptionToken: token,
-      engineOrder: this.system.engineOrder(),
+      methods: this.methods.list(),
+      clientProfile: client.clientProfile,
+      protocols: client.protocols,
+      enabledEngines,
       clientPlatform: detectPlatform(ctx.request.headers.get("user-agent") ?? ""),
+      linkClient: client.appId === "happ" ? "happ" : "incy",
       network: this.system.networkSettings(),
     });
-    const body = appId === "stash"
+    const body = client.appId === "stash"
       ? `#SUBSCRIBED ${config.origin}/s/${token}/apps/stash\n${rendered.body}`
       : rendered.body;
     const response = await contentResponse(ctx.request, body, rendered.contentType, head, rendered.headers);
@@ -461,7 +499,7 @@ export class HttpApplication {
     if (id !== "landing") {
       const item = application(id);
       if (!item) throw new ServiceError(404, "QR-код не найден");
-      const profileUrl = `${baseUrl}/apps/${item.id}`;
+      const profileUrl = new ApplicationProfile(item, ctx.url.searchParams.get("profile")).url(baseUrl);
       value = item.deepLink?.(profileUrl) ?? profileUrl;
     }
     const svg = await QRCode.toString(value, { type: "svg", margin: 1, width: 320, errorCorrectionLevel: "M" });
@@ -632,9 +670,13 @@ export class HttpApplication {
       connection: publicConnection(result.connection),
       subscription: { ...result.subscription, qrUrl: `${result.subscription.url}/qr/landing.svg` },
       catalogVersion,
-      applications: catalog(result.subscription.url, undefined, language),
-      advanced: advanced(result.subscription.url, language),
+      applications: catalog(result.subscription.url, undefined, language, this.methodAvailability()),
+      advanced: advanced(result.subscription.url, language, this.methodAvailability()),
     };
+  }
+
+  private methodAvailability() {
+    return { methods: this.methods.list(), installed: this.db.engines.installed() };
   }
 
   private activeCredentials() {
@@ -667,14 +709,14 @@ function json(value: unknown, status = 200, headers?: HeadersInit) {
 
 function empty() { return new Response(null, { status: 204 }); }
 
-function universalSubscriptionFormat(request: Request): SubscriptionFormat | null {
+function universalSubscription(request: Request): {format: SubscriptionWireFormat} | null {
   const agent = (request.headers.get("user-agent") ?? "").toLowerCase();
-  if (/mihomo|clash|everywhere|flclash|stash/.test(agent)) return "mihomo";
-  if (/sing-box|singbox|sfa|sfi|sfm/.test(agent)) return "sing-box";
-  if (/incy/.test(agent)) return "links";
-  if (/xray|v2ray|happ|foxray|streisand/.test(agent)) return "xray";
+  if (/mihomo|clash|everywhere|flclash|stash/.test(agent)) return {format: "mihomo"};
+  if (/sing-box|singbox|sfa|sfi|sfm/.test(agent)) return {format: "sing-box"};
+  if (/incy/.test(agent)) return {format: "links"};
+  if (/xray|v2ray|happ|foxray|streisand/.test(agent)) return {format: "xray"};
   if ((request.headers.get("accept") ?? "").includes("text/html")) return null;
-  return "xray";
+  return {format: "xray"};
 }
 
 async function contentResponse(
@@ -783,7 +825,7 @@ function authorized(method: string, path: string, scopes: string[]) {
   const read = method === "GET";
   const required = path === "/api/v1/status" ? "status:read"
     : path.startsWith("/api/v1/dashboard") ? "owner:session"
-    : path.startsWith("/api/v1/me") ? `settings:${read ? "read" : "write"}`
+    : path === "/api/v1/me" ? `settings:${read ? "read" : "write"}`
     : path.startsWith("/api/v1/connections") ? `connections:${read ? "read" : "write"}`
       : path.startsWith("/api/v1/routes") ? `routes:${read ? "read" : "write"}`
         : path.startsWith("/api/v1/rulesets") ? `routes:${read ? "read" : "write"}`
@@ -791,7 +833,7 @@ function authorized(method: string, path: string, scopes: string[]) {
           : path.startsWith("/api/v1/backups") ? "backups:read"
           : path.startsWith("/api/v1/operations") ? `operations:${read ? "read" : "write"}`
             : path.startsWith("/api/v1/settings") ? `settings:${read ? "read" : "write"}`
-              : path.startsWith("/api/v1/engines") ? `engines:${read ? "read" : "write"}`
+              : path.startsWith("/api/v1/engines") || path.startsWith("/api/v1/methods") ? `engines:${read ? "read" : "write"}`
               : path.startsWith("/api/v1/tokens") ? "tokens:write"
                 : path.startsWith("/api/v1/system") ? "system:read"
                   : "api:read";
@@ -821,7 +863,7 @@ function optionalPositiveInteger(value: string | null) {
 }
 
 function engineName(value: string) {
-  if (value !== "hysteria" && value !== "xray") throw new ServiceError(404, "Движок не найден");
+  if (!isEngine(value)) throw new ServiceError(404, "Движок не найден");
   return value;
 }
 

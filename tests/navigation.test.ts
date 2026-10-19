@@ -16,7 +16,7 @@ describe("admin navigation", () => {
     const security = await Bun.file(new URL("../src/web/security.imba", import.meta.url)).text();
     const avatars = await Bun.file(new URL("../src/web/avatar-picker.imba", import.meta.url)).text();
 
-    expect(store).toContain("['/', '/connections', '/protocols', '/routes', '/journal', '/access', '/settings', '/login', '/onboarding', '/invite']");
+    expect(store).toContain("['/', '/connections', '/protocols', '/engines', '/routes', '/journal', '/access', '/settings', '/login', '/onboarding', '/invite']");
     expect(app).toContain("<outpost-invite store=store>");
     expect(app).not.toContain("path == '/setup'");
     expect(store).not.toContain("'/setup'");
@@ -38,7 +38,7 @@ describe("admin navigation", () => {
     expect(shell).toContain("get update? do store.data.system.updates.available");
     expect(shell).toContain('<span.notice aria-hidden="true">');
     expect(shell).toContain("tag outpost-mobile-menu");
-    expect(shell).toContain("grid-template-columns: repeat(6, minmax(0, 1fr))");
+    expect(shell).toContain("grid-template-columns: repeat(7, minmax(0, 1fr))");
     expect(shell).toContain("nav, .sidebar-footer display: contents");
     expect(shell).toContain(".utility-nav display: none");
     expect(shell).toContain("calc(64px + env(safe-area-inset-bottom))");
@@ -75,8 +75,8 @@ describe("admin navigation", () => {
     expect(routes).toContain(".footer-actions .outpost-button h:40px miw:0 g:5px p:0 7px fs:11px white-space:nowrap");
     expect(routes).not.toContain("remove = null");
     expect(routes).not.toContain("remove=remove update=update");
-    expect(protocols).toContain(".engine-actions gc:4 gr:1");
-    expect(protocols).toContain(".engine-connection gc:3 / -1 gr:2 g:3px fs:clamp(8px,2.5vw,10px) lh:1.2 flex-wrap:nowrap white-space:nowrap");
+    expect(protocols).toContain("<outpost-method-list store=store>");
+    expect(shell).toContain("<outpost-engines store=store>");
     expect(home).toContain('Math.max(0, Math.min(100, usage(connection) / maximum * 100))');
     expect(home).toContain('<div.bar><span [w:{scale(connection)}%]>');
     expect(home).toContain(".usage d:grid gc:1 / -1 gr:2 gtc:minmax(0,1fr) 70px");

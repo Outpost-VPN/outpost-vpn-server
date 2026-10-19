@@ -1,3 +1,4 @@
+import {engines} from "../src/shared/engines";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import YAML from "yaml";
 import { HttpApplication } from "../src/server/http";
@@ -11,6 +12,7 @@ describe("HTTP API", () => {
   beforeEach(() => {
     fixture = database();
     app = new HttpApplication(fixture.db, {
+      async reconfigure() { return { ok: true }; },
       async add() { return { ok: true }; },
       async rotate() { return { ok: true }; },
       async revoke() { return { ok: true }; },
@@ -45,6 +47,51 @@ describe("HTTP API", () => {
       body: body === undefined ? undefined : JSON.stringify(body),
     }));
   }
+
+
+  test("separates installed engines from methods and exports only compatible enabled endpoints", async () => {
+    const cookie = ownerCookie();
+    for (const id of ["mihomo", "sing-box"] as const) fixture.db.engines.recordInstallation(id, engines[id].version);
+    const add = (engine: string, port: number) => request("/api/v1/methods", cookie, "POST", {engine, protocol: "anytls", name: engine + " TLS", enabled: true, settings: {port}});
+    const firstResponse = await add("mihomo", 1443);
+    expect(firstResponse.status).toBe(201);
+    const first = await firstResponse.json();
+    expect((await add("sing-box", 1443)).status).toBe(409);
+    expect((await add("sing-box", 2444)).status).toBe(201);
+    const response = await request("/api/v1/connections", cookie, "POST", {name: "Methods client"});
+    const created = await response.json();
+    const path = new URL(created.subscription.url).pathname;
+    const modern = await app.fetch(new Request("http://localhost" + path + "/advanced/mihomo-modern"));
+    expect(modern.status).toBe(200);
+    expect(YAML.parse(await modern.text()).proxies.filter((proxy: {type: string}) => proxy.type === "anytls")).toHaveLength(2);
+    const baseline = await app.fetch(new Request("http://localhost" + path + "/apps/everywhere"));
+    expect(YAML.parse(await baseline.text()).proxies).toHaveLength(3);
+    const application = await app.fetch(new Request("http://localhost" + path + "/apps/everywhere?profile=modern"));
+    const applicationProfile = YAML.parse(await application.text());
+    expect(applicationProfile.proxies.filter((proxy: {type: string}) => proxy.type === "anytls")).toHaveLength(2);
+    expect(applicationProfile.rules).toContain("MATCH,PROXY");
+    const clashMi = created.applications.find((item: {id: string}) => item.id === "clash-mi");
+    expect(clashMi).toMatchObject({routing: {support: "full"}, platforms: ["macos", "ios", "android", "windows", "linux"]});
+    const clashMiProfile = await app.fetch(new Request(clashMi.profileUrl.replace("localhost:8181", "localhost")));
+    expect(clashMiProfile.status).toBe(200);
+    expect(YAML.parse(await clashMiProfile.text())).toEqual(applicationProfile);
+    expect((await app.fetch(new Request("http://localhost" + path + "/qr/clash-mi.svg?profile=modern"))).status).toBe(200);
+    const links = await app.fetch(new Request("http://localhost" + path + "/qr/everywhere.svg"));
+    const modernQr = await app.fetch(new Request("http://localhost" + path + "/qr/everywhere.svg?profile=modern"));
+    expect(modernQr.status).toBe(200);
+    expect(await modernQr.text()).not.toBe(await links.text());
+    expect((await app.fetch(new Request("http://localhost" + path + "/apps/incy?profile=modern"))).status).toBe(400);
+    expect((await app.fetch(new Request("http://localhost" + path + "/qr/incy.svg?profile=modern"))).status).toBe(400);
+    expect((await app.fetch(new Request("http://localhost" + path + "/advanced/naive-json"))).status).toBe(409);
+    const {id, updatedAt, ...editable} = first;
+    expect((await request("/api/v1/methods/" + id, cookie, "PATCH", {...editable, enabled:false})).status).toBe(200);
+    const after = await app.fetch(new Request("http://localhost" + path + "/advanced/mihomo-modern"));
+    expect(YAML.parse(await after.text()).proxies.filter((proxy: {type: string}) => proxy.type === "anytls")).toHaveLength(1);
+    expect((await request("/api/v1/methods/" + id, cookie, "DELETE")).status).toBe(204);
+    const state = await (await request("/api/v1/methods", cookie)).json();
+    expect(state.items.some((method: {id: string}) => method.id === id)).toBeFalse();
+    expect(state.items.some((method: {engine: string; protocol: string}) => method.engine === "sing-box" && method.protocol === "anytls")).toBeTrue();
+  });
 
   test("public health endpoints are available and protected endpoints require a session", async () => {
     const health = await app.fetch(new Request("http://localhost/healthz"));
@@ -182,7 +229,10 @@ describe("HTTP API", () => {
     expect(created).toMatchObject({ state: "ready", connection: { name: "Мама", avatar: "avatar-8", status: "active", generation: 1 } });
     expect(created.subscription.url).toContain("/s/");
     expect(created.subscription.qrUrl).toBe(`${created.subscription.url}/qr/landing.svg`);
-    expect(created.catalogVersion).toBe(3);
+    expect(created.catalogVersion).toBe(8);
+    expect(created.applications.find((app: {id: string}) => app.id === "everywhere")).toMatchObject({
+      transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], routing: {support: "full"},
+    });
     expect(created.applications.length).toBeGreaterThan(10);
     expect(typeof created.applications[0].id).toBe("string");
     expect(typeof created.applications[0].pricing.model).toBe("string");
@@ -190,7 +240,7 @@ describe("HTTP API", () => {
     expect(created.applications[0].pricing.sourceUrl).toStartWith("https://");
     expect(created.applications[0].profileUrl).toContain("/apps/");
     expect(created.applications[0].qrUrl).toContain("/qr/");
-    expect(created.advanced.map((item: { id: string }) => item.id)).toEqual(["vless-links", "mihomo-yaml", "sing-box-json", "xray-json"]);
+    expect(created.advanced.map((item: { id: string }) => item.id)).toEqual(["vless-links", "mihomo-yaml", "sing-box-json", "xray-json", "mihomo-modern", "sing-box-modern"]);
     expect(created.subscription).not.toHaveProperty("formats");
     expect(created.subscription).not.toHaveProperty("qrDataUrl");
 
@@ -396,7 +446,7 @@ describe("HTTP API", () => {
 
     const incy = await app.fetch(new Request(`${url}/apps/incy`, { headers: { "user-agent": "Mozilla/5.0 (iPhone)" } }));
     expect(incy.headers.get("no-limit-enabled")).toBe("1");
-    expect(incy.headers.get("autorouting")).toBe(`${ready.subscription!.url}/routes`);
+    expect(incy.headers.get("autorouting")).toBe(`incy://autorouting/onadd/${ready.subscription!.url}/routes`);
     expect(await incy.text()).toContain("vless://");
 
     const routes = await app.fetch(new Request(`${url}/routes`));
@@ -416,7 +466,25 @@ describe("HTTP API", () => {
     expect(missingQr.status).toBe(404);
   });
 
-  test("universal link returns Mihomo YAML to Everywhere and the catalog to browsers", async () => {
+  test("Happ subscription refreshes when routes change while its connection links stay the same", async () => {
+    const connection = app.connections.create({name: "Routes"});
+    const ready = await app.connectionSync.activate(connection.id);
+    const url = ready.subscription!.url.replace("localhost:8181", "localhost") + "/apps/happ";
+    app.routes.publish("Initial routes", "test");
+    const before = await app.fetch(new Request(url));
+    const links = (await before.text()).trimEnd().split("\n").slice(1);
+    app.routes.add({action: "DIRECT", matcher: "DOMAIN", value: "custom.example"}, "test");
+    app.routes.publish("New route", "test");
+    const after = await app.fetch(new Request(url, {headers: {"if-none-match": before.headers.get("etag")!}}));
+    expect(after.status).toBe(200);
+    const [routing, ...updated] = (await after.text()).trimEnd().split("\n");
+    expect(updated).toEqual(links);
+    expect(after.headers.get("etag")).not.toBe(before.headers.get("etag"));
+    const profile = JSON.parse(Buffer.from(routing!.split("/onadd/")[1]!, "base64").toString("utf8"));
+    expect(profile.DirectSites).toContain("full:custom.example");
+  });
+
+  test("universal subscriptions preserve legacy client formats and browser catalog access", async () => {
     const connection = app.connections.create({ name: "Федор" });
     const ready = await app.connectionSync.activate(connection.id);
     const url = ready.subscription!.url.replace("localhost:8181", "localhost");
@@ -440,6 +508,24 @@ describe("HTTP API", () => {
       proxies: [{ type: "hysteria2" }, { type: "vless" }, { type: "vless" }],
     });
     expect(app.connections.get(connection.id).last_fetched_at).not.toBeNull();
+
+    for (const agent of ["Xray/26.3.1", "v2rayN/7.0", "v2rayNG/1.10.0", "Happ/1.0", "FoXray/1.0", "Streisand/1.0", "", "UnknownClient/1.0"]) {
+      const response = await app.fetch(new Request(url, { headers: { "user-agent": agent } }));
+      expect(response.headers.get("content-type")).toContain("text/plain");
+      const links = Buffer.from(await response.text(), "base64").toString("utf8").trim().split("\n");
+      expect(links).toHaveLength(2);
+      expect(links.every((link) => link.startsWith("vless://"))).toBeTrue();
+      expect(links[0]).toContain("type=xhttp");
+      expect(links[1]).toContain("type=grpc");
+    }
+    const incy = await app.fetch(new Request(url, { headers: { "user-agent": "INCY/1.0" } }));
+    expect(incy.headers.get("autorouting")).toBe(`incy://autorouting/onadd/${ready.subscription!.url}/routes`);
+    expect(await incy.text()).toContain("vless://");
+    for (const agent of ["", "UnknownClient/1.0", "Mozilla/5.0"]) {
+      const response = await app.fetch(new Request(url, { headers: { "user-agent": agent, accept: "text/html" } }));
+      expect(response.headers.get("content-type")).toContain("text/html");
+      expect(await response.text()).toContain("data-platform-panel");
+    }
   });
 
   test("connection appearance and owner timezone remain editable", async () => {
