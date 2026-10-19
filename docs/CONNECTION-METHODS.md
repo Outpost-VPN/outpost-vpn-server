@@ -127,12 +127,58 @@ actual server methods. Unavailable profiles are omitted. If only advanced/native
 methods exist, the advanced section opens with guidance. Native Naive/AWG exports
 select the first compatible method and do not carry Outpost routing policy.
 
-Catalog v6 derives method names, client requirements and route support through one
-`profileSupport` owner for both applications and manual profiles. App cards show
-available protocols and full/limited Outpost routing support explicitly. Manual
-profiles additionally expose native exports without routing and minimum runtimes;
-they do not infer a GUI application's bundled core from its name. The owner dialog
-reads the same localized metadata. An empty platform gets explicit guidance.
+Catalog v7 derives method names, per-protocol client requirements and route support
+through `profileSupport` for applications and manual profiles. `ApplicationProfile`
+owns the app's allowed protocols, profile validation, URLs, QR target and requirements.
+The same selection drives the public card, owner dialog and actual renderer.
+App-specific requirements override core requirements where the app uses its own
+implementation, such as Stash. Compatible apps fill the primary slots after filtering.
+
+Cards choose a `?profile=modern` link when it adds configured, supported protocols.
+Copy, import and QR use this same link. Existing app URLs and universal subscriptions
+keep their conservative profile, so older installed clients are not silently given
+new protocol types. Modern profile parameters are validated against the chosen app;
+they cannot enable capabilities assigned to another app. sing-box for Apple is now
+listed on iOS as well as macOS, using the official sing-box MT App Store listing.
+
+### Client version requirements
+
+Verified from official documentation/source on 2026-10-19. Core version means the
+engine **inside the client**, independently of the server engine version. Where an
+application does not publish a minimum GUI version, the UI states the core version
+to check rather than inventing an application version.
+
+| Protocol | Clients/profile | Requirement |
+|---|---|---|
+| AnyTLS | Everywhere, Clash Verge Rev, Clash Party, Clash Meta for Android, FlClash | Mihomo ≥1.19.4 (AnyTLS protocol v2) |
+| AnyTLS | Official sing-box clients | sing-box ≥1.12.0 |
+| AnyTLS | Stash | iOS ≥3.3.0 / macOS ≥4.1.0 |
+| TrustTunnel | Mihomo-based profiles | Mihomo ≥1.19.21 |
+| TrustTunnel | Stash | iOS ≥3.4.0 / macOS ≥4.2.0 |
+| Naive | Official sing-box clients | sing-box ≥1.13.0 with Cronet |
+| AmneziaWG 3.1 | Clash Verge Rev, Clash Party, Clash Meta for Android, FlClash | Mihomo ≥1.19.31, including the AWG 3.x flag fixes |
+
+Stash profiles exclude AWG, and Everywhere's offered Mihomo profile excludes AWG
+pending confirmation of the bundled version. Native NaiveProxy JSON is a separate
+format from sing-box JSON; its requirement no longer incorrectly names sing-box.
+Mihomo/sing-box modern profiles include routes; native exports retain their existing
+route limitations. Requirements are derived only for protocols present in the profile.
+
+Sources: [Mihomo AnyTLS v2](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.4),
+[TrustTunnel](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.21),
+[AWG fixes](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.31),
+[sing-box AnyTLS](https://sing-box.sagernet.org/configuration/outbound/anytls/),
+[sing-box Naive/Cronet](https://sing-box.sagernet.org/configuration/outbound/naive/),
+[Stash iOS](https://stash.wiki/en/release-notes/ios),
+[Stash macOS](https://stash.wiki/en/release-notes/macos),
+[Everywhere engines](https://github.com/NodePassProject/Everywhere),
+[Clash Verge](https://github.com/clash-verge-rev/clash-verge-rev/releases),
+[Clash Party packaging](https://github.com/mihomo-party-org/clash-party/blob/v2.0.4/scripts/prepare.mjs),
+[FlClash pinned core](https://github.com/chen08209/FlClash/tree/v0.9.1/core/Clash.Meta),
+[Clash Meta pinned core](https://github.com/MetaCubeX/ClashMetaForAndroid/tree/main/core/src/foss/golang/clash).
+
+App imports are declared compatible from these sources and generated-profile checks;
+this does not claim a manual device test on every listed GUI release.
 
 Link-routing contracts were checked against the official
 [INCY autorouting documentation](https://github.com/INCY-DEV/incy-docs/blob/main/ru/dev-docs/autorouting.md)

@@ -1,8 +1,9 @@
-import {protocols} from "../../shared/protocols";
+import {protocols, type ProtocolId} from "../../shared/protocols";
 import type {EngineId} from "../../shared/engines";
-import { clientProfiles, clientProfileRequirements, compatibleMethods, type ConnectionMethod, type ClientProfile } from "../../shared/connection-methods";
+import { clientProfiles, clientProfileFormat, clientProfileRequirements, compatibleMethods, type ConnectionMethod, type ClientProfile } from "../../shared/connection-methods";
 import type { Connection, SubscriptionFormat } from "../models";
 import { metadata, type Locale } from "../../shared/i18n";
+import {ServiceError} from "../services/connections";
 
 export type AppSupport = "tested" | "compatible";
 export type AppPlatform = "macos" | "ios" | "android" | "windows" | "linux";
@@ -10,6 +11,7 @@ export type PricingModel = "free" | "freemium" | "paid";
 export type BillingModel = "none" | "optional" | "one-time" | "subscription";
 export type UpdateMode = "automatic" | "manual";
 export type RouteFidelity = "exact" | "limited";
+type ProtocolRequirement = {protocol: ProtocolId; name: string; requirement: string};
 
 export type AppPricing = {
   model: PricingModel;
@@ -31,6 +33,11 @@ export type AppDefinition = {
   routeFidelity: RouteFidelity;
   installUrls: Partial<Record<AppPlatform, string>>;
   deepLink?: (url: string) => string;
+  modern?: {
+    profile: ClientProfile;
+    protocols: readonly ProtocolId[];
+    requirements?: Partial<Record<ProtocolId, string>>;
+  };
 };
 
 export type AdvancedDefinition = {
@@ -39,7 +46,7 @@ export type AdvancedDefinition = {
   clientProfile?: ClientProfile;
 };
 
-export const catalogVersion = 6;
+export const catalogVersion = 7;
 export const platforms: { id: AppPlatform; label: string }[] = [
   { id: "macos", label: "macOS" },
   { id: "ios", label: "iOS" },
@@ -62,6 +69,7 @@ const githubV2rayN = "https://github.com/2dust/v2rayN/releases/latest";
 const githubV2rayNG = "https://github.com/2dust/v2rayNG/releases/latest";
 const singBoxAndroid = "https://sing-box.sagernet.org/clients/android/";
 const singBoxApple = "https://sing-box.sagernet.org/clients/apple/";
+const singBoxAppleStore = "https://apps.apple.com/us/app/sing-box-mt/id6785326793";
 const singBoxDesktop = "https://sing-box.sagernet.org/clients/desktop/";
 
 const free = (sourceUrl: string): AppPricing => ({ model: "free", billing: "none", sourceUrl, verifiedAt });
@@ -78,6 +86,7 @@ const platformOrder: Record<AppPlatform, string[]> = {
 export const applications: AppDefinition[] = [
   {
     id: "everywhere", name: "Everywhere Proxy", technology: "Mihomo", format: "mihomo", platforms: ["macos", "ios"], support: "tested",
+    modern: {profile: "mihomo-modern", protocols: ["anytls", "trusttunnel"]},
     icon: "/assets/apps/everywhere.jpg", pricing: free(appleEverywhere), updateMode: "manual", routeFidelity: "exact",
     installUrls: { macos: appleEverywhere, ios: appleEverywhere },
   },
@@ -88,26 +97,31 @@ export const applications: AppDefinition[] = [
   },
   {
     id: "stash", name: "Stash", technology: "Mihomo", format: "mihomo", platforms: ["macos", "ios"], support: "tested",
+    modern: {profile: "mihomo-modern", protocols: ["anytls", "trusttunnel"], requirements: {anytls: "Stash iOS ≥3.3.0 / macOS ≥4.1.0", trusttunnel: "Stash iOS ≥3.4.0 / macOS ≥4.2.0"}},
     icon: "/assets/apps/stash.svg", pricing: paid(appleStash), updateMode: "automatic", routeFidelity: "exact",
     installUrls: { macos: appleStash, ios: appleStash }, deepLink: stashLink,
   },
   {
     id: "clash-verge", name: "Clash Verge Rev", technology: "Mihomo", format: "mihomo", platforms: ["macos", "windows", "linux"], support: "tested",
+    modern: {profile: "mihomo-modern", protocols: ["anytls", "trusttunnel", "amneziawg"]},
     icon: "/assets/apps/clash-verge-rev.png", pricing: free(githubVerge), updateMode: "automatic", routeFidelity: "exact",
     installUrls: { macos: githubVerge, windows: githubVerge, linux: githubVerge }, deepLink: clashLink,
   },
   {
     id: "clash-party", name: "Clash Party", technology: "Mihomo", format: "mihomo", platforms: ["macos", "windows", "linux"], support: "compatible",
+    modern: {profile: "mihomo-modern", protocols: ["anytls", "trusttunnel", "amneziawg"]},
     icon: "/assets/apps/clash-party.svg", pricing: free(githubParty), updateMode: "automatic", routeFidelity: "exact",
     installUrls: { macos: githubParty, windows: githubParty, linux: githubParty }, deepLink: clashLink,
   },
   {
     id: "clash-meta", name: "Clash Meta for Android", technology: "Mihomo", format: "mihomo", platforms: ["android"], support: "tested",
+    modern: {profile: "mihomo-modern", protocols: ["anytls", "trusttunnel", "amneziawg"]},
     icon: "/assets/apps/clash-meta.svg", pricing: free(githubMeta), updateMode: "automatic", routeFidelity: "exact",
     installUrls: { android: githubMeta }, deepLink: clashMetaLink,
   },
   {
     id: "flclash", name: "FlClash", technology: "Mihomo", format: "mihomo", platforms: ["macos", "android", "windows", "linux"], support: "compatible",
+    modern: {profile: "mihomo-modern", protocols: ["anytls", "trusttunnel", "amneziawg"]},
     icon: "/assets/apps/flclash.png", pricing: free(githubFlClash), updateMode: "automatic", routeFidelity: "exact",
     installUrls: { macos: githubFlClash, android: githubFlClash, windows: githubFlClash, linux: githubFlClash }, deepLink: clashLink,
   },
@@ -118,16 +132,19 @@ export const applications: AppDefinition[] = [
   },
   {
     id: "sing-box-android", name: "sing-box", technology: "sing-box", format: "sing-box", platforms: ["android"], support: "tested",
+    modern: {profile: "sing-box-modern", protocols: ["anytls", "naive"]},
     icon: "/assets/apps/sing-box.svg", pricing: free(singBoxAndroid), updateMode: "automatic", routeFidelity: "exact",
     installUrls: { android: singBoxAndroid }, deepLink: singBoxLink,
   },
   {
-    id: "sing-box-apple", name: "sing-box", technology: "sing-box", format: "sing-box", platforms: ["macos"], support: "compatible",
+    id: "sing-box-apple", name: "sing-box", technology: "sing-box", format: "sing-box", platforms: ["macos", "ios"], support: "compatible",
+    modern: {profile: "sing-box-modern", protocols: ["anytls", "naive"]},
     icon: "/assets/apps/sing-box.svg", pricing: free(singBoxApple), updateMode: "automatic", routeFidelity: "exact",
-    installUrls: { macos: singBoxApple }, deepLink: singBoxLink,
+    installUrls: { macos: singBoxApple, ios: singBoxAppleStore }, deepLink: singBoxLink,
   },
   {
     id: "sing-box-desktop", name: "sing-box", technology: "sing-box", format: "sing-box", platforms: ["windows", "linux"], support: "compatible",
+    modern: {profile: "sing-box-modern", protocols: ["anytls", "naive"]},
     icon: "/assets/apps/sing-box.svg", pricing: free(singBoxDesktop), updateMode: "automatic", routeFidelity: "exact",
     installUrls: { windows: singBoxDesktop, linux: singBoxDesktop }, deepLink: singBoxLink,
   },
@@ -158,51 +175,92 @@ export function application(id: string) {
   return applications.find((item) => item.id === id) ?? null;
 }
 
+export class ApplicationProfile {
+  readonly clientProfile: ClientProfile;
+  readonly protocols?: readonly ProtocolId[];
+
+  constructor(readonly app: AppDefinition, private readonly variant?: string | null) {
+    if (variant && (variant !== "modern" || !app.modern)) throw new ServiceError(400, "Client profile does not match the subscription format");
+    this.clientProfile = variant ? app.modern!.profile : app.format;
+    if (variant) this.protocols = [...new Set<ProtocolId>([...clientProfiles[app.format].protocols, ...app.modern!.protocols])];
+  }
+
+  get format() { return clientProfileFormat(this.clientProfile) as SubscriptionFormat; }
+  get appId() { return this.app.id; }
+  private get query() { return this.variant ? "?profile=modern" : ""; }
+  url(baseUrl: string) { return `${baseUrl}/apps/${this.app.id}${this.query}`; }
+  qr(baseUrl: string) { return `${baseUrl}/qr/${this.app.id}.svg${this.query}`; }
+
+  support(language: Locale, available?: MethodAvailability) {
+    const support = profileSupport(this.clientProfile, language, available, this.app.routeFidelity, this.protocols);
+    if (!this.variant) return support;
+    const versions = support.protocolRequirements.map((item) => ({...item, requirement: this.app.modern!.requirements?.[item.protocol] ?? item.requirement}));
+    return {...support, protocolRequirements: versions, requirements: versions.map((item) => `${item.name}: ${item.requirement}`).join("; ")};
+  }
+}
+
 export function advancedDefinition(id: string) {
   return advancedDefinitions.find((item) => item.id === id) ?? null;
 }
 
 export type MethodAvailability = { methods: readonly ConnectionMethod[]; installed: readonly EngineId[] };
 
-function profileSupport(profile: ClientProfile, language: Locale, available?: MethodAvailability, fidelity: RouteFidelity = "exact") {
-  const selected = available ? compatibleMethods(available.methods, profile, available.installed).map((method) => method.protocol) : clientProfiles[profile].protocols;
+function profileSupport(profile: ClientProfile, language: Locale, available?: MethodAvailability, fidelity: RouteFidelity = "exact", selectedProtocols?: readonly ProtocolId[]) {
+  const selected = available ? compatibleMethods(available.methods, profile, available.installed, selectedProtocols).map((method) => method.protocol)
+    : clientProfiles[profile].protocols.filter((protocol) => !selectedProtocols || selectedProtocols.includes(protocol));
   const supported = [...new Set(selected)];
   const mode = clientProfiles[profile].routing;
   const support = mode === "none" ? "none" : mode === "client" || fidelity === "limited" ? "limited" : "full";
   return {
     transports: supported.map((protocol) => protocols[protocol].name),
     requirements: clientProfileRequirements(profile, supported),
+    protocolRequirements: supported.flatMap((protocol): ProtocolRequirement[] => {
+      const requirement = clientProfileRequirements(profile, [protocol]);
+      return requirement ? [{protocol, name: protocols[protocol].name, requirement}] : [];
+    }),
     routing: { support, ...catalogCopy[language].routing[support] },
   };
 }
 
 export function catalog(baseUrl: string, platform?: string, language: Locale = "en", available?: MethodAvailability) {
   const selected = isPlatform(platform) ? platform : null;
-  return applications
+  const items = applications
     .filter((app) => !selected || app.platforms.includes(selected))
     .sort((left, right) => rank(left, selected) - rank(right, selected) || left.name.localeCompare(right.name))
     .map((app) => {
-      const profileUrl = `${baseUrl}/apps/${app.id}`;
-      const primaryFor = app.platforms.filter((item) => platformOrder[item].slice(0, 3).includes(app.id));
+      let profile = new ApplicationProfile(app);
+      let support = profile.support(language, available);
+      if (app.modern) {
+        const candidate = new ApplicationProfile(app, "modern");
+        const modern = candidate.support(language, available);
+        if (modern.transports.length > support.transports.length) {
+          support = modern;
+          profile = candidate;
+        }
+      }
+      const profileUrl = profile.url(baseUrl);
       const descriptions = catalogCopy[language].descriptions as Record<string, string>;
       return {
         id: app.id,
         name: app.name,
         description: descriptions[app.id] ?? app.name,
         platforms: app.platforms,
-        primaryFor,
         icon: app.icon,
         pricing: app.pricing,
         updateMode: app.updateMode,
         routeFidelity: app.routeFidelity,
-        ...profileSupport(app.format, language, available, app.routeFidelity),
+        ...support,
         installUrls: app.installUrls,
         installUrl: selected ? app.installUrls[selected] ?? null : null,
         profileUrl,
-        qrUrl: `${baseUrl}/qr/${app.id}.svg`,
+        qrUrl: profile.qr(baseUrl),
         openUrl: app.deepLink?.(profileUrl) ?? null,
       };
     }).filter((app) => app.transports.length > 0);
+  const availableIds = new Set(items.map((item) => item.id));
+  const primary = new Map(platforms.map(({id}) => [id, applications.filter((app) => availableIds.has(app.id) && app.platforms.includes(id))
+    .sort((left, right) => rank(left, id) - rank(right, id)).slice(0, 3).map((app) => app.id)]));
+  return items.map((app) => ({...app, primaryFor: app.platforms.filter((platform) => primary.get(platform)!.includes(app.id))}));
 }
 
 export function advanced(baseUrl: string, language: Locale = "en", available?: MethodAvailability) {
@@ -260,7 +318,7 @@ export function renderCatalogPage(_connection: Connection, baseUrl: string, plat
 .route-support strong{font-size:12px;font-weight:650}
 .route-support p{margin:3px 0 0;color:#65718e;font-size:11px}
 .route-support--limited{color:#a25c00}.route-support--none{color:#65718e}
-.requirements{margin:0;color:#65718e;font-size:11px}
+.requirements{margin:0;color:#65718e;font-size:11px}.versions{display:grid;gap:3px;margin:0;padding:0;list-style:none}.versions b{font-weight:600;color:#263651}
 .update{display:flex;align-items:flex-start;gap:6px;margin:10px 0 0;color:#65718e;font-size:11px;line-height:1.5}
 .update i{font-size:14px;color:#16824b}.update--manual i{color:#a25c00}
 .empty-apps{padding:20px;border:1px solid #d8e0ed;border-radius:12px;color:#65718e;line-height:1.5}
@@ -274,8 +332,10 @@ export function renderCatalogPage(_connection: Connection, baseUrl: string, plat
 function compatibility(profile: ReturnType<typeof profileSupport>, copy: typeof catalogCopy[Locale]) {
   const {routing} = profile;
   const methods = profile.transports.map((name) => `<li>${escape(name)}</li>`).join("");
-  const requirements = profile.requirements ? `<p class="requirements"><b>${copy.requirements}:</b> <span class="technical">${escape(profile.requirements)}</span></p>` : "";
-  return `<div class="compatibility"><div class="methods"><span class="fact-label">${copy.methods}</span><ul class="transports">${methods}</ul></div><div class="route-support route-support--${routing.support}"><i class="ph ph-path" aria-hidden="true"></i><div><strong>${escape(routing.label)}</strong><p>${escape(routing.detail)}</p></div></div>${requirements}</div>`;
+  const versions = profile.protocolRequirements.map((item) => `<li><b class="technical">${escape(item.name)}:</b> <span class="technical">${escape(item.requirement)}</span></li>`).join("");
+  const requirements = versions ? `<div class="requirements"><span class="fact-label">${copy.requirements}</span><ul class="versions">${versions}</ul></div>`
+    : profile.requirements ? `<p class="requirements"><b>${copy.requirements}:</b> <span class="technical">${escape(profile.requirements)}</span></p>` : "";
+  return `<div class="compatibility"><div class="methods"><span class="fact-label">${copy.methods}</span><ul class="transports">${methods}</ul></div>${requirements}<div class="route-support route-support--${routing.support}"><i class="ph ph-path" aria-hidden="true"></i><div><strong>${escape(routing.label)}</strong><p>${escape(routing.detail)}</p></div></div></div>`;
 }
 
 function card(app: ReturnType<typeof catalog>[number], copy: typeof catalogCopy[Locale]) {
@@ -311,29 +371,29 @@ function escape(value: unknown) {
 const catalogCopy = {
   ru: {
     methods: "Способы подключения",
-    requirements: "Требования",
+    requirements: "Версии клиента и его движка",
     routing: {"full": {"label": "Маршруты Outpost — полностью", "detail": "Все правила и их порядок сохраняются."}, "limited": {"label": "Маршруты Outpost — с ограничениями", "detail": "Правила группируются по действиям; их порядок может измениться."}, "none": {"label": "Без маршрутов Outpost", "detail": "В файле только настройки подключения."}},
 
     unavailable: "Для доступных способов выберите совместимый профиль в разделе «Для опытных». Если профилей нет, обратитесь к владельцу сервера.",
     modernText: "Профиль для ручного импорта в клиент с указанными возможностями.",
     title: "Настройка подключения", heading: "Подключите своё устройство", subtitle: "Выберите приложение для своего устройства. Здесь показаны доступные способы подключения и поддержка маршрутов Outpost.", auto: "Авто", appsFor: "Приложения для", operatingSystem: "Операционная система", more: "Ещё приложения", advanced: "Для опытных", advancedText: "Сырые профили для ручного импорта. Отдельные URI не содержат маршрутов Outpost.", add: "Открыть в приложении", copy: "Скопировать профиль", copyLink: "Скопировать ссылку", openQr: "Открыть QR-код", install: "Установить", automatic: "Маршруты обновляются автоматически", manual: "Маршруты обновляются вручную", client: { opening: "Открываем приложение…", copied: "Ссылка скопирована — вставьте её в приложение", copyFailed: "Не удалось скопировать ссылку" },
-    descriptions: { everywhere: "Самый простой Apple-клиент; профиль обновляется вручную.", incy: "Бесплатный Apple-клиент с обновляемой подпиской.", stash: "Точное автоматическое обновление маршрутов на iPhone и iPad.", "clash-verge": "Популярный настольный клиент Mihomo.", "clash-party": "Компактный Mihomo-клиент для компьютера.", "clash-meta": "Проверенный Mihomo-клиент для Android.", flclash: "Лёгкий кроссплатформенный Mihomo-клиент.", happ: "Простой бесплатный кроссплатформенный клиент.", "sing-box-android": "Официальный клиент sing-box для Android.", "sing-box-apple": "Официальный клиент sing-box для macOS.", "sing-box-desktop": "Официальный профиль sing-box для компьютера.", v2rayn: "Полная обновляемая конфигурация Xray.", v2rayng: "Полная обновляемая конфигурация Xray для Android." },
+    descriptions: { everywhere: "Самый простой Apple-клиент; профиль обновляется вручную.", incy: "Бесплатный Apple-клиент с обновляемой подпиской.", stash: "Точное автоматическое обновление маршрутов на iPhone и iPad.", "clash-verge": "Популярный настольный клиент Mihomo.", "clash-party": "Компактный Mihomo-клиент для компьютера.", "clash-meta": "Проверенный Mihomo-клиент для Android.", flclash: "Лёгкий кроссплатформенный Mihomo-клиент.", happ: "Простой бесплатный кроссплатформенный клиент.", "sing-box-android": "Официальный клиент sing-box для Android.", "sing-box-apple": "Официальный клиент sing-box для устройств Apple.", "sing-box-desktop": "Официальный профиль sing-box для компьютера.", v2rayn: "Полная обновляемая конфигурация Xray.", v2rayng: "Полная обновляемая конфигурация Xray для Android." },
     advancedNames: { "vless-links": "Подписка для INCY", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "Маршруты загружаются отдельно. Импорт отдельной ссылки подключения их не переносит.", "mihomo-yaml": "Полный профиль Mihomo для ручного импорта.", "sing-box-json": "Полный профиль sing-box для ручного импорта.", "xray-json": "Полная конфигурация Xray для ручного импорта." },
   },
   en: {
     methods: "Connection methods",
-    requirements: "Requirements",
+    requirements: "App / bundled engine versions",
     routing: {"full": {"label": "Outpost routes · full support", "detail": "All rules and their order are preserved."}, "limited": {"label": "Outpost routes · limited support", "detail": "Rules are grouped by action; their order may change."}, "none": {"label": "No Outpost routes", "detail": "The file contains connection settings only."}},
 
     unavailable: "Choose a compatible profile under “For advanced users”. If none are available, contact the server owner.",
     modernText: "Import this profile manually into a client with the listed capabilities.",
     title: "Connection setup", heading: "Connect your device", subtitle: "Choose an app for your device. Each profile shows its available connection methods and support for Outpost routes.", auto: "Auto", appsFor: "Apps for", operatingSystem: "Operating system", more: "More apps", advanced: "For advanced users", advancedText: "Raw profiles for manual import. Individual URIs do not contain Outpost routes.", add: "Open in app", copy: "Copy profile", copyLink: "Copy link", openQr: "Open QR code", install: "Install", automatic: "Routes update automatically", manual: "Routes update manually", client: { opening: "Opening the app…", copied: "Link copied—paste it into the app", copyFailed: "Could not copy the link" },
-    descriptions: { everywhere: "The simplest Apple client; refresh the profile manually.", incy: "A free Apple client with an updating subscription.", stash: "Exact automatic route updates on iPhone and iPad.", "clash-verge": "A popular Mihomo desktop client.", "clash-party": "A compact Mihomo desktop client.", "clash-meta": "A proven Mihomo client for Android.", flclash: "A lightweight cross-platform Mihomo client.", happ: "A simple free cross-platform client.", "sing-box-android": "The official sing-box client for Android.", "sing-box-apple": "The official sing-box client for macOS.", "sing-box-desktop": "The official sing-box desktop profile.", v2rayn: "A complete updating Xray configuration.", v2rayng: "A complete updating Xray configuration for Android." },
+    descriptions: { everywhere: "The simplest Apple client; refresh the profile manually.", incy: "A free Apple client with an updating subscription.", stash: "Exact automatic route updates on iPhone and iPad.", "clash-verge": "A popular Mihomo desktop client.", "clash-party": "A compact Mihomo desktop client.", "clash-meta": "A proven Mihomo client for Android.", flclash: "A lightweight cross-platform Mihomo client.", happ: "A simple free cross-platform client.", "sing-box-android": "The official sing-box client for Android.", "sing-box-apple": "The official sing-box client for Apple devices.", "sing-box-desktop": "The official sing-box desktop profile.", v2rayn: "A complete updating Xray configuration.", v2rayng: "A complete updating Xray configuration for Android." },
     advancedNames: { "vless-links": "INCY subscription", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "Routes load separately. Importing an individual connection link does not include them.", "mihomo-yaml": "Complete Mihomo profile for manual import.", "sing-box-json": "Complete sing-box profile for manual import.", "xray-json": "Complete Xray configuration for manual import." },
   },
   "zh-CN": {
     methods: "连接方式",
-    requirements: "要求",
+    requirements: "客户端及内核版本",
     routing: {"full": {"label": "完整支持 Outpost 路由", "detail": "保留所有规则及其顺序。"}, "limited": {"label": "有限支持 Outpost 路由", "detail": "规则按操作分组，顺序可能改变。"}, "none": {"label": "不包含 Outpost 路由", "detail": "文件只包含连接设置。"}},
 
     unavailable: "请在“高级选项”中选择兼容配置。如无可用配置，请联系服务器所有者。",
@@ -344,13 +404,13 @@ const catalogCopy = {
   },
   fa: {
     methods: "روش‌های اتصال",
-    requirements: "نیازمندی‌ها",
+    requirements: "نسخهٔ برنامه و موتور داخلی",
     routing: {"full": {"label": "پشتیبانی کامل از مسیرهای Outpost", "detail": "همهٔ قوانین و ترتیب آن‌ها حفظ می‌شود."}, "limited": {"label": "پشتیبانی محدود از مسیرهای Outpost", "detail": "قوانین بر اساس عمل گروه‌بندی می‌شوند و ترتیب ممکن است تغییر کند."}, "none": {"label": "بدون مسیرهای Outpost", "detail": "فایل فقط تنظیمات اتصال را دارد."}},
 
     unavailable: "یک پروفایل سازگار از «برای کاربران حرفه‌ای» انتخاب کنید. اگر پروفایلی موجود نیست، با مالک سرور تماس بگیرید.",
     modernText: "این پروفایل را در کلاینتی با قابلیت‌های مشخص‌شده به‌صورت دستی وارد کنید.",
     title: "راه‌اندازی اتصال", heading: "دستگاه خود را متصل کنید", subtitle: "برنامه‌ای برای دستگاه خود انتخاب کنید. روش‌های اتصال موجود و پشتیبانی از مسیرهای Outpost برای هر پروفایل نمایش داده می‌شود.", auto: "خودکار", appsFor: "برنامه‌ها برای", operatingSystem: "سیستم‌عامل", more: "برنامه‌های بیشتر", advanced: "برای کاربران حرفه‌ای", advancedText: "پروفایل‌های خام برای ورود دستی. URIهای جداگانه شامل مسیرهای Outpost نیستند.", add: "باز کردن در برنامه", copy: "کپی پروفایل", copyLink: "کپی پیوند", openQr: "باز کردن کد QR", install: "نصب", automatic: "مسیرها خودکار به‌روزرسانی می‌شوند", manual: "مسیرها دستی به‌روزرسانی می‌شوند", client: { opening: "در حال باز کردن برنامه…", copied: "پیوند کپی شد؛ آن را در برنامه جای‌گذاری کنید", copyFailed: "کپی پیوند انجام نشد" },
-    descriptions: { everywhere: "ساده‌ترین کلاینت Apple؛ پروفایل دستی به‌روزرسانی می‌شود.", incy: "کلاینت رایگان Apple با اشتراک قابل به‌روزرسانی.", stash: "به‌روزرسانی خودکار و دقیق مسیرها در iPhone و iPad.", "clash-verge": "کلاینت محبوب دسکتاپ Mihomo.", "clash-party": "کلاینت جمع‌وجور دسکتاپ Mihomo.", "clash-meta": "کلاینت آزموده‌شدهٔ Mihomo برای Android.", flclash: "کلاینت سبک و چندسکویی Mihomo.", happ: "کلاینت ساده، رایگان و چندسکویی.", "sing-box-android": "کلاینت رسمی sing-box برای Android.", "sing-box-apple": "کلاینت رسمی sing-box برای macOS.", "sing-box-desktop": "پروفایل رسمی دسکتاپ sing-box.", v2rayn: "پیکربندی کامل و قابل به‌روزرسانی Xray.", v2rayng: "پیکربندی کامل و قابل به‌روزرسانی Xray برای Android." },
+    descriptions: { everywhere: "ساده‌ترین کلاینت Apple؛ پروفایل دستی به‌روزرسانی می‌شود.", incy: "کلاینت رایگان Apple با اشتراک قابل به‌روزرسانی.", stash: "به‌روزرسانی خودکار و دقیق مسیرها در iPhone و iPad.", "clash-verge": "کلاینت محبوب دسکتاپ Mihomo.", "clash-party": "کلاینت جمع‌وجور دسکتاپ Mihomo.", "clash-meta": "کلاینت آزموده‌شدهٔ Mihomo برای Android.", flclash: "کلاینت سبک و چندسکویی Mihomo.", happ: "کلاینت ساده، رایگان و چندسکویی.", "sing-box-android": "کلاینت رسمی sing-box برای Android.", "sing-box-apple": "کلاینت رسمی sing-box برای دستگاه‌های Apple.", "sing-box-desktop": "پروفایل رسمی دسکتاپ sing-box.", v2rayn: "پیکربندی کامل و قابل به‌روزرسانی Xray.", v2rayng: "پیکربندی کامل و قابل به‌روزرسانی Xray برای Android." },
     advancedNames: { "vless-links": "اشتراک INCY", "mihomo-yaml": "Mihomo YAML", "sing-box-json": "sing-box JSON", "xray-json": "Xray JSON" }, advancedDescriptions: { "vless-links": "مسیرها جداگانه بارگذاری می‌شوند. وارد کردن پیوند اتصال تکی شامل مسیرها نمی‌شود.", "mihomo-yaml": "پروفایل کامل Mihomo برای ورود دستی.", "sing-box-json": "پروفایل کامل sing-box برای ورود دستی.", "xray-json": "پیکربندی کامل Xray برای ورود دستی." },
   },
 } satisfies Record<Locale, { unavailable: string; modernText: string; methods: string; requirements: string; routing: Record<"full" | "limited" | "none", {label: string; detail: string}>; title: string; heading: string; subtitle: string; auto: string; appsFor: string; operatingSystem: string; more: string; advanced: string; advancedText: string; add: string; copy: string; copyLink: string; openQr: string; install: string; automatic: string; manual: string; client: Record<string, string>; descriptions: Record<string, string>; advancedNames: Record<string, string>; advancedDescriptions: Record<string, string> }>;

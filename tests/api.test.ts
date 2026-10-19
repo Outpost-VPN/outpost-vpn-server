@@ -66,6 +66,16 @@ describe("HTTP API", () => {
     expect(YAML.parse(await modern.text()).proxies.filter((proxy: {type: string}) => proxy.type === "anytls")).toHaveLength(2);
     const baseline = await app.fetch(new Request("http://localhost" + path + "/apps/everywhere"));
     expect(YAML.parse(await baseline.text()).proxies).toHaveLength(3);
+    const application = await app.fetch(new Request("http://localhost" + path + "/apps/everywhere?profile=modern"));
+    const applicationProfile = YAML.parse(await application.text());
+    expect(applicationProfile.proxies.filter((proxy: {type: string}) => proxy.type === "anytls")).toHaveLength(2);
+    expect(applicationProfile.rules).toContain("MATCH,PROXY");
+    const links = await app.fetch(new Request("http://localhost" + path + "/qr/everywhere.svg"));
+    const modernQr = await app.fetch(new Request("http://localhost" + path + "/qr/everywhere.svg?profile=modern"));
+    expect(modernQr.status).toBe(200);
+    expect(await modernQr.text()).not.toBe(await links.text());
+    expect((await app.fetch(new Request("http://localhost" + path + "/apps/incy?profile=modern"))).status).toBe(400);
+    expect((await app.fetch(new Request("http://localhost" + path + "/qr/incy.svg?profile=modern"))).status).toBe(400);
     expect((await app.fetch(new Request("http://localhost" + path + "/advanced/naive-json"))).status).toBe(409);
     const {id, updatedAt, ...editable} = first;
     expect((await request("/api/v1/methods/" + id, cookie, "PATCH", {...editable, enabled:false})).status).toBe(200);
@@ -213,7 +223,7 @@ describe("HTTP API", () => {
     expect(created).toMatchObject({ state: "ready", connection: { name: "Мама", avatar: "avatar-8", status: "active", generation: 1 } });
     expect(created.subscription.url).toContain("/s/");
     expect(created.subscription.qrUrl).toBe(`${created.subscription.url}/qr/landing.svg`);
-    expect(created.catalogVersion).toBe(6);
+    expect(created.catalogVersion).toBe(7);
     expect(created.applications.find((app: {id: string}) => app.id === "everywhere")).toMatchObject({
       transports: ["Hysteria 2", "VLESS XHTTP", "VLESS gRPC"], routing: {support: "full"},
     });

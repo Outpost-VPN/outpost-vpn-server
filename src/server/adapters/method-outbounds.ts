@@ -10,8 +10,7 @@ export function subscriptionMethods(context: SubscriptionContext, format: Subscr
   const profile = context.clientProfile ?? (context.protocols && format === "mihomo" ? "mihomo-modern" : context.protocols && format === "sing-box" ? "sing-box-modern" : format);
   if (clientProfileFormat(profile) !== format) throw new ServiceError(400, "Client profile does not match the subscription format");
   const methods = context.methods ?? defaultMethods(context.engineOrder, { xhttp: config.xhttpPath, grpc: config.grpcService });
-  const selected = compatibleMethods(methods, profile as ClientProfile, context.enabledEngines ?? ["hysteria", "xray"])
-    .filter((method) => !context.protocols || context.protocols.includes(method.protocol));
+  const selected = compatibleMethods(methods, profile as ClientProfile, context.enabledEngines ?? ["hysteria", "xray"], context.protocols);
   if (!selected.length) throw new ServiceError(409, "No enabled connection methods are compatible with this client profile");
   return selected;
 }

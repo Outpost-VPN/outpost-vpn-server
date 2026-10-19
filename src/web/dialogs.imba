@@ -473,6 +473,10 @@ tag outpost-connect-modal
 													<span title=t('methods.title')>
 														<outpost-icon name="plugs-connected">
 														<em.technical> current.transports.join(' · ')
+													if current.requirements
+														<span>
+															<outpost-icon name="info">
+															<em> current.requirements
 													<span .warning=(current.routing.support != 'full') title=current.routing.detail>
 														<outpost-icon name="path">
 														<em> current.routing.label

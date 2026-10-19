@@ -40,12 +40,12 @@ export function defaultMethods(order: readonly EngineId[] = engineIds, paths?: {
 
 export const clientProfiles = {
   mihomo: { client: "Mihomo", routing: "embedded", name: "Mihomo YAML", protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
-  "mihomo-modern": { client: "Mihomo", routing: "embedded", name: "Mihomo · modern YAML", protocols: ["hysteria2", "xhttp", "grpc", "anytls", "trusttunnel", "amneziawg"], minimumCore: "Mihomo ≥1.19.32" },
+  "mihomo-modern": { client: "Mihomo", routing: "embedded", name: "Mihomo · modern YAML", protocols: ["hysteria2", "xhttp", "grpc", "anytls", "trusttunnel", "amneziawg"], minimumCore: "", requirements: {anytls: "Mihomo ≥1.19.4", trusttunnel: "Mihomo ≥1.19.21", amneziawg: "Mihomo ≥1.19.31"} },
   "sing-box": { client: "sing-box", routing: "embedded", name: "sing-box JSON", protocols: ["hysteria2", "grpc"], minimumCore: "" },
-  "sing-box-modern": { client: "sing-box", routing: "embedded", name: "sing-box · modern JSON", protocols: ["hysteria2", "grpc", "anytls", "naive"], minimumCore: "sing-box ≥1.14.3", requirements: {naive: "Naive: Cronet"} },
+  "sing-box-modern": { client: "sing-box", routing: "embedded", name: "sing-box · modern JSON", protocols: ["hysteria2", "grpc", "anytls", "naive"], minimumCore: "", requirements: {anytls: "sing-box ≥1.12.0", naive: "sing-box ≥1.13.0 · Naive: Cronet"} },
   "xray-json": { client: "Xray", routing: "embedded", name: "Xray JSON", protocols: ["xhttp", "grpc"], minimumCore: "" },
   links: { client: "URI", routing: "client", name: "URI links", protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
-  naive: { client: "NaiveProxy", routing: "none", name: "NaiveProxy JSON", protocols: ["naive"], minimumCore: "NaiveProxy / sing-box ≥1.14.3", requirements: {naive: "Naive: Cronet"} },
+  naive: { client: "NaiveProxy", routing: "none", name: "NaiveProxy JSON", protocols: ["naive"], minimumCore: "NaiveProxy", requirements: {naive: "Naive: Cronet"} },
   amneziawg: { client: "AmneziaVPN", routing: "none", name: "AmneziaWG .conf", protocols: ["amneziawg"], minimumCore: "AmneziaVPN ≥5.0.1.5 / AWG 3.1" },
 } satisfies Record<string, { client: string; routing: "embedded" | "client" | "none"; name: string; protocols: readonly ProtocolId[]; minimumCore: string; requirements?: Partial<Record<ProtocolId, string>> }>;
 export type ClientProfile = keyof typeof clientProfiles;
@@ -73,7 +73,7 @@ export function methodUsage(method: Pick<ConnectionMethod, "protocol">) {
   return {clients, routed, standalone, profiles};
 }
 
-export function compatibleMethods(methods: readonly ConnectionMethod[], profile: ClientProfile, installed: readonly EngineId[]) {
+export function compatibleMethods(methods: readonly ConnectionMethod[], profile: ClientProfile, installed: readonly EngineId[], selected?: readonly ProtocolId[]) {
   const supported: readonly string[] = clientProfiles[profile].protocols;
-  return methods.filter((method) => method.enabled && installed.includes(method.engine) && supported.includes(method.protocol));
+  return methods.filter((method) => method.enabled && installed.includes(method.engine) && supported.includes(method.protocol) && (!selected || selected.includes(method.protocol)));
 }

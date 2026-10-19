@@ -22,8 +22,8 @@ const baseUrl = "https://proxy.example/s/token";
 const locales: Locale[] = ["ru", "en", "zh-CN", "fa"];
 
 describe("versioned application catalog", () => {
-  test("catalog v6 is complete and every application has explicit pricing", () => {
-    expect(catalogVersion).toBe(6);
+  test("catalog v7 is complete and every application has explicit pricing", () => {
+    expect(catalogVersion).toBe(7);
     expect(new Set(applications.map((app) => app.id)).size).toBe(applications.length);
     for (const app of applications) {
       expect(app.platforms.length).toBeGreaterThan(0);
@@ -45,7 +45,7 @@ describe("versioned application catalog", () => {
     const available = {installed: ["sing-box"] as const, methods: [
       {...grpc, id: "grpc-a", engine: "sing-box" as const},
       {...grpc, id: "grpc-b", engine: "sing-box" as const},
-      ...defaults.map((method) => ({...method, enabled: method.protocol !== "hysteria2"})),
+      ...defaults.map((method) => ({...method, enabled: !["hysteria2", "naive"].includes(method.protocol)})),
     ]};
     const apps = catalog(baseUrl, "android", "ru", available);
     expect(apps.length).toBeGreaterThan(0);
@@ -61,19 +61,48 @@ describe("versioned application catalog", () => {
   test("manual profiles expose routing exceptions and requirements only for selected methods", () => {
     const methods = defaultMethods(engineIds);
     const all = advanced(baseUrl, "ru", {methods, installed: engineIds});
-    expect(all.find((item) => item.id === "mihomo-modern")).toMatchObject({routing: {support: "full"}, requirements: "Mihomo ≥1.19.32"});
+    expect(all.find((item) => item.id === "mihomo-modern")).toMatchObject({routing: {support: "full"}, requirements: "Mihomo ≥1.19.4 · Mihomo ≥1.19.21 · Mihomo ≥1.19.31"});
     expect(all.find((item) => item.id === "amneziawg-conf")).toMatchObject({routing: {support: "none"}, transports: ["AmneziaWG 3.1"]});
     expect(all.find((item) => item.id === "naive-json")?.routing.support).toBe("none");
     expect(all.find((item) => item.id === "vless-links")?.routing.support).toBe("limited");
     const onlyAnyTls = advanced(baseUrl, "ru", {methods: methods.filter((method) => method.protocol === "anytls"), installed: engineIds});
     const singBox = onlyAnyTls.find((item) => item.id === "sing-box-modern")!;
     expect(singBox.transports).toEqual(["AnyTLS"]);
-    expect(singBox.requirements).toBe("sing-box ≥1.14.3");
+    expect(singBox.requirements).toBe("sing-box ≥1.12.0");
     expect(catalog(baseUrl, "macos", "ru", {methods: [], installed: engineIds})).toEqual([]);
     expect(advanced(baseUrl, "ru", {methods: [], installed: engineIds})).toEqual([]);
     const empty = renderCatalogPage(connection, baseUrl, "macos", "ru", {methods: [], installed: engineIds});
     expect(empty).toContain('class="empty-apps"');
     expect(empty).not.toContain('class="app" data-app=');
+  });
+
+  test("AnyTLS-only subscriptions show usable apps and the required app or core versions", () => {
+    const available = {methods: defaultMethods(engineIds).filter((method) => method.protocol === "anytls"), installed: engineIds};
+    const apps = catalog(baseUrl, "ios", "ru", available);
+    expect(apps.map((app) => app.id)).toEqual(["everywhere", "stash", "sing-box-apple"]);
+    for (const app of apps) {
+      expect(app.transports).toEqual(["AnyTLS"]);
+      expect(app.routing.support).toBe("full");
+      expect(app.primaryFor).toContain("ios");
+      expect(app.profileUrl).toEndWith("?profile=modern");
+      expect(app.qrUrl).toEndWith("?profile=modern");
+    }
+    expect(apps.find((app) => app.id === "everywhere")?.requirements).toBe("AnyTLS: Mihomo ≥1.19.4");
+    expect(apps.find((app) => app.id === "stash")?.requirements).toBe("AnyTLS: Stash iOS ≥3.3.0 / macOS ≥4.1.0");
+    expect(apps.find((app) => app.id === "sing-box-apple")?.requirements).toBe("AnyTLS: sing-box ≥1.12.0");
+  });
+
+  test("new profile links respect app-specific capabilities and keep basic subscription URLs stable", () => {
+    const apps = catalog(baseUrl, undefined, "en", {methods: defaultMethods(engineIds), installed: engineIds});
+    expect(apps.find((app) => app.id === "stash")?.transports).toContain("TrustTunnel");
+    expect(apps.find((app) => app.id === "stash")?.transports).not.toContain("AmneziaWG 3.1");
+    expect(apps.find((app) => app.id === "clash-verge")?.transports).toContain("AmneziaWG 3.1");
+    expect(apps.find((app) => app.id === "sing-box-desktop")?.requirements).toContain("Naive: sing-box ≥1.13.0 · Naive: Cronet");
+    const basic = catalog(baseUrl, undefined, "en", {methods: defaultMethods(["hysteria", "xray"]), installed: engineIds});
+    for (const app of basic) {
+      expect(app.profileUrl).toBe(`${baseUrl}/apps/${app.id}`);
+      expect(app.protocolRequirements).toEqual([]);
+    }
   });
 
   test("uses the requested three primary applications on every operating system", () => {
@@ -93,8 +122,9 @@ describe("versioned application catalog", () => {
 
   test("exposes stable app profiles, lazy QR and only verified deep links", () => {
     const apps = catalog(baseUrl);
-    expect(apps.every((app) => app.profileUrl === `${baseUrl}/apps/${app.id}`)).toBeTrue();
-    expect(apps.every((app) => app.qrUrl === `${baseUrl}/qr/${app.id}.svg`)).toBeTrue();
+    expect(apps.every((app) => new URL(app.profileUrl).pathname === `/s/token/apps/${app.id}`)).toBeTrue();
+    expect(apps.every((app) => new URL(app.qrUrl).pathname === `/s/token/qr/${app.id}.svg`)).toBeTrue();
+    expect(apps.every((app) => new URL(app.profileUrl).search === new URL(app.qrUrl).search)).toBeTrue();
     expect(apps.every((app) => !app.profileUrl.includes("?format="))).toBeTrue();
     expect(apps.find((app) => app.id === "everywhere")?.openUrl).toBeNull();
     expect(apps.find((app) => app.id === "happ")?.openUrl).toBeNull();

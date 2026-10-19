@@ -15,6 +15,7 @@ import {
   application,
   catalog,
   catalogVersion,
+  ApplicationProfile,
   detectPlatform,
   renderCatalogPage,
 } from "./adapters/catalog";
@@ -27,6 +28,7 @@ import { EngineRuntimeService } from "./services/engine-runtime";
 import { EngineConfigService } from "./adapters/engines";
 import { JournalService, type JournalScope } from "./services/journal";
 import type { JournalCategory, SubscriptionFormat } from "./models";
+import type {ProtocolId} from "../shared/protocols";
 import { MonitoringService, prepareSetupMonitoring } from "./services/monitoring";
 import { ConnectionSyncService } from "./services/connection-sync";
 import { SetupService } from "./services/setup";
@@ -439,7 +441,7 @@ export class HttpApplication {
     const requestedPlatform = ctx.url.searchParams.get("platform");
     if (!requestedPlatform) {
       const profile = universalSubscription(ctx.request);
-      if (profile) return this.profile(ctx, profile.format, head, profile.appId);
+      if (profile) return this.profile(ctx, profile, head);
     }
     const baseUrl = `${config.origin}/s/${token}`;
     const platform = requestedPlatform ?? detectPlatform(ctx.request.headers.get("user-agent") ?? "");
@@ -450,34 +452,35 @@ export class HttpApplication {
   private async applicationProfile(ctx: RequestContext, head = false) {
     const item = application(ctx.params.appId!);
     if (!item) throw new ServiceError(404, "Приложение не найдено");
-    return this.profile(ctx, item.format, head, item.id);
+    return this.profile(ctx, new ApplicationProfile(item, ctx.url.searchParams.get("profile")), head);
   }
 
   private async advancedProfile(ctx: RequestContext, head = false) {
     const item = advancedDefinition(ctx.params.target!);
     if (!item) throw new ServiceError(404, "Профиль не найден");
-    return this.profile(ctx, item.format, head, undefined, item.clientProfile);
+    return this.profile(ctx, {format: item.format, clientProfile: item.clientProfile}, head);
   }
 
-  private async profile(ctx: RequestContext, format: SubscriptionFormat, head: boolean, appId?: string, clientProfile?: ClientProfile) {
+  private async profile(ctx: RequestContext, client: {format: SubscriptionFormat; appId?: string; clientProfile?: ClientProfile; protocols?: readonly ProtocolId[]}, head: boolean) {
     const token = ctx.params.token!;
     const connection = this.connections.bySubscriptionToken(token);
     const credentials = this.connections.credentials(connection.id);
     const routes = this.rulesets.materialize(this.routes.published());
     const enabledEngines = this.db.engines.installed();
-    const rendered = renderers[format].render({
+    const rendered = renderers[client.format].render({
       connection,
       credentials,
       routes,
       subscriptionToken: token,
       methods: this.methods.list(),
-      clientProfile: clientProfile ?? format,
+      clientProfile: client.clientProfile ?? client.format,
+      protocols: client.protocols,
       enabledEngines,
       clientPlatform: detectPlatform(ctx.request.headers.get("user-agent") ?? ""),
-      linkClient: appId === "happ" ? "happ" : "incy",
+      linkClient: client.appId === "happ" ? "happ" : "incy",
       network: this.system.networkSettings(),
     });
-    const body = appId === "stash"
+    const body = client.appId === "stash"
       ? `#SUBSCRIBED ${config.origin}/s/${token}/apps/stash\n${rendered.body}`
       : rendered.body;
     const response = await contentResponse(ctx.request, body, rendered.contentType, head, rendered.headers);
@@ -496,7 +499,7 @@ export class HttpApplication {
     if (id !== "landing") {
       const item = application(id);
       if (!item) throw new ServiceError(404, "QR-код не найден");
-      const profileUrl = `${baseUrl}/apps/${item.id}`;
+      const profileUrl = new ApplicationProfile(item, ctx.url.searchParams.get("profile")).url(baseUrl);
       value = item.deepLink?.(profileUrl) ?? profileUrl;
     }
     const svg = await QRCode.toString(value, { type: "svg", margin: 1, width: 320, errorCorrectionLevel: "M" });

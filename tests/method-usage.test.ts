@@ -7,13 +7,13 @@ test("client guidance distinguishes broad support, required runtimes and standal
   expect(methodUsage({protocol: "hysteria2"}).clients).toEqual(["Mihomo", "sing-box"]);
   expect(methodUsage({protocol: "xhttp"}).clients).toEqual(["Mihomo", "Xray"]);
   const anytls = methodUsage({protocol: "anytls"});
-  expect(anytls.clients).toEqual(["Mihomo ≥1.19.32", "sing-box ≥1.14.3"]);
+  expect(anytls.clients).toEqual(["Mihomo ≥1.19.4", "sing-box ≥1.12.0"]);
   expect(anytls.standalone).toEqual([]);
   const awg = methodUsage({protocol: "amneziawg"});
   expect(awg.routed.map((profile) => profile.client)).toEqual(["Mihomo"]);
   expect(awg.standalone.map((profile) => profile.client)).toEqual(["AmneziaVPN"]);
   const naive = methodUsage({protocol: "naive"});
-  expect(naive.clients).toEqual(["sing-box ≥1.14.3 · Naive: Cronet"]);
+  expect(naive.clients).toEqual(["sing-box ≥1.13.0 · Naive: Cronet"]);
   expect(naive.standalone.map((profile) => profile.client)).toEqual(["NaiveProxy"]);
 });
 

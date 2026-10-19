@@ -43,8 +43,8 @@ users**, and import a profile compatible with the client's actual core:
 
 | Profile | Client requirement | Added transports |
 |---|---|---|
-| Modern Mihomo YAML | Mihomo 1.19.32 or newer | AnyTLS, TrustTunnel, AmneziaWG 3.1 |
-| Modern sing-box JSON | sing-box 1.14.3 or newer, with Naive support | AnyTLS, Naive |
+| Modern Mihomo YAML | AnyTLS: Mihomo ≥1.19.4; TrustTunnel: ≥1.19.21; AWG 3.1: ≥1.19.31 | AnyTLS, TrustTunnel, AmneziaWG 3.1 |
+| Modern sing-box JSON | AnyTLS: sing-box ≥1.12.0; Naive: ≥1.13.0 with Cronet | AnyTLS, Naive |
 | AmneziaWG `.conf` | AmneziaVPN 5.0.1.5 or newer / compatible AWG 3.1 client | AmneziaWG 3.1 |
 | Naive JSON | Native NaiveProxy or a compatible Naive client | Naive HTTP/2 |
 
@@ -55,6 +55,11 @@ platform-specific Cronet library. A GUI app's name/version does not establish it
 bundled core or available build features. Generated profiles omit transports
 whose runtime is not installed; native-only exports return a clear conflict until
 installation and configuration of a compatible method.
+
+Catalog v7 exposes explicit modern app profiles and per-protocol version requirements
+on the subscription page; see [client compatibility](CONNECTION-METHODS.md#client-version-requirements).
+The bundled server versions above remain the versions used for native integration;
+they are separate from these client protocol requirements.
 
 Refresh and apply subscriptions on devices after server/client configuration
 changes. AmneziaWG native files must be reimported after credential rotation.
