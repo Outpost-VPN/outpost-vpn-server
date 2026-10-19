@@ -2,6 +2,7 @@ import type { OutpostDatabase } from "../db/database";
 import type { EngineId, PresenceStatus, TrafficPoint } from "../models";
 import {telemetryEngines} from "../../shared/engines";
 import { JournalService } from "./journal";
+import {ConnectionService} from "./connections";
 
 export interface TelemetrySnapshot {
   traffic: TrafficPoint[];
@@ -10,6 +11,7 @@ export interface TelemetrySnapshot {
 
 export interface TrafficCollector {
   id: EngineId;
+  intervalMs?: number;
   collect(): Promise<TelemetrySnapshot>;
 }
 
@@ -17,6 +19,10 @@ export type TrafficPeriod = "today" | "24h" | "week" | "7d" | "month" | "30d" | 
 
 export class TrafficService {
   private journal: JournalService;
+  private connections: ConnectionService;
+  private sampledAt = new Map<EngineId, number>();
+  private compactedAt = 0;
+  private collecting = false;
 
   constructor(
     private db: OutpostDatabase,
@@ -25,46 +31,56 @@ export class TrafficService {
     private enabled = true,
   ) {
     this.journal = journal ?? new JournalService(db);
+    this.connections = new ConnectionService(db, this.journal);
   }
 
   async collect(reference = new Date()) {
-    if (!this.enabled) return;
-    for (const collector of this.collectors) {
-      try {
-        const snapshot = await collector.collect();
-        const active = new Set<string>();
-        for (const point of snapshot.traffic) {
-          const delta = this.recordCumulative(collector.id, point, reference);
-          if (delta.activity) active.add(point.connectionId);
+    if (!this.enabled || this.collecting) return;
+    this.collecting = true;
+    try {
+      await Promise.all(this.collectors.filter((collector) => this.db.engines.has(collector.id)).map(async (collector) => {
+        const previous = this.sampledAt.get(collector.id);
+        if (previous !== undefined && reference.getTime() - previous < (collector.intervalMs ?? 0)) return;
+        this.sampledAt.set(collector.id, reference.getTime());
+        try {
+          const snapshot = await collector.collect();
+          const active = new Set<string>();
+          for (const point of snapshot.traffic) {
+            const delta = this.recordCumulative(collector.id, point, reference);
+            if (delta.activity) active.add(point.connectionId);
+          }
+          this.updatePresence(collector.id, snapshot.online, active, reference);
+          this.telemetrySuccess(collector.id, reference);
+        } catch (error) {
+          this.markUnknown(collector.id, reference);
+          this.telemetryFailure(collector.id, error, reference);
         }
-        if (collector.id === "hysteria") this.updateHysteriaPresence(snapshot.online ?? {}, reference);
-        else this.updateXrayPresence(active, reference);
-        this.telemetrySuccess(collector.id, reference);
-      } catch (error) {
-        this.markUnknown(collector.id, reference);
-        this.telemetryFailure(collector.id, error, reference);
+      }));
+      this.updateActivityFacts(reference);
+      if (reference.getTime() - this.compactedAt >= 5 * 60_000) {
+        this.compact(reference);
+        this.compactedAt = reference.getTime();
       }
-    }
-    this.updateActivityFacts(reference);
-    this.compact(reference);
+    } finally { this.collecting = false; }
   }
 
   recordCumulative(engine: string, point: TrafficPoint, observedAt = new Date()) {
+    if (![point.upload, point.download].every((value) => Number.isSafeInteger(value) && value >= 0)) throw new Error("Invalid traffic counters");
     const connection = this.db.raw.query<{ id: string }, string>("SELECT id FROM connections WHERE id = ?").get(point.connectionId);
     if (!connection) return { upload: 0, download: 0, activity: false, reset: false };
-    const cursor = this.db.raw.query<{ upload: number; download: number }, [string, string]>(`
-      SELECT upload, download FROM traffic_cursors WHERE connection_id = ? AND engine = ?
-    `).get(point.connectionId, engine);
+    const cursor = this.db.raw.query<{ upload: number; download: number }, [string, string, string]>(`
+      SELECT upload, download FROM traffic_cursors WHERE connection_id = ? AND engine = ? AND counter_id = ?
+    `).get(point.connectionId, engine, point.counterId ?? "");
     const reset = Boolean(cursor && (point.upload < cursor.upload || point.download < cursor.download));
     const upload = cursor && point.upload >= cursor.upload ? point.upload - cursor.upload : point.upload;
     const download = cursor && point.download >= cursor.download ? point.download - cursor.download : point.download;
     const bucketAt = floorDate(observedAt, 5).toISOString();
     this.db.raw.transaction(() => {
       this.db.raw.query(`
-        INSERT INTO traffic_cursors (connection_id, engine, upload, download, observed_at) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(connection_id, engine) DO UPDATE SET
+        INSERT INTO traffic_cursors (connection_id, engine, counter_id, upload, download, observed_at) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(connection_id, engine, counter_id) DO UPDATE SET
           upload = excluded.upload, download = excluded.download, observed_at = excluded.observed_at
-      `).run(point.connectionId, engine, point.upload, point.download, observedAt.toISOString());
+      `).run(point.connectionId, engine, point.counterId ?? "", point.upload, point.download, observedAt.toISOString());
       if (upload || download) {
         this.db.raw.query(`
           INSERT INTO traffic_samples (bucket, bucket_at, connection_id, engine, upload, download)
@@ -124,6 +140,7 @@ export class TrafficService {
     this.rollup("1h", "1d", hourlyCutoff, 24 * 60);
     this.db.raw.query("DELETE FROM traffic_samples WHERE bucket = '5m' AND bucket_at < ?").run(fiveMinuteCutoff);
     this.db.raw.query("DELETE FROM traffic_samples WHERE bucket = '1h' AND bucket_at < ?").run(hourlyCutoff);
+    this.db.raw.query("DELETE FROM traffic_cursors WHERE engine IN ('mihomo', 'sing-box') AND observed_at < ?").run(fiveMinuteCutoff);
   }
 
   seedDemo() {
@@ -167,34 +184,23 @@ export class TrafficService {
     })();
   }
 
-  private updateHysteriaPresence(online: Record<string, number>, reference: Date) {
+  private updatePresence(engine: EngineId, online: Record<string, number> | undefined, active: Set<string>, reference: Date) {
     const timestamp = reference.toISOString();
     for (const connection of this.activeConnections()) {
-      const connections = Math.max(0, Math.trunc(Number(online[connection.id] ?? 0)));
-      const previous = this.presence(connection.id, "hysteria");
-      if (connections > 0) {
-        this.savePresence(connection.id, "hysteria", "online", "connections", timestamp, {
-          connections, misses: 0, lastActiveAt: timestamp,
+      const previous = this.presence(connection.id, engine);
+      if (online) {
+        const connections = Math.max(0, Math.trunc(Number(online[connection.id] ?? 0)));
+        const misses = connections ? 0 : (previous?.misses ?? 0) + 1;
+        this.savePresence(connection.id, engine, connections ? "online" : misses >= 2 ? "offline" : previous?.status ?? "unknown", "connections", timestamp, {
+          connections, misses, lastActiveAt: connections ? timestamp : previous?.last_active_at ?? null,
         });
-        continue;
+      } else {
+        const lastActiveAt = active.has(connection.id) ? timestamp : previous?.last_active_at ?? null;
+        const recent = lastActiveAt !== null && reference.getTime() - new Date(lastActiveAt).getTime() <= 2 * 60 * 1000;
+        this.savePresence(connection.id, engine, recent ? "online" : "offline", "traffic", timestamp, {
+          connections: null, misses: 0, lastActiveAt,
+        });
       }
-      const misses = (previous?.misses ?? 0) + 1;
-      const status: PresenceStatus = misses >= 2 ? "offline" : previous?.status ?? "unknown";
-      this.savePresence(connection.id, "hysteria", status, "connections", timestamp, {
-        connections: 0, misses, lastActiveAt: previous?.last_active_at ?? null,
-      });
-    }
-  }
-
-  private updateXrayPresence(active: Set<string>, reference: Date) {
-    const timestamp = reference.toISOString();
-    for (const connection of this.activeConnections()) {
-      const previous = this.presence(connection.id, "xray");
-      const lastActiveAt = active.has(connection.id) ? timestamp : previous?.last_active_at ?? null;
-      const recent = lastActiveAt !== null && reference.getTime() - new Date(lastActiveAt).getTime() <= 2 * 60 * 1000;
-      this.savePresence(connection.id, "xray", recent ? "online" : "offline", "traffic", timestamp, {
-        connections: null, misses: 0, lastActiveAt,
-      });
     }
   }
 
@@ -234,10 +240,7 @@ export class TrafficService {
   private updateActivityFacts(reference: Date) {
     const timestamp = reference.toISOString();
     for (const connection of this.activeConnections()) {
-      const rows = this.db.raw.query<{ status: PresenceStatus; last_active_at: string | null }, string>(`
-        SELECT status, last_active_at FROM connection_presence WHERE connection_id = ?
-      `).all(connection.id);
-      if (!rows.length) continue;
+      const rows = Object.values(connection.presence!.engines);
       const online = rows.filter((row) => row.status === "online");
       if (online.length) {
         const seenAt = online.map((row) => row.last_active_at).filter(Boolean).sort().at(-1) ?? timestamp;
@@ -253,7 +256,7 @@ export class TrafficService {
         });
         continue;
       }
-      const unknown = this.db.engines.limitedTelemetry || rows.some((row) => row.status === "unknown");
+      const unknown = connection.presence!.status === "unknown";
       if (
         !unknown && connection.last_seen_at && !connection.absence_notified_at
         && reference.getTime() - new Date(connection.last_seen_at).getTime() >= 24 * 60 * 60 * 1000
@@ -303,17 +306,7 @@ export class TrafficService {
   }
 
   private activeConnections() {
-    return this.db.raw.query<{
-      id: string;
-      name: string;
-      first_seen_at: string | null;
-      last_seen_at: string | null;
-      absence_notified_at: string | null;
-    }, []>(`
-      SELECT id, name, first_seen_at, last_seen_at, absence_notified_at
-      FROM connections
-      WHERE status = 'active' AND suspended_at IS NULL AND archived_at IS NULL
-    `).all();
+    return this.connections.list().filter((connection) => connection.status === "active" && !connection.suspended_at);
   }
 
   private presence(connectionId: string, engine: EngineId) {
@@ -358,84 +351,7 @@ export class TrafficService {
   }
 }
 
-export class HysteriaCollector implements TrafficCollector {
-  id = "hysteria" as const;
-  constructor(private url: string, private secret?: string) {}
-
-  async collect() {
-    const headers = this.secret ? { authorization: this.secret } : undefined;
-    const base = this.url.replace(/\/$/, "");
-    const [trafficResponse, onlineResponse] = await Promise.all([
-      fetch(`${base}/traffic`, { headers }),
-      fetch(`${base}/online`, { headers }),
-    ]);
-    if (!trafficResponse.ok) throw new Error(`Hysteria traffic stats: ${trafficResponse.status}`);
-    if (!onlineResponse.ok) throw new Error(`Hysteria online stats: ${onlineResponse.status}`);
-    const [traffic, online] = await Promise.all([
-      trafficResponse.json() as Promise<Record<string, { tx: number; rx: number }>>,
-      onlineResponse.json() as Promise<Record<string, number>>,
-    ]);
-    return {
-      traffic: Object.entries(traffic).map(([connectionId, counters]) => ({ connectionId, upload: counters.tx, download: counters.rx })),
-      online,
-    };
-  }
-}
-
-export class XrayCollector implements TrafficCollector {
-  id = "xray" as const;
-  constructor(private binary: string, private server = "127.0.0.1:10085") {}
-
-  async collect() {
-    const process = Bun.spawn([this.binary, "api", "statsquery", `--server=${this.server}`, "-pattern", "user>>>"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(process.stdout).text(), new Response(process.stderr).text(), process.exited,
-    ]);
-    if (code !== 0) throw new Error(`Xray stats: ${stderr.trim()}`);
-    const counters = parseXrayStats(stdout);
-    const points = new Map<string, TrafficPoint>();
-    for (const [name, value] of counters) {
-      const match = name.match(/^user>>>([^>]+)>>>traffic>>>(uplink|downlink)$/);
-      if (!match) continue;
-      const email = match[1]!;
-      const local = email.endsWith("@outpost.local") ? email.slice(0, -"@outpost.local".length) : email;
-      const connectionId = local.replace(/\.\d+$/, "");
-      const point = points.get(connectionId) ?? { connectionId, upload: 0, download: 0 };
-      if (match[2] === "uplink") point.upload = value;
-      else point.download = value;
-      points.set(connectionId, point);
-    }
-    return { traffic: Array.from(points.values()) };
-  }
-}
-
-export function configuredCollectors(): TrafficCollector[] {
-  const collectors: TrafficCollector[] = [];
-  if (process.env.OUTPOST_HYSTERIA_STATS_URL) {
-    collectors.push(new HysteriaCollector(process.env.OUTPOST_HYSTERIA_STATS_URL, process.env.OUTPOST_HYSTERIA_STATS_SECRET));
-  }
-  if (process.env.OUTPOST_XRAY_BINARY) {
-    collectors.push(new XrayCollector(process.env.OUTPOST_XRAY_BINARY, process.env.OUTPOST_XRAY_API));
-  }
-  return collectors;
-}
-
-export function parseXrayStats(output: string) {
-  const values = new Map<string, number>();
-  try {
-    const payload = JSON.parse(output) as { stat?: Array<{ name?: string; value?: string | number }> };
-    for (const item of payload.stat ?? []) if (item.name) values.set(item.name, Number(item.value ?? 0));
-    return values;
-  } catch {
-    // Older Xray builds may format the response as protobuf text.
-  }
-  const matcher = /name:\s*"([^"]+)"\s+value:\s*(\d+)/g;
-  for (const match of output.matchAll(matcher)) values.set(match[1]!, Number(match[2]));
-  return values;
-}
+export {HysteriaCollector, XrayCollector, configuredCollectors, parseXrayStats} from "../adapters/traffic-collectors";
 
 function floorDate(date: Date, minutes: number) {
   const value = new Date(date);

@@ -26,6 +26,7 @@ export function runtimePorts(engine: EngineId, text: string, health = false): st
     for (const listener of listeners) add(listener.port ?? listener.listen_port, listener.type === "hysteria2" ? "udp" : "tcp", listener.listen);
     if (health && engine === "mihomo") address(profile["external-controller"], "tcp");
     if (health && engine === "xray") address(profile.api.listen, "tcp");
+    if (health && engine === "sing-box") for (const service of profile.services ?? []) add(service.listen_port, "tcp", service.listen);
     // Xray's only public endpoints terminate at the managed Nginx edge.
     if (!health && engine === "xray" && listeners.length) ports.push("443/tcp");
   }

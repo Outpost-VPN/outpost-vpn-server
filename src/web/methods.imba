@@ -1,4 +1,4 @@
-import {engines, engineTracksTraffic} from '../shared/engines.ts'
+import {engines, engineTrafficApproximate} from '../shared/engines.ts'
 import {protocols} from '../shared/protocols.ts'
 import {managedEdge, singletonEngine, methodFields, methodClientProfiles} from '../shared/connection-methods.ts'
 import {t} from './i18n.imba'
@@ -247,15 +247,16 @@ tag outpost-method-support
 
 	get profiles do methodClientProfiles(method)
 	get basic? do profiles.some do(profile) !profile.minimumCore
-	get tracked? do engineTracksTraffic(method.engine)
+	get approximate? do engineTrafficApproximate(method.engine)
+	get detail do t(approximate? ? 'methods.approximate_traffic_details' : 'methods.traffic_details')
 
 	<self>
-		<span.traffic .limited=!tracked? title=t(tracked? ? 'methods.traffic_details' : 'methods.no_traffic_details')>
-			<outpost-icon name=(tracked? ? 'chart-line' : 'chart-line-down')>
-			<span> t(tracked? ? 'methods.traffic' : 'methods.no_traffic')
+		<span.traffic title=detail>
+			<outpost-icon name="chart-line">
+			<span> t(approximate? ? 'methods.approximate_traffic' : 'methods.traffic')
 		<details>
 			<summary> t(basic? ? 'methods.basic_profile' : 'methods.special_profile')
-			<p> t(tracked? ? 'methods.traffic_details' : 'methods.no_traffic_details')
+			<p> detail
 			<ul>
 				for profile in profiles
 					<li>
@@ -268,7 +269,6 @@ tag outpost-method-support
 		d:flex ai:baseline flex-wrap:wrap g:8px 20px fs:12px lh:1.5 c:var(--outpost-muted)
 		.traffic d:inline-flex ai:center g:5px
 		.traffic .ph fs:14px
-		.traffic.limited c:var(--outpost-muted)
 		details fl:1 1 220px
 		summary c:var(--outpost-brand) cursor:pointer w:fit-content
 		p mt:8px

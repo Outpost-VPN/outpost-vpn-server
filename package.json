@@ -38,6 +38,7 @@
     "@simplewebauthn/server": "^13.2.2",
     "codemirror": "^6.0.2",
     "imba": "^2.0.0-alpha.247",
+    "protobufjs": "^7.5.4",
     "qrcode": "^1.5.4",
     "yaml": "^2.8.1",
     "zod": "^4.1.5"

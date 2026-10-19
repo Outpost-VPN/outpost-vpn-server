@@ -375,6 +375,42 @@ export const migrations = [
         WHERE consumed_at IS NULL AND revoked_at IS NULL;
     `,
   },
+  {
+    version: 6,
+    name: "all-engine-telemetry",
+    sql: `
+      ALTER TABLE traffic_cursors RENAME TO traffic_cursors_legacy;
+      CREATE TABLE traffic_cursors (
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+        engine TEXT NOT NULL,
+        counter_id TEXT NOT NULL DEFAULT '',
+        upload INTEGER NOT NULL DEFAULT 0,
+        download INTEGER NOT NULL DEFAULT 0,
+        observed_at TEXT NOT NULL,
+        PRIMARY KEY(connection_id, engine, counter_id)
+      );
+      INSERT INTO traffic_cursors (connection_id, engine, upload, download, observed_at)
+        SELECT connection_id, engine, upload, download, observed_at FROM traffic_cursors_legacy;
+      DROP TABLE traffic_cursors_legacy;
+      ALTER TABLE connection_presence RENAME TO connection_presence_legacy;
+      DROP INDEX connection_presence_status;
+      CREATE TABLE connection_presence (
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+        engine TEXT NOT NULL CHECK(engine IN ('hysteria', 'xray', 'mihomo', 'sing-box', 'amneziawg')),
+        status TEXT NOT NULL CHECK(status IN ('online', 'offline', 'unknown')),
+        signal TEXT NOT NULL CHECK(signal IN ('connections', 'traffic')),
+        connections INTEGER,
+        misses INTEGER NOT NULL DEFAULT 0,
+        last_active_at TEXT,
+        observed_at TEXT NOT NULL,
+        changed_at TEXT NOT NULL,
+        PRIMARY KEY(connection_id, engine)
+      );
+      INSERT INTO connection_presence SELECT * FROM connection_presence_legacy;
+      DROP TABLE connection_presence_legacy;
+      CREATE INDEX connection_presence_status ON connection_presence(status, observed_at DESC);
+    `,
+  },
 ] as const;
 
 export const defaultRoutes = [

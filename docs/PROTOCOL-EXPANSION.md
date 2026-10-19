@@ -95,13 +95,13 @@ accepts the optional configs and reconciles them against installed binaries and
 restored active credentials. Application update rollback snapshots optional
 configs and preserves inactive services.
 
-## Telemetry limitation
+## User telemetry
 
-Per-connection traffic and precise presence still cover Hysteria/Xray only.
-Installing optional engines displays a shared notice; missing new-engine counters
-produce unknown activity rather than a false offline result. Long-offline
-notifications are suppressed while this coverage is incomplete. No per-protocol
-usage counters for the new runtimes are claimed.
+All five runtimes contribute to total traffic and combined presence per Outpost
+connection. Mihomo/sing-box use approximate session snapshots; failed or missing
+telemetry produces unknown activity rather than a false offline result. See
+[user telemetry](USER-TELEMETRY.md) for sampling, persistence and runtime contracts.
+No per-protocol usage breakdown is exposed.
 
 ## Packaging
 

@@ -385,10 +385,11 @@ export class ConnectionService {
   }
 
   private withPresence(connection: Connection): Connection {
+    const expected = this.db.engines.installed();
     const rows = this.db.raw.query<PresenceRow, string>(`
       SELECT engine, status, signal, connections, last_active_at, observed_at, changed_at
       FROM connection_presence WHERE connection_id = ? ORDER BY engine
-    `).all(connection.id);
+    `).all(connection.id).filter((row) => expected.includes(row.engine));
     const engines: Partial<Record<EngineId, EnginePresence>> = {};
     for (const row of rows) {
       engines[row.engine] = {
@@ -400,8 +401,7 @@ export class ConnectionService {
         changed_at: row.changed_at,
       };
     }
-    const statuses = rows.map((row) => row.status);
-    if (this.db.engines.limitedTelemetry) statuses.push("unknown");
+    const statuses = expected.map((engine) => engines[engine]?.status ?? "unknown");
     const status: PresenceStatus = connection.suspended_at
       ? "offline"
       : statuses.includes("online")

@@ -1,7 +1,8 @@
 import { amneziaSnapshot, amneziaNative } from "./amneziawg";
 import { defaultMethods, type ConnectionMethod } from "../../shared/connection-methods";
 import { methodListeners } from "./method-listeners";
-import { createHash, createHmac } from "node:crypto";
+import { createHash } from "node:crypto";
+import {engineApi, engineApiSecret} from "./engine-api";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
@@ -53,7 +54,7 @@ const protectedBlocks = {
   hysteria: ["{{OUTPOST_AUTH_URL}}", "{{OUTPOST_STATS_LISTEN}}", "{{OUTPOST_STATS_SECRET}}", "{{OUTPOST_TLS_CERT}}", "{{OUTPOST_TLS_KEY}}"],
   amneziawg: ["{{OUTPOST_AWG_SERVER}}", "{{OUTPOST_AWG_PEERS}}"],
   mihomo: ["{{OUTPOST_LISTENERS}}", "{{OUTPOST_CONTROLLER_SECRET}}"],
-  "sing-box": ["{{OUTPOST_INBOUNDS}}"],
+  "sing-box": ["{{OUTPOST_INBOUNDS}}", "{{OUTPOST_API}}"],
   xray: [
     "{{OUTPOST_XHTTP_USERS}}", "{{OUTPOST_GRPC_USERS}}", "{{OUTPOST_API}}",
     "{{OUTPOST_STATS}}", "{{OUTPOST_XHTTP_PATH}}", "{{OUTPOST_GRPC_SERVICE}}",
@@ -88,12 +89,13 @@ export function validateTemplate(engine: keyof typeof protectedBlocks, template:
       const rules = nestedArray(parsed, "rules");
       if (!rules.includes("AND,((NETWORK,UDP),(DST-PORT,443)),REJECT")) errors.push("Системное правило блокировки UDP/443 нельзя удалить");
       const value = parsed as Record<string, unknown>;
-      if (value.listeners !== "__OUTPOST_LISTENERS__" || value["external-controller"] !== "127.0.0.1:9097") errors.push("Системные listeners и локальный API нельзя изменить");
+      if (value.listeners !== "__OUTPOST_LISTENERS__" || value["external-controller"] !== engineApi.mihomo) errors.push("Системные listeners и локальный API нельзя изменить");
       if (value.mode !== "rule" || value["mixed-port"] || value.port || value["socks-port"] || value.tun) errors.push("Дополнительные входящие интерфейсы запрещены");
     }
     if (engine === "sing-box") {
       const value = parsed as Record<string, unknown>;
       if (value.inbounds !== "{{OUTPOST_INBOUNDS}}") errors.push("Системный блок inbounds нельзя изменить");
+      if (value.services !== "{{OUTPOST_API}}") errors.push("Системный блок локального API нельзя изменить");
       if (!nestedArray(parsed, "route", "rules").some((item) => matches(item, { network: "udp", port: 443, action: "reject" }))) errors.push("Системное правило блокировки UDP/443 нельзя удалить");
     }
   } catch (error) {
@@ -115,7 +117,7 @@ export function renderHysteria(template: string) {
     .replace("{{OUTPOST_TLS_CERT}}", `/etc/letsencrypt/live/${config.domain}/fullchain.pem`)
     .replace("{{OUTPOST_TLS_KEY}}", `/etc/letsencrypt/live/${config.domain}/privkey.pem`)
     .replace("{{OUTPOST_AUTH_URL}}", "http://127.0.0.1:8181/internal/hysteria/auth")
-    .replace("{{OUTPOST_STATS_LISTEN}}", "127.0.0.1:9999")
+    .replace("{{OUTPOST_STATS_LISTEN}}", engineApi.hysteria)
     .replace("{{OUTPOST_STATS_SECRET}}", config.hysteriaStatsSecret);
   YAML.parse(rendered);
   return rendered;
@@ -130,7 +132,7 @@ export function renderXray(template: string, credentials: ConnectionCredential[]
   })));
   const rendered = template
     .replace('"{{OUTPOST_STATS}}"', JSON.stringify({}))
-    .replace('"{{OUTPOST_API}}"', JSON.stringify({ tag: "api", listen: "127.0.0.1:10085", services: ["HandlerService", "StatsService", "LoggerService"] }))
+    .replace('"{{OUTPOST_API}}"', JSON.stringify({ tag: "api", listen: engineApi.xray, services: ["HandlerService", "StatsService", "LoggerService"] }))
     .replace('"{{OUTPOST_XHTTP_USERS}}"', users)
     .replace('"{{OUTPOST_GRPC_USERS}}"', users)
     .replace("{{OUTPOST_XHTTP_PATH}}", config.xhttpPath)
@@ -160,12 +162,13 @@ export function renderEngine(engine: EngineId, template: string, credentials: Co
   }
   if (engine === "mihomo") {
     const profile = parseEngineTemplate(engine, template) as Record<string, unknown>;
-    profile.secret = createHmac("sha256", config.hysteriaStatsSecret).update("outpost:mihomo-controller:v1").digest("base64url");
+    profile.secret = engineApiSecret("mihomo");
     profile.listeners = methodListeners(engine, methods, credentials);
     return YAML.stringify(profile);
   }
   const profile = parseEngineTemplate(engine, template) as Record<string, unknown>;
   profile.inbounds = methodListeners(engine, methods, credentials);
+  profile.services = [{type: "api", tag: "outpost-telemetry", listen: "127.0.0.1", listen_port: Number(engineApi["sing-box"].split(":")[1]), secret: engineApiSecret("sing-box")}];
   return JSON.stringify(profile, null, 2);
 }
 

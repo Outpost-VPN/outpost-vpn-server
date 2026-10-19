@@ -1,5 +1,6 @@
 import YAML, { isSeq, type Document } from "yaml";
 import { engines, type EngineId } from "../../shared/engines";
+import {engineApi} from "./engine-api";
 
 export type EngineName = EngineId;
 
@@ -113,7 +114,7 @@ export const defaultMihomoTemplate = `
 mode: rule
 log-level: warning
 ipv6: false
-external-controller: 127.0.0.1:9097
+external-controller: ${engineApi.mihomo}
 secret: "{{OUTPOST_CONTROLLER_SECRET}}"
 listeners: "{{OUTPOST_LISTENERS}}"
 rules:
@@ -125,7 +126,7 @@ rules:
   - MATCH,DIRECT
 `.trim();
 
-export const defaultSingBoxTemplate = JSON.stringify({
+const singBoxPresetV1 = JSON.stringify({
   log: { level: "warn", timestamp: true },
   inbounds: "{{OUTPOST_INBOUNDS}}",
   outbounds: [{ type: "direct", tag: "direct" }],
@@ -135,13 +136,15 @@ export const defaultSingBoxTemplate = JSON.stringify({
   ], final: "direct" },
 }, null, 2);
 
+export const defaultSingBoxTemplate = JSON.stringify({...JSON.parse(singBoxPresetV1), services: "{{OUTPOST_API}}"}, null, 2);
+
 export const defaultAmneziaTemplate = JSON.stringify({ server: "{{OUTPOST_AWG_SERVER}}", peers: "{{OUTPOST_AWG_PEERS}}" }, null, 2);
 
 const presets: Record<EngineName, ReadonlyMap<number, string>> = {
   hysteria: new Map([[1, hysteriaPresetV1], [2, hysteriaPresetV2]]),
   xray: new Map([[1, xrayPresetV1], [2, xrayPresetV2]]),
   mihomo: new Map([[1, defaultMihomoTemplate]]),
-  "sing-box": new Map([[1, defaultSingBoxTemplate]]),
+  "sing-box": new Map([[1, singBoxPresetV1], [2, defaultSingBoxTemplate]]),
   amneziawg: new Map([[1, defaultAmneziaTemplate]]),
 };
 
@@ -149,7 +152,7 @@ export const currentEnginePresetVersions: Record<EngineName, number> = {
   hysteria: 2,
   xray: 2,
   mihomo: 1,
-  "sing-box": 1,
+  "sing-box": 2,
   amneziawg: 1,
 };
 

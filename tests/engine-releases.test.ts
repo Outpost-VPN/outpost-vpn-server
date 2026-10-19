@@ -64,6 +64,7 @@ test("method guidance follows protocol compatibility and engine telemetry indepe
   expect(methodClientProfiles(defaultMethods(["hysteria"])[0]!).some((profile) => !profile.minimumCore)).toBeTrue();
   expect(engineTracksTraffic("hysteria")).toBeTrue();
   expect(engineTracksTraffic("xray")).toBeTrue();
-  expect(engineTracksTraffic("sing-box")).toBeFalse();
-  expect(engineTracksTraffic("mihomo")).toBeFalse();
+  expect(engineTracksTraffic("sing-box")).toBeTrue();
+  expect(engineTracksTraffic("mihomo")).toBeTrue();
+  expect(engineTracksTraffic("amneziawg")).toBeTrue();
 });

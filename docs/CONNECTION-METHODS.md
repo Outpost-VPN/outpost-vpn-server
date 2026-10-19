@@ -14,9 +14,10 @@ have independent implementations on different engines and ports.
 The sidebar provides separate **Protocols** (`/admin/protocols`, configured
 connection methods) and **Engines** (`/admin/engines`, runtimes) pages. Russian UI
 uses «Движки». Each method displays telemetry coverage and expandable client/profile
-requirements using the shared capability model. Hysteria and Xray collect per-user
-totals per engine, without a method breakdown. Other engines currently have no
-Outpost traffic collector. A special profile is a configuration format, not a paid
+requirements using the shared capability model. All five engines contribute to
+per-user totals and combined activity, without a method breakdown. Mihomo/sing-box
+use approximate session accounting; see [user telemetry](USER-TELEMETRY.md).
+A special profile is a configuration format, not a paid
 plan; native exports also identify their lack of Outpost routing rules. Cronet is
 required for Naive, not for an AnyTLS-only sing-box profile.
 

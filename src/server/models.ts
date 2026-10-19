@@ -97,6 +97,7 @@ export interface ConnectionCredential {
 
 export interface TrafficPoint {
   connectionId: string;
+  counterId?: string;
   upload: number;
   download: number;
 }

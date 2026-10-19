@@ -5,9 +5,10 @@ import type { OutpostDatabase } from "../db/database";
 import { config } from "../config";
 import { ServiceError } from "./connections";
 import { JournalService } from "./journal";
+import {engineApi} from "../adapters/engine-api";
 
 const paths = () => ({ xhttp: config.xhttpPath, grpc: config.grpcService });
-const reservedPorts = [8181, 8443, 9097, 9999, 10000, 10001, 10085];
+const reservedPorts = [8181, 8443, 10000, 10001, ...Object.values(engineApi).map((address) => Number(address.split(":")[1]))];
 
 export class ConnectionMethodStore {
   constructor(protected db: OutpostDatabase) {}

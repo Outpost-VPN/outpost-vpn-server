@@ -55,6 +55,7 @@ describe("connection method ownership", () => {
     await expect(service.save(method("sing-box"), "owner")).rejects.toThrow("port and network");
     await expect(service.save(method("sing-box", "xhttp", 5444), "owner")).rejects.toThrow("Unsupported");
     await expect(service.save(method("sing-box", "grpc", 8443), "owner")).rejects.toThrow("reserved");
+    await expect(service.save(method("sing-box", "anytls", 10086), "owner")).rejects.toThrow("reserved");
     const candidate = { ...method("sing-box"), name: "Disabled", enabled: false };
     const disabled = await service.save(candidate, "owner");
     await expect(service.save({ ...candidate, enabled: true }, "owner", disabled.id)).rejects.toThrow("port and network");

@@ -46,6 +46,11 @@ type Request struct {
 
 func Validate(request Request) error {
 	switch request.Action {
+	case "telemetry.read":
+		if request.Payload["engine"] != "amneziawg" || len(request.Payload) != 1 {
+			return errors.New("only managed AmneziaWG telemetry is allowed")
+		}
+		return nil
 	case "service.restart":
 		service, ok := request.Payload["service"].(string)
 		if !ok || !allowedServices[service] {

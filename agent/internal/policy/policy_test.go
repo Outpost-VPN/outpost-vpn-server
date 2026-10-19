@@ -2,6 +2,17 @@ package policy
 
 import "testing"
 
+func TestTelemetryIsReadOnlyAndFixedToManagedInterface(t *testing.T) {
+	if err := Validate(Request{Action: "telemetry.read", Payload: map[string]any{"engine": "amneziawg"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, payload := range []map[string]any{{"engine": "xray"}, {"engine": "amneziawg", "interface": "wg0"}, {"engine": "amneziawg", "command": "dump"}} {
+		if Validate(Request{Action: "telemetry.read", Payload: payload}) == nil {
+			t.Fatal("accepted caller-controlled telemetry command")
+		}
+	}
+}
+
 func TestServiceAllowlist(t *testing.T) {
 	good := Request{Action: "service.restart", Payload: map[string]any{"service": "xray"}}
 	if err := Validate(good); err != nil {

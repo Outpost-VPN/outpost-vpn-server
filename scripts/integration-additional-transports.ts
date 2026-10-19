@@ -57,6 +57,7 @@ try {
   processes.launch([mihomo, "-d", join(directory, "mihomo-server"), "-f", serverPath], { SAFE_PATHS: directory });
 
   const singServer = JSON.parse(tlsPaths(renderEngine("sing-box", defaultEngineTemplates["sing-box"], [credential])));
+  singServer.services[0].listen_port = (await freePorts(1))[0];
   singServer.inbounds[0].listen = "127.0.0.1";
   singServer.inbounds[0].listen_port = naivePort;
   singServer.route.rules.unshift({ ip_cidr: ["127.0.0.1/32"], action: "route", outbound: "direct" });
@@ -117,6 +118,7 @@ try {
       for (const listener of profile.listeners) listener.listen = "127.0.0.1";
       profile.rules.unshift("IP-CIDR,127.0.0.1/32,DIRECT,no-resolve");
     } else {
+      profile.services[0].listen_port = (await freePorts(1))[0];
       for (const listener of profile.inbounds) listener.listen = "127.0.0.1";
       profile.route.rules.unshift({ ip_cidr: ["127.0.0.1/32"], action: "route", outbound: "direct" });
     }

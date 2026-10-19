@@ -398,7 +398,7 @@ export async function callAgent(request: { action: string; payload: Record<strin
   return new Promise<Record<string, unknown>>((resolve, reject) => {
     const socket = createConnection(socketPath);
     let response = "";
-    const timeout = request.action === "setup.finalize" || request.action === "update.apply" || request.action === "backup.restore"
+    const timeout = request.action === "telemetry.read" ? 4_000 : request.action === "setup.finalize" || request.action === "update.apply" || request.action === "backup.restore"
       ? 180_000
       : request.action === "engine.update" ? 240_000 : 30_000;
     socket.setTimeout(timeout);

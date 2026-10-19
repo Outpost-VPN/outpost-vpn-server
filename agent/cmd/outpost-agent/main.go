@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"filippo.io/age"
 
@@ -87,6 +89,11 @@ func handle(connection net.Conn) {
 
 func execute(request policy.Request) (string, error) {
 	switch request.Action {
+	case "telemetry.read":
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		output, err := exec.CommandContext(ctx, "/opt/outpost/engines/amneziawg/current/awg", "show", "outpost-awg", "transfer").CombinedOutput()
+		return string(output), err
 	case "service.restart":
 		return run("systemctl", "restart", request.Payload["service"].(string))
 	case "service.start":

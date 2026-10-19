@@ -80,7 +80,7 @@ export class HttpApplication {
     this.connections = new ConnectionService(db, this.journal);
     this.rulesets = new RuleSetService(db, this.journal, { activeRoutes: () => this.routes.published() });
     this.routes = new RouteService(db, this.journal, this.rulesets);
-    this.traffic = new TrafficService(db, configuredCollectors(), this.journal, !config.setup);
+    this.traffic = new TrafficService(db, configuredCollectors(this.connections), this.journal, !config.setup);
     this.engines = new EngineRuntimeService(db);
     this.connectionSync = new ConnectionSyncService(db, this.connections, connectionEngine ?? this.engines);
     this.methods = new ConnectionMethodService(db, (engine, methods) => connectionEngine?.reconfigure

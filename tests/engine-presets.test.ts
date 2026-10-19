@@ -11,6 +11,13 @@ import { now } from "../src/server/db/database";
 import { database } from "./helpers";
 
 describe("versioned engine presets", () => {
+  test("adds the protected sing-box API while preserving existing settings", () => {
+    const previous = JSON.parse(enginePreset("sing-box", 1)!);
+    previous.log.level = "error";
+    const result = mergeEnginePreset("sing-box", JSON.stringify(previous), 1);
+    expect(result.conflicts).toEqual([]);
+    expect(JSON.parse(result.template)).toMatchObject({log: {level: "error"}, services: "{{OUTPOST_API}}"});
+  });
   test("keeps Hysteria user changes and adds new system ACL entries", () => {
     const customized = `# user header\n${enginePreset("hysteria", 1)!.replace("https://news.ycombinator.com/", "https://example.com/ # user masquerade")}`;
     const result = mergeEnginePreset("hysteria", customized, 1);
