@@ -155,8 +155,13 @@ The user’s existing Lima instances and active Mac tunnel are outside these tes
 
 1. Prepare the next signed release on the Linux amd64 runner, run the project's
    required release checks, and verify bundled source/license files.
-2. Run a complete update/restore smoke test with that signed artifact. Targeted
-   installer checks are not a substitute for the assembled release test.
+2. The release workflow tests the assembled archive on a disposable Linux amd64
+   host before production signing/publication. It verifies a signed beta.4
+   baseline, uses a disposable test key for the exact new archive bytes, applies
+   the legacy updater, and performs a full backup restore. Owner/passkey data,
+   existing credentials, subscription and API-token continuity, SQLite integrity,
+   destination-IP preservation and unchanged Hysteria/Xray PIDs are checked.
+   These fixtures do not replace live optional-protocol and client tests.
 3. Install through the panel under the normal service-availability procedure;
    then install the selected optional runtimes and import compatible profiles.
 4. Compare each transport on FAMLES and the failing hotel network with sustained

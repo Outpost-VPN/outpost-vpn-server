@@ -57,8 +57,32 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  sign-and-publish:
+  smoke:
     needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: unsigned-release
+          path: release
+      - name: Verify baseline update and full backup restore on an isolated host
+        run: |
+          bun install --frozen-lockfile
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends age curl iptables jq minisign nginx sqlite3 ufw unzip
+          archive="$(find release -maxdepth 1 -name '*.tar.gz' -type f -print -quit)"
+          test -n "$archive"
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT env "PATH=$PATH" bash scripts/integration-release.sh "$archive"
+
+  sign-and-publish:
+    needs: [build, smoke]
     runs-on: ubuntu-24.04
     environment: release
     permissions:
