@@ -15,6 +15,7 @@ import { createToken, hashToken, tokensEqual } from "../security";
 import { locales, type Locale } from "../../shared/i18n";
 import { ServiceError } from "../services/connections";
 import { JournalService, parseUserAgent } from "../services/journal";
+import { allowedApiScopes } from "../../shared/api-scopes";
 
 const registrationContext = z.object({
   timezone: z.string().trim().min(1).max(80).optional(),
@@ -417,13 +418,8 @@ export class AuthService {
   createApiToken(name: string, scopes: string[], actor = "owner") {
     const cleanName = name.trim();
     if (!cleanName || cleanName.length > 80) throw new ServiceError(400, "Укажите имя токена до 80 символов");
-    const allowed = new Set([
-      "status:read", "traffic:read", "connections:read", "connections:write", "connections:secret", "connections:rotate", "routes:read", "routes:write",
-      "operations:read", "operations:write", "settings:read", "settings:write", "engines:read", "engines:write",
-      "system:read", "backups:read",
-    ]);
     const uniqueScopes = Array.from(new Set(scopes));
-    if (!uniqueScopes.length || uniqueScopes.some((scope) => !allowed.has(scope))) throw new ServiceError(400, "Запрошен недопустимый scope");
+    if (!uniqueScopes.length || uniqueScopes.some((scope) => !allowedApiScopes.has(scope))) throw new ServiceError(400, "Запрошен недопустимый scope");
     const token = createToken();
     const id = crypto.randomUUID();
     this.db.raw.query(`

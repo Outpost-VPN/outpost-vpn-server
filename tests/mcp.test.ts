@@ -5,6 +5,7 @@ import { createMcpServer } from "../src/server/mcp-tools";
 import { OutpostApi } from "../src/shared/api";
 import { HttpApplication } from "../src/server/http";
 import { database } from "./helpers";
+import { tokenScopes } from "../src/shared/api-scopes";
 
 test("MCP settings use the same persisted, validated and scoped API as the panel", async () => {
   const fixture = database();
@@ -48,7 +49,7 @@ test("MCP methods share panel validation, runtime application and engine scopes"
     async reconfigure(engine) { applied.push(engine); return {ok:true}; },
   });
   for (const id of ["mihomo", "sing-box"] as const) fixture.db.engines.recordInstallation(id, id === "mihomo" ? "1.19.32" : "1.14.3");
-  const token = app.auth.createApiToken("Methods test", ["engines:read", "engines:write"]).token;
+  const token = app.auth.createApiToken("Methods test", [...tokenScopes.manage]).token;
   const http = Bun.serve({hostname:"127.0.0.1", port:0, fetch: request => app.fetch(request)});
   const api = new OutpostApi({url:http.url.origin, token});
   const server = createMcpServer(api);
@@ -79,7 +80,7 @@ test("MCP methods share panel validation, runtime application and engine scopes"
     expect(applied).toHaveLength(2);
     expect((await client.callTool({name:"method_delete",arguments:{method_id:method.id}})).isError).not.toBeTrue();
     expect(fixture.db.methods.list().some((item)=>item.id===method.id)).toBeFalse();
-    const reader = app.auth.createApiToken("Methods reader",["engines:read"]).token;
+    const reader = app.auth.createApiToken("Methods reader", [...tokenScopes.read]).token;
     const readApi = new OutpostApi({url:http.url.origin,token:reader});
     expect((await readApi.get<{items:unknown[]}>("/api/v1/methods")).items).toHaveLength(3);
     await expect(readApi.post("/api/v1/methods",args)).rejects.toThrow("403");

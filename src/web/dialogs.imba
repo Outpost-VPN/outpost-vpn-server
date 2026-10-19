@@ -1,4 +1,5 @@
 import {engines as definitions} from '../shared/engines.ts'
+import {tokenScopes} from '../shared/api-scopes.ts'
 import './mcp.imba'
 import {basicSetup} from 'codemirror'
 import {EditorState} from '@codemirror/state'
@@ -1194,8 +1195,7 @@ tag outpost-token-modal
 	copied = false
 
 	get permissions
-		return ['status:read','traffic:read','connections:read','routes:read','operations:read','system:read','settings:read'] if access == 'read'
-		['status:read','traffic:read','connections:read','connections:write','connections:secret','connections:rotate','routes:read','routes:write','operations:read','operations:write','system:read','settings:read','settings:write']
+		tokenScopes[access]
 
 	get summary
 		return t('network.token.read') if access == 'read'

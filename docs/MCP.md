@@ -81,6 +81,9 @@ References: [MCP transport specification](https://modelcontextprotocol.io/specif
 The protocol-expansion branch adds `engines_get`, `methods_get`, `method_create`,
 `method_update`, `method_delete` and `methods_reorder`. They use the panel API and
 shared validation; reads require `engines:read`, changes require `engines:write`.
+The panel's read/manage token presets include the corresponding engine scopes;
+existing tokens keep their original permissions. Issue a new owner-approved token
+when an older token does not have the required scopes.
 Read state first and verify it after a change. Server setting changes can briefly
 restart the selected engine and affect all its methods; agree interruption scope
 before applying them. Engine installation and service operations retain the
