@@ -14,11 +14,12 @@ have independent implementations on different engines and ports.
 The sidebar provides separate **Protocols** (`/admin/protocols`, configured
 connection methods) and **Engines** (`/admin/engines`, runtimes) pages. Russian UI
 uses «Движки». Methods show a green/red service state beside their title, compatible
-client families/required versions and route delivery. Complete Mihomo/sing-box/Xray
-profiles include Outpost rules; URI routing depends on the importing client;
-Base64, NaiveProxy and AmneziaVPN native exports do not include them. This metadata
-lives in the shared client-profile catalog. Cronet is required for Naive, not for
-an AnyTLS-only sing-box profile.
+client families/required versions. An information tooltip explains route delivery
+for that method: complete Mihomo/sing-box/Xray subscription profiles include Outpost
+rules; individual URI links do not. Link subscriptions provide routing separately,
+which requires client support; NaiveProxy and AmneziaVPN native exports do not carry
+Outpost rules. This metadata lives in the shared client-profile catalog. Cronet is
+required for Naive, not for an AnyTLS-only sing-box profile.
 
 The drag handle replaces priority numbers/arrows and also supports keyboard arrows.
 `Reorder` owns gestures, hit testing, motion and cancellation for both methods and
@@ -110,6 +111,11 @@ The existing application profiles retain conservative capabilities. Explicit
 modern profiles declare tested minimum core/build requirements, including Cronet
 for Naive. User-Agent detection chooses an existing format, not an unverified core
 version. Unknown client capabilities do not opt into advanced protocols.
+
+VLESS Base64 export has been removed. The universal URL selects full Xray JSON for
+Xray/v2rayN/v2rayNG and routing-aware links for INCY/Happ. Unknown clients receive
+the application catalog to choose a supported profile, rather than a link-only
+fallback that silently drops routing rules.
 
 The renderer intersects enabled methods, installed server engines and client
 profile capabilities, preserving method priority. A client profile from a different

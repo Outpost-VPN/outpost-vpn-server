@@ -44,7 +44,6 @@ export const clientProfiles = {
   "sing-box": { client: "sing-box", routing: "embedded", name: "sing-box JSON", protocols: ["hysteria2", "grpc"], minimumCore: "" },
   "sing-box-modern": { client: "sing-box", routing: "embedded", name: "sing-box · modern JSON", protocols: ["hysteria2", "grpc", "anytls", "naive"], minimumCore: "sing-box ≥1.14.3", requirements: {naive: "Naive: Cronet"} },
   "xray-json": { client: "Xray", routing: "embedded", name: "Xray JSON", protocols: ["xhttp", "grpc"], minimumCore: "" },
-  xray: { client: "VLESS Base64", routing: "none", name: "VLESS · Base64", protocols: ["xhttp", "grpc"], minimumCore: "" },
   links: { client: "URI", routing: "client", name: "URI links", protocols: ["hysteria2", "xhttp", "grpc"], minimumCore: "" },
   naive: { client: "NaiveProxy", routing: "none", name: "NaiveProxy JSON", protocols: ["naive"], minimumCore: "NaiveProxy / sing-box ≥1.14.3", requirements: {naive: "Naive: Cronet"} },
   amneziawg: { client: "AmneziaVPN", routing: "none", name: "AmneziaWG .conf", protocols: ["amneziawg"], minimumCore: "AmneziaVPN ≥5.0.1.5 / AWG 3.1" },

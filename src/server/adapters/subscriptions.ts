@@ -71,17 +71,6 @@ export const linksRenderer: SubscriptionRenderer = {
   },
 };
 
-export const xrayRenderer: SubscriptionRenderer = {
-  id: "xray",
-  render(context) {
-    const methods = subscriptionMethods(context, "xray");
-    return output(Buffer.from(`${methods.map((method) => methodLink(method, context)).join("\n")}\n`, "utf8").toString("base64"), "text/plain; charset=utf-8", {
-      "profile-title": utf8Header(`Outpost · ${context.connection.name}`),
-      "profile-update-interval": "12",
-    });
-  },
-};
-
 export const mihomoRenderer: SubscriptionRenderer = {
   id: "mihomo",
   render(context) {
@@ -217,7 +206,6 @@ export const xrayJsonRenderer: SubscriptionRenderer = {
 export const renderers: Record<SubscriptionFormat, SubscriptionRenderer> = {
   mihomo: mihomoRenderer,
   "sing-box": singBoxRenderer,
-  xray: xrayRenderer,
   "xray-json": xrayJsonRenderer,
   naive: naiveRenderer,
   amneziawg: { id: "amneziawg", render(context) {

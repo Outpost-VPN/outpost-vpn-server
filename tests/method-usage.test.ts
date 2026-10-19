@@ -20,8 +20,8 @@ test("client guidance distinguishes broad support, required runtimes and standal
 test("routing metadata keeps complete profiles, client-dependent URI imports and raw exports distinct", () => {
   for (const id of ["mihomo", "mihomo-modern", "sing-box", "sing-box-modern", "xray-json"] as const) expect(clientProfiles[id].routing).toBe("embedded");
   expect(clientProfiles.links.routing).toBe("client");
-  for (const id of ["xray", "amneziawg", "naive"] as const) expect(clientProfiles[id].routing).toBe("none");
-  expect(methodUsage({protocol: "grpc"}).standalone.map((profile) => profile.client)).toEqual(["VLESS Base64"]);
+  for (const id of ["amneziawg", "naive"] as const) expect(clientProfiles[id].routing).toBe("none");
+  expect(methodUsage({protocol: "grpc"}).standalone).toEqual([]);
 });
 
 test("reordering handles moves in both directions without mutating the server snapshot", () => {

@@ -8,7 +8,6 @@ import {
   renderLinkRoutes,
   singBoxRenderer,
   xrayJsonRenderer,
-  xrayRenderer,
   type SubscriptionContext,
 } from "../src/server/adapters/subscriptions";
 
@@ -73,18 +72,16 @@ describe("technology subscription renderers", () => {
     expect(JSON.parse(xrayJsonRenderer.render(customized).body).routing.rules)
       .not.toContainEqual({ type: "field", network: "udp", port: 443, outboundTag: "block" });
   });
-  test("five formats match their golden SHA-256 fingerprints", () => {
-    const expected = {
-      links: "ee90de33a4c5b6b1f8b62830c05dc51f33e19c045d417230974eee89648ed336",
-      mihomo: "b6b492d3dea2cda44e2ee96acea7325f707264efba1d3f948c99ab2141d5eb58",
-      "sing-box": "0848019229157830b0f4f02caf6c8bf04c69e3dca06da7f120b3119c711247ea",
-      xray: "4acd88ef98861fed276fc4716ab1f1cbd3cba56134e6a4acf4c4a59619a69b16",
-      "xray-json": "9310bd75855d5beff6bc47b33a9b2ff8424b539beae23b88991a6dbb41e7d2b9",
-    };
-    const rendered = [linksRenderer, mihomoRenderer, singBoxRenderer, xrayRenderer, xrayJsonRenderer];
-    for (const renderer of rendered) {
+  test("four formats match their golden SHA-256 fingerprints", () => {
+    const cases = [
+      [linksRenderer, "ee90de33a4c5b6b1f8b62830c05dc51f33e19c045d417230974eee89648ed336"],
+      [mihomoRenderer, "b6b492d3dea2cda44e2ee96acea7325f707264efba1d3f948c99ab2141d5eb58"],
+      [singBoxRenderer, "0848019229157830b0f4f02caf6c8bf04c69e3dca06da7f120b3119c711247ea"],
+      [xrayJsonRenderer, "9310bd75855d5beff6bc47b33a9b2ff8424b539beae23b88991a6dbb41e7d2b9"],
+    ] as const;
+    for (const [renderer, expected] of cases) {
       const digest = createHash("sha256").update(renderer.render(context).body).digest("hex");
-      expect(digest, `${renderer.id} golden profile`).toBe(expected[renderer.id]);
+      expect(digest, `${renderer.id} golden profile`).toBe(expected);
     }
   });
 
@@ -182,13 +179,6 @@ describe("technology subscription renderers", () => {
     expect(profile.route.rules).toContainEqual({ domain_regex: [String.raw`^ad\d+\.example$`], action: "reject" });
     expect(JSON.stringify(profile)).not.toContain("geosite");
     expect(profile.route.final).toBe("proxy");
-  });
-
-  test("Xray URI is base64 of both VLESS fallbacks", () => {
-    const decoded = Buffer.from(xrayRenderer.render(context).body, "base64").toString("utf8").trim().split("\n");
-    expect(decoded).toHaveLength(2);
-    expect(decoded[0]).toContain("type=xhttp");
-    expect(decoded[1]).toContain("type=grpc");
   });
 
   test("full Xray JSON has both outbounds, observatory and balancer", () => {

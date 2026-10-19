@@ -260,25 +260,18 @@ tag outpost-method-usage
 
 	get usage do methodUsage(method)
 	get details
-		usage.profiles.map(do(profile) "{profile.name}: {t('methods.routing_' + profile.routing)}").join('\n')
-	get alternatives
-		const labels = usage.standalone.map do(profile) t('methods.routes_without', {client: profile.client})
-		labels.unshift(t('methods.routes_client')) if usage.profiles.some(do(profile) profile.routing == 'client')
-		labels.join(' · ')
+		const notes = [t('methods.routing_profile', {clients: usage.clients.join(' / ')})]
+		notes.push(t('methods.routing_links')) if usage.profiles.some(do(profile) profile.routing == 'client')
+		for profile in usage.standalone
+			notes.push(t('methods.routing_native', {client: profile.minimumCore or profile.client}))
+		notes.join('\n\n')
 
 	<self>
-		<div.clients title=usage.profiles.map(do(profile) profile.minimumCore or profile.name).join('\n')>
-			<outpost-icon name="devices">
-			<span> usage.clients.join(' · ')
-		<div.routing title=details>
-			<outpost-icon name="path">
-			<span> t('methods.routes_in_profile')
-		if alternatives
-			<small> alternatives
+		<outpost-icon name="devices">
+		<span> usage.clients.join(' · ')
+		<span.hint tabindex="0" title=details aria-label=details><outpost-icon name="info">
 
 	css self
-		d:grid g:5px fs:12px lh:1.5 c:var(--outpost-muted)
-		.clients, .routing d:flex ai:baseline g:6px
-		.clients c:var(--outpost-text)
+		d:flex ai:baseline g:6px fs:12px lh:1.5 c:var(--outpost-text)
 		outpost-icon fs:13px fl:0 0 auto
-		small fs:11px
+		.hint c:var(--outpost-muted) cursor:default

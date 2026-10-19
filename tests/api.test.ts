@@ -447,7 +447,7 @@ describe("HTTP API", () => {
     expect(missingQr.status).toBe(404);
   });
 
-  test("universal link returns Mihomo YAML to Everywhere and the catalog to browsers", async () => {
+  test("universal subscriptions select routing profiles and let unknown clients choose an application", async () => {
     const connection = app.connections.create({ name: "Федор" });
     const ready = await app.connectionSync.activate(connection.id);
     const url = ready.subscription!.url.replace("localhost:8181", "localhost");
@@ -471,6 +471,22 @@ describe("HTTP API", () => {
       proxies: [{ type: "hysteria2" }, { type: "vless" }, { type: "vless" }],
     });
     expect(app.connections.get(connection.id).last_fetched_at).not.toBeNull();
+
+    for (const agent of ["Xray/26.3.1", "v2rayN/7.0", "v2rayNG/1.10.0"]) {
+      const response = await app.fetch(new Request(url, { headers: { "user-agent": agent } }));
+      expect(response.headers.get("content-type")).toContain("application/json");
+      expect((await response.json()).routing.rules.length).toBeGreaterThan(0);
+    }
+    for (const agent of ["INCY/1.0", "Happ/1.0"]) {
+      const response = await app.fetch(new Request(url, { headers: { "user-agent": agent } }));
+      expect(response.headers.get("autorouting")).toBe(`${ready.subscription!.url}/routes`);
+      expect(await response.text()).toContain("vless://");
+    }
+    for (const agent of ["", "UnknownClient/1.0", "FoXray/1.0", "Streisand/1.0"]) {
+      const response = await app.fetch(new Request(url, { headers: { "user-agent": agent } }));
+      expect(response.headers.get("content-type")).toContain("text/html");
+      expect(await response.text()).toContain("data-platform-panel");
+    }
   });
 
   test("connection appearance and owner timezone remain editable", async () => {

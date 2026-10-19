@@ -62,12 +62,9 @@ export def setLanguage value, persist = true
 const ru = {
 	"methods.drag": "Перетащить способ. Стрелки вверх и вниз меняют порядок"
 	"methods.not_working": "Не работает"
-	"methods.routes_in_profile": "Маршруты Outpost — в профиле"
-	"methods.routes_client": "Ссылки — зависит от клиента"
-	"methods.routes_without": '{client} — без маршрутов'
-	"methods.routing_embedded": "Маршруты Outpost включены в полный профиль"
-	"methods.routing_client": "Маршруты передаются отдельно; применение зависит от клиента"
-	"methods.routing_none": "Маршруты Outpost не передаются"
+	"methods.routing_profile": 'В подписке для клиентов на {clients} маршруты Outpost включены в профиль. Клиент должен импортировать профиль целиком, вместе с правилами.'
+	"methods.routing_links": 'Отдельная ссылка подключения не содержит маршрутов. В подписке со ссылками маршруты передаются отдельно — их загрузит только клиент с поддержкой маршрутов Outpost.'
+	"methods.routing_native": 'Файл для {client} не содержит маршрутов Outpost. Для подключения с нашими маршрутами используйте профиль подписки для указанного выше движка.'
 
 	'engines.check_one': 'Проверить новую версию {engine}'
 	'engines.bundle_pending': 'Ожидается отдельная подписанная сборка движка'

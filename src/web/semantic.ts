@@ -3,12 +3,9 @@ export const semantic = {
   "en": {
     "methods.drag": "Drag to reorder. Arrow keys move the method up or down",
     "methods.not_working": "Not running",
-    "methods.routes_in_profile": "Outpost routes · included in profile",
-    "methods.routes_client": "Links · depends on the client",
-    "methods.routes_without": "{client} · no Outpost routes",
-    "methods.routing_embedded": "Outpost routes are included in the complete profile",
-    "methods.routing_client": "Routes are provided separately; applying them depends on the client",
-    "methods.routing_none": "Outpost routes are not included",
+    "methods.routing_profile": "Subscription profiles for clients using {clients} include Outpost routes. The client must import the complete profile, including its rules.",
+    "methods.routing_links": "An individual connection link contains no routes. Link subscriptions provide routes separately and require a client that supports Outpost routing.",
+    "methods.routing_native": "The file for {client} contains no Outpost routes. To use our routes, import the subscription profile for the engine listed above.",
 
     "methods.apply_hint": "Changing server parameters briefly restarts a running engine and affects all its connection methods. The engine must be running to use the method.",
     "methods.peer_hint": "AmneziaWG settings and peers update without restarting the engine. Refresh device profiles after changing the port.",
@@ -278,12 +275,9 @@ export const semantic = {
   "zh-CN": {
     "methods.drag": "拖动排序。方向键可上下移动连接方式",
     "methods.not_working": "未运行",
-    "methods.routes_in_profile": "Outpost 路由 · 包含在配置中",
-    "methods.routes_client": "链接 · 取决于客户端",
-    "methods.routes_without": "{client} · 不含 Outpost 路由",
-    "methods.routing_embedded": "完整配置中包含 Outpost 路由",
-    "methods.routing_client": "路由单独提供，是否应用取决于客户端",
-    "methods.routing_none": "不包含 Outpost 路由",
+    "methods.routing_profile": "使用 {clients} 的客户端订阅配置包含 Outpost 路由。客户端必须导入完整配置及其规则。",
+    "methods.routing_links": "单独的连接链接不包含路由。链接订阅会单独提供路由，只有支持 Outpost 路由的客户端才能加载。",
+    "methods.routing_native": "{client} 的配置文件不包含 Outpost 路由。如需使用我们的路由，请导入上述引擎的订阅配置。",
 
     "methods.apply_hint": "更改服务端参数会短暂重启正在运行的核心，并影响其所有连接方式。使用连接方式时核心必须运行。",
     "methods.peer_hint": "AmneziaWG 参数和节点可在不重启核心的情况下更新。更改端口后请更新设备配置。",
@@ -553,12 +547,9 @@ export const semantic = {
   "fa": {
     "methods.drag": "برای مرتب‌سازی بکشید؛ کلیدهای جهت روش را جابه‌جا می‌کنند",
     "methods.not_working": "اجرا نمی‌شود",
-    "methods.routes_in_profile": "مسیرهای Outpost در پروفایل هستند",
-    "methods.routes_client": "پیوندها · به کلاینت بستگی دارد",
-    "methods.routes_without": "{client} · بدون مسیرهای Outpost",
-    "methods.routing_embedded": "مسیرهای Outpost در پروفایل کامل قرار دارند",
-    "methods.routing_client": "مسیرها جداگانه ارائه می‌شوند و اعمال آن‌ها به کلاینت بستگی دارد",
-    "methods.routing_none": "مسیرهای Outpost ارائه نمی‌شوند",
+    "methods.routing_profile": "پروفایل اشتراک کلاینت‌های مبتنی بر {clients} مسیرهای Outpost را دارد. کلاینت باید پروفایل کامل را همراه با قوانین وارد کند.",
+    "methods.routing_links": "پیوند اتصال تکی مسیر ندارد. اشتراک پیوندها مسیرها را جداگانه ارائه می‌کند و کلاینت باید از مسیریابی Outpost پشتیبانی کند.",
+    "methods.routing_native": "فایل {client} مسیرهای Outpost را ندارد. برای استفاده از مسیرها، پروفایل اشتراک موتور بالا را وارد کنید.",
 
     "methods.apply_hint": "تغییر پارامترهای سرور، موتور فعال را کوتاه راه‌اندازی مجدد می‌کند و بر تمام روش‌های آن اثر می‌گذارد. برای استفاده از روش، موتور باید فعال باشد.",
     "methods.peer_hint": "تنظیمات و دسترسی‌های AmneziaWG بدون راه‌اندازی مجدد موتور به‌روز می‌شوند. پس از تغییر درگاه، پروفایل دستگاه‌ها را به‌روز کنید.",

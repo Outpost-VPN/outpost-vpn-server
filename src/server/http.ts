@@ -709,10 +709,9 @@ function universalSubscriptionFormat(request: Request): SubscriptionFormat | nul
   const agent = (request.headers.get("user-agent") ?? "").toLowerCase();
   if (/mihomo|clash|everywhere|flclash|stash/.test(agent)) return "mihomo";
   if (/sing-box|singbox|sfa|sfi|sfm/.test(agent)) return "sing-box";
-  if (/incy/.test(agent)) return "links";
-  if (/xray|v2ray|happ|foxray|streisand/.test(agent)) return "xray";
-  if ((request.headers.get("accept") ?? "").includes("text/html")) return null;
-  return "xray";
+  if (/incy|happ/.test(agent)) return "links";
+  if (/(?:^|\W)(?:xray|v2rayn|v2rayng)(?:\W|$)/.test(agent)) return "xray-json";
+  return null;
 }
 
 async function contentResponse(

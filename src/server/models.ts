@@ -1,7 +1,7 @@
 export type RouteAction = "DIRECT" | "PROXY" | "BLOCK";
 export type RouteMatcher = "DOMAIN" | "SUFFIX" | "IP_CIDR" | "GEOSITE" | "GEOIP";
 export type ClientRouteMatcher = Exclude<RouteMatcher, "GEOSITE"> | "DOMAIN_KEYWORD" | "DOMAIN_REGEX";
-export type SubscriptionFormat = "mihomo" | "sing-box" | "xray" | "xray-json" | "links" | "naive" | "amneziawg";
+export type SubscriptionFormat = "mihomo" | "sing-box" | "xray-json" | "links" | "naive" | "amneziawg";
 export type { EngineId } from "../shared/engines";
 import type { EngineId } from "../shared/engines";
 export type ConnectionStatus = "provisioning" | "active" | "rotating" | "archiving" | "archived";
