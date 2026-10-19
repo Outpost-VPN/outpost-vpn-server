@@ -28,6 +28,29 @@ const auth = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
   return Response.json({ ok: body.auth === credential.hysteria.password, id: credential.connectionId });
 } });
 const origin = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("verified-outpost-origin") });
+
+async function verifyClient(child: Bun.Subprocess, name: string, valid: boolean, timeout: number) {
+  let body: string | undefined;
+  let failure: unknown;
+  try {
+    await waitForPort(proxyPort!);
+    try {
+      body = await command([curl, "--noproxy", "", "-fsS", "--max-time", String(timeout),
+        "--socks5-hostname", `127.0.0.1:${proxyPort}`, `http://127.0.0.1:${origin.port}/`]);
+    } catch (error) {
+      failure = error;
+    }
+  } finally {
+    child.kill();
+    await child.exited;
+  }
+  if ((body === "verified-outpost-origin") !== valid) {
+    throw new Error(`${name}: ${valid ? "authenticated transfer failed" : "invalid credentials accepted"}`, {
+      cause: failure ?? new Error(`Unexpected origin response: ${JSON.stringify(body)}`),
+    });
+  }
+}
+
 try {
   const certificate = join(directory, "certificate.pem");
   const key = join(directory, "key.pem");
@@ -90,14 +113,7 @@ try {
           inbounds: [{ type: "socks", listen: "127.0.0.1", listen_port: proxyPort }], outbounds: [outbound] }), { mode: 0o600 });
         child = processes.launch([sing, "run", "-c", path]);
       }
-      await waitForPort(proxyPort!);
-      let succeeded = false;
-      try {
-        const body = await command([curl, "--noproxy", "", "--silent", "--show-error", "--fail", "--max-time", "5", "--socks5-hostname", `127.0.0.1:${proxyPort}`, `http://127.0.0.1:${origin.port}/`]);
-        succeeded = body === "verified-outpost-origin";
-      } catch {}
-      child.kill(); await child.exited;
-      if (succeeded !== valid) throw new Error(`${protocol}: ${valid ? "authenticated request failed" : "invalid password was accepted"}`);
+      await verifyClient(child, protocol, valid, 5);
     }
     console.log(`${protocol}: verified TLS, authenticated transfer and invalid-password rejection passed`);
   }
@@ -140,11 +156,7 @@ try {
       }
       writeFileSync(path, YAML.stringify({"mixed-port": proxyPort, "bind-address": "127.0.0.1", mode: "rule", "log-level": "warning", proxies: [proxy], rules: ["MATCH," + proxy.name]}), {mode: 0o600});
       const child = processes.launch([mihomo, "-d", home, "-f", path]);
-      await waitForPort(proxyPort!);
-      let succeeded = false;
-      try { succeeded = (await command([curl, "--noproxy", "", "-fsS", "--max-time", "3", "--socks5-hostname", "127.0.0.1:" + proxyPort, "http://127.0.0.1:" + origin.port + "/"])) === "verified-outpost-origin"; } catch {}
-      child.kill(); await child.exited;
-      if (succeeded !== valid) throw new Error(method.name + ": " + (valid ? "authenticated transfer failed" : "invalid credentials accepted"));
+      await verifyClient(child, method.name, valid, 3);
     }
     console.log(method.name + ": configured port, verified TLS, cross-core transfer and invalid-credential rejection passed");
   }
