@@ -1,6 +1,6 @@
 # Protocol expansion
 
-Implemented in `feat/protocol-expansion`, based on `c2d0b0b` (`0.2.0-beta.6`).
+Prepared for `0.2.0-beta.7`, based on `c2d0b0b` (`0.2.0-beta.6`).
 Local implementation and targeted validation completed on 2026-10-19. No signed
 release has been built or published; no live server or active client was changed.
 

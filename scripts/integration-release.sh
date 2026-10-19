@@ -71,6 +71,7 @@ git -C "$source_root" archive "v$baseline" | tar -x -C "$lab/legacy-source"
 ln -s "$source_root/node_modules" "$lab/legacy-source/node_modules"
 OUTPOST_DEMO=1 OUTPOST_ENV=development "$bun_binary" "$source_root/scripts/release-smoke-fixture.ts" seed "$lab/legacy-source"
 /opt/outpost/current/infra/scripts/install-engines
+systemctl stop nginx
 sed -e 's|__DOMAIN__|release-smoke.example|g' -e 's|__PUBLIC_IP__|203.0.113.42|g' \
   -e 's|__XHTTP_PATH__|/release-smoke-xhttp|g' -e 's|__GRPC_SERVICE__|release-smoke-grpc|g' \
   /opt/outpost/current/infra/nginx/outpost.conf.template >/etc/nginx/sites-available/outpost
@@ -85,7 +86,8 @@ systemctl start outpost-agent outpost hysteria-server xray nginx
 
 ready() {
   for _ in {1..40}; do
-    if curl -fsS http://127.0.0.1:8181/readyz >/dev/null; then return 0; fi
+    if curl -fsS --noproxy '*' --cacert /etc/letsencrypt/live/release-smoke.example/fullchain.pem \
+      --resolve release-smoke.example:443:127.0.0.1 https://release-smoke.example/readyz >/dev/null; then return 0; fi
     sleep 1
   done
   systemctl --no-pager status outpost outpost-agent hysteria-server xray nginx || true
@@ -101,6 +103,8 @@ fixture() {
 ready
 before_hysteria=$(systemctl show -p MainPID --value hysteria-server)
 before_xray=$(systemctl show -p MainPID --value xray)
+test "$before_hysteria" -gt 0
+test "$before_xray" -gt 0
 
 # The exact release bytes use a disposable signing key for this isolated test.
 # The publish job signs and verifies the same bytes with the production key.
