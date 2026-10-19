@@ -132,7 +132,11 @@ through `profileSupport` for applications and manual profiles. `ApplicationProfi
 owns the app's allowed protocols, profile validation, URLs, QR target and requirements.
 The same selection drives the public card, owner dialog and actual renderer.
 App-specific requirements override core requirements where the app uses its own
-implementation, such as Stash. Compatible apps fill the primary slots after filtering.
+implementation, such as Stash. After filtering, full route support comes first,
+then the number of distinct configured compatible protocols, then the existing
+platform preference. Duplicate listeners do not increase that count. The first
+three apps fill the primary slots; the remainder appear below. The catalog owns
+this ranking and supplies `orderFor` to the owner dialog for the same platform order.
 
 Cards choose a `?profile=modern` link when it adds configured, supported protocols.
 Copy, import and QR use this same link. Existing app URLs and universal subscriptions

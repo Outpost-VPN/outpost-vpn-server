@@ -225,8 +225,6 @@ function profileSupport(profile: ClientProfile, language: Locale, available?: Me
 export function catalog(baseUrl: string, platform?: string, language: Locale = "en", available?: MethodAvailability) {
   const selected = isPlatform(platform) ? platform : null;
   const items = applications
-    .filter((app) => !selected || app.platforms.includes(selected))
-    .sort((left, right) => rank(left, selected) - rank(right, selected) || left.name.localeCompare(right.name))
     .map((app) => {
       let profile = new ApplicationProfile(app);
       let support = profile.support(language, available);
@@ -257,10 +255,17 @@ export function catalog(baseUrl: string, platform?: string, language: Locale = "
         openUrl: app.deepLink?.(profileUrl) ?? null,
       };
     }).filter((app) => app.transports.length > 0);
-  const availableIds = new Set(items.map((item) => item.id));
-  const primary = new Map(platforms.map(({id}) => [id, applications.filter((app) => availableIds.has(app.id) && app.platforms.includes(id))
-    .sort((left, right) => rank(left, id) - rank(right, id)).slice(0, 3).map((app) => app.id)]));
-  return items.map((app) => ({...app, primaryFor: app.platforms.filter((platform) => primary.get(platform)!.includes(app.id))}));
+  const compare = (platform: AppPlatform | null) => (left: typeof items[number], right: typeof items[number]) =>
+    Number(right.routing.support === "full") - Number(left.routing.support === "full")
+    || right.transports.length - left.transports.length
+    || rank(application(left.id)!, platform) - rank(application(right.id)!, platform)
+    || left.name.localeCompare(right.name);
+  const orders = new Map(platforms.map(({id}) => [id, new Map(items.filter((app) => app.platforms.includes(id))
+    .sort(compare(id)).map((app, index) => [app.id, index]))]));
+  return items.filter((app) => !selected || app.platforms.includes(selected)).sort(compare(selected)).map((app) => {
+    const orderFor = Object.fromEntries(app.platforms.map((platform) => [platform, orders.get(platform)!.get(app.id)!])) as Partial<Record<AppPlatform, number>>;
+    return {...app, orderFor, primaryFor: app.platforms.filter((platform) => orderFor[platform]! < 3)};
+  });
 }
 
 export function advanced(baseUrl: string, language: Locale = "en", available?: MethodAvailability) {

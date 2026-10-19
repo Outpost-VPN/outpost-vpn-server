@@ -191,7 +191,8 @@ tag outpost-connect-modal
 
 	get choices
 		return [] unless connection
-		connection.applications.filter do(item) item.platforms.includes(platform)
+		const items = connection.applications.filter do(item) item.platforms.includes(platform)
+		items.sort do(left,right) left.orderFor[platform] - right.orderFor[platform]
 
 	get primary
 		choices.filter do(item) item.primaryFor.includes(platform)

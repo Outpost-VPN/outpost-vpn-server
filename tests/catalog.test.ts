@@ -7,6 +7,7 @@ import {
   catalog,
   catalogVersion,
   detectPlatform,
+  platforms,
   renderCatalogPage,
 } from "../src/server/adapters/catalog";
 import type { Locale } from "../src/shared/i18n";
@@ -105,18 +106,55 @@ describe("versioned application catalog", () => {
     }
   });
 
-  test("uses the requested three primary applications on every operating system", () => {
+  test("prioritizes full routes and the most configured protocols before platform preferences", () => {
     const expected = {
-      ios: ["everywhere", "incy", "stash"],
-      macos: ["everywhere", "clash-verge", "clash-party"],
-      android: ["clash-meta", "flclash", "happ"],
-      windows: ["clash-verge", "clash-party", "happ"],
-      linux: ["clash-verge", "clash-party", "happ"],
+      ios: ["everywhere", "stash", "sing-box-apple"],
+      macos: ["clash-verge", "clash-party", "flclash"],
+      android: ["clash-meta", "flclash", "sing-box-android"],
+      windows: ["clash-verge", "clash-party", "flclash"],
+      linux: ["clash-verge", "clash-party", "flclash"],
     } as const;
     for (const [platform, ids] of Object.entries(expected)) {
-      const apps = catalog(baseUrl, platform);
+      const apps = catalog(baseUrl, platform, "en", {methods: defaultMethods(engineIds), installed: engineIds});
       expect(apps.filter((app) => app.primaryFor.includes(platform as never)).map((app) => app.id)).toEqual([...ids]);
       expect(apps.slice(0, 3).map((app) => app.id)).toEqual([...ids]);
+    }
+  });
+
+  test("full routes outrank limited routes even with fewer compatible protocols", () => {
+    const apps = catalog(baseUrl, "ios", "en", {methods: defaultMethods(["hysteria", "xray"]), installed: engineIds});
+    expect(apps.map((app) => app.id)).toEqual(["everywhere", "stash", "sing-box-apple", "incy", "happ"]);
+    expect(apps[2]!.transports).toHaveLength(2);
+    expect(apps[3]!.transports).toHaveLength(3);
+  });
+
+  test("ranking counts distinct active protocols and changes with server availability", () => {
+    const methods = defaultMethods(engineIds).filter((method) => ["hysteria2", "grpc", "naive"].includes(method.protocol));
+    const grpc = methods.find((method) => method.protocol === "grpc")!;
+    const duplicated = [...methods, ...Array.from({length: 5}, (_, index) => ({...grpc, id: `duplicate-${index}`}))];
+    const available = {methods: duplicated, installed: engineIds};
+    const apps = catalog(baseUrl, "ios", "en", available);
+    expect(apps.map((app) => app.id)).toEqual(["sing-box-apple", "everywhere", "stash", "incy", "happ"]);
+    expect(apps[0]!.transports).toHaveLength(3);
+    expect(apps[1]!.transports).toHaveLength(2);
+    expect(catalog(baseUrl, "ios", "en", {methods, installed: engineIds}).map((app) => app.id)).toEqual(apps.map((app) => app.id));
+    for (const inactive of [
+      {...available, methods: duplicated.map((method) => ({...method, enabled: method.protocol !== "naive"}))},
+      {...available, installed: ["hysteria", "xray"] as const},
+    ]) {
+      expect(catalog(baseUrl, "ios", "en", inactive).map((app) => app.id)).toEqual(["everywhere", "stash", "sing-box-apple", "incy", "happ"]);
+    }
+  });
+
+  test("flat owner catalog supplies the same platform order and primary choices as the public page", () => {
+    const available = {methods: defaultMethods(engineIds), installed: engineIds};
+    const flat = catalog(baseUrl, undefined, "en", available);
+    for (const {id} of platforms) {
+      const choices = flat.filter((app) => app.platforms.includes(id)).sort((left, right) => left.orderFor[id]! - right.orderFor[id]!);
+      const page = catalog(baseUrl, id, "en", available);
+      expect(choices.map((app) => app.id)).toEqual(page.map((app) => app.id));
+      expect(choices.map((app) => app.orderFor[id])).toEqual(choices.map((_, index) => index));
+      expect(choices.filter((app) => app.primaryFor.includes(id)).map((app) => app.id)).toEqual(page.slice(0, 3).map((app) => app.id));
     }
   });
 
@@ -195,6 +233,7 @@ describe("versioned application catalog", () => {
   test("admin connection dialog uses the same flat application model", async () => {
     const source = await Bun.file(new URL("../src/web/dialogs.imba", import.meta.url)).text();
     expect(source).toContain("connection.applications.filter");
+    expect(source).toContain("left.orderFor[platform] - right.orderFor[platform]");
     expect(source).toContain("connection.subscription.qrUrl");
     expect(source).toContain("for item in primary");
     expect(source).toContain("for item in secondary");
