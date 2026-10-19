@@ -131,6 +131,13 @@ Catalog v8 derives method names, per-protocol client requirements and route supp
 through `profileSupport` for applications and manual profiles. `ApplicationProfile`
 owns the app's allowed protocols, profile validation, URLs, QR target and requirements.
 The same selection drives the public card, owner dialog and actual renderer.
+`renderCompatibility` and `public/client-compatibility.css` own the compatibility
+block in public cards, the owner dialog and manual profiles. Protocol requirements
+appear in hover/keyboard-focus hints on the protocol badges. Route support and
+automatic/manual refresh share one block; route limitations use the same hints.
+The Imba views reactively insert this escaped markup rather than reimplementing
+its labels, selection or tooltips. Manual profiles keep a separate copy button so
+the hint triggers are not nested inside a button.
 App-specific requirements override core requirements where the app uses its own
 implementation, such as Stash. After filtering, full route support comes first,
 then the number of distinct configured compatible protocols, then the existing

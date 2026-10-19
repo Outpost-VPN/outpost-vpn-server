@@ -12,6 +12,7 @@ import {
 } from "../src/server/adapters/catalog";
 import type { Locale } from "../src/shared/i18n";
 import type { Connection } from "../src/server/models";
+import {renderCompatibility} from "../src/shared/client-compatibility";
 
 const connection: Connection = {
   id: "connection", serial: 1, name: "Мама", color: "blue", avatar: "avatar-8", status: "active", generation: 1,
@@ -281,5 +282,24 @@ describe("versioned application catalog", () => {
     expect(source).not.toContain("for item in variants");
     expect(source).not.toContain("connection.subscription.formats");
     expect(source).not.toContain("qrDataUrl");
+  });
+
+  test("shared compatibility markup escapes profile content before insertion into the panel", async () => {
+    const payload = '<img src=x onerror="alert(1)">';
+    const html = renderCompatibility({
+      transports: [payload],
+      protocolRequirements: [{name: payload, requirement: '"><script>alert(1)</script>'}],
+      routing: {support: 'limited" onclick="alert(1)', label: payload, detail: payload},
+      updateMode: "manual",
+    }, "ru");
+    const unsafe: string[] = [];
+    await new HTMLRewriter().on("*", {element(element) {
+      if (["img", "script"].includes(element.tagName)) unsafe.push(element.tagName);
+      for (const [name] of element.attributes) if (name.startsWith("on")) unsafe.push(name);
+    }}).transform(new Response(html)).text();
+    expect(unsafe).toEqual([]);
+    expect(html).toContain("&lt;img");
+    expect(html).toContain("&quot;&gt;&lt;script&gt;");
+    expect(html).toContain("Обновляются вручную");
   });
 });
