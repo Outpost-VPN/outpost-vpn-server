@@ -65,15 +65,16 @@ describe("all-engine user telemetry", () => {
         ? Response.json({connections: sessions}) : new Response("denied", {status: 401}));
       const collector = new MihomoCollector(url, "fixture");
       let service = new TrafficService(fixture.db, [collector]);
-      const start = new Date();
+      const start = new Date(), end = new Date(start.getTime() + 10_000);
       await service.collect(start);
       expect(connections.get(user).presence?.status).toBe("online");
       sessions = [{...sessions[1]!, upload: 25, download: 80}, {...sessions[2]!}];
       await service.collect(new Date(start.getTime() + 5_000));
       service = new TrafficService(fixture.db, [collector]);
-      await service.collect(new Date(start.getTime() + 10_000));
+      await service.collect(end);
       for (const id of engineIds.filter((id) => id !== "mihomo")) service.recordCumulative(id, {connectionId: user, upload: 100, download: 200});
-      const overview = service.overview("all");
+      // Include the final synthetic observation even across a bucket boundary.
+      const overview = service.overview("all", "UTC", {to: end.toISOString()});
       expect(overview.connections.find((row) => row.connection_id === user)).toMatchObject({upload: 435, download: 930});
       expect(overview.connections.find((row) => row.connection_id === second)).toMatchObject({upload: 9, download: 11});
       expect(overview.totals).toEqual({upload: 444, download: 941});
