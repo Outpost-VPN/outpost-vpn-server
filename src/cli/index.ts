@@ -21,7 +21,7 @@ try {
       const [engine, version, checksum] = args;
       if (!isEngine(engine) || !version) throw new Error("Unknown engine/version");
       const artifact = await new EngineReleases().resolve(engine, version);
-      if (artifact.checksum !== checksum) throw new Error("Official release checksum changed; check versions again");
+      if (checksum !== undefined && artifact.checksum !== checksum) throw new Error("Official release checksum changed; check versions again");
       console.log([artifact.checksum,artifact.url,artifact.archive,artifact.signatureUrl ?? "-"].join("\n"));
       break;
     }

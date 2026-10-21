@@ -61,3 +61,8 @@ test "$original" = "$(iptables -S ufw-user-input | grep 8443)"
 systemctl restart outpost-firewall
 request 2444
 echo 'Systemd regenerated owned rules; cleanup preserved unrelated ingress'
+rm "$profile"
+"$firewall" --all
+expect_closed 2444
+test "$original" = "$(iptables -S ufw-user-input | grep 8443)"
+echo 'Removing an optional configuration closed stale ingress and preserved unrelated rules'

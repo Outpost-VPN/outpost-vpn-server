@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-create Snap's tracking scope in the system manager. Otherwise snap run
+# prefers root's user manager and logout can terminate a detached installation.
+# Snap recognizes this security-tag/UUID scope and keeps its normal confinement.
+exec systemd-run --system --scope --quiet --collect \
+  --unit="snap.certbot.certbot-$(cat /proc/sys/kernel/random/uuid)" \
+  /snap/bin/certbot "$@"

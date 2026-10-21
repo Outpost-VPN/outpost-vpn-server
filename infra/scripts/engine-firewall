@@ -6,7 +6,7 @@ if test "$engine" = --all || test "$engine" = --clear; then
   while IFS= read -r id; do
     if test "$engine" = --clear; then "$0" "$id" --clear; continue; fi
     mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "$id")
-    if test -f "/etc/outpost/engines/${info[1]}"; then "$0" "$id"; fi
+    if test -f "/etc/outpost/engines/${info[1]}"; then "$0" "$id"; else "$0" "$id" --clear; fi
   done < <(/opt/outpost/current/bin/outpostctl engine-list --all)
   exit 0
 fi

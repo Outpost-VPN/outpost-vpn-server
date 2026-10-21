@@ -2,24 +2,35 @@
 set -euo pipefail
 
 # Real services and filesystem paths: run only on a fresh disposable runner.
-test "${GITHUB_ACTIONS:-}" = true
-test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+if test "${OUTPOST_RELEASE_LAB:-}" = 1; then
+  test -f /etc/outpost-release-lab
+else
+  test "${GITHUB_ACTIONS:-}" = true
+  test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+  test "$(uname -m)" = x86_64
+fi
 test "$(id -u)" -eq 0
-test "$(uname -m)" = x86_64
 test ! -e /opt/outpost
 test ! -e /var/lib/outpost
 test ! -e /etc/outpost
 archive=$(realpath "${1:?Release archive is required}")
+baseline_archive=${2:-}
 source_root=$(cd "$(dirname "$0")/.." && pwd)
 bun_binary=$(command -v bun)
 version=$("$bun_binary" -p "require('$source_root/package.json').version")
 baseline=0.2.0-beta.4
 lab=$(mktemp -d /var/tmp/outpost-release-smoke.XXXXXX)
-trap 'systemctl stop outpost outpost-agent hysteria-server xray nginx >/dev/null 2>&1 || true; rm -rf "$lab" /var/tmp/outpost-release-smoke.json' EXIT
+optional_services=()
+trap 'systemctl stop outpost outpost-agent hysteria-server xray nginx "${optional_services[@]}" >/dev/null 2>&1 || true; rm -rf "$lab" /var/tmp/outpost-release-smoke.json' EXIT
 
 download="https://github.com/Outpost-VPN/outpost-vpn-server/releases/download/v$baseline/outpost-$baseline-linux-amd64.tar.gz"
-curl --proto '=https' --proto-redir '=https' -fsSL --retry 2 "$download" -o "$lab/baseline.tar.gz"
-curl --proto '=https' --proto-redir '=https' -fsSL --retry 2 "$download.minisig" -o "$lab/baseline.tar.gz.minisig"
+if test -n "$baseline_archive"; then
+  cp "$baseline_archive" "$lab/baseline.tar.gz"
+  cp "$baseline_archive.minisig" "$lab/baseline.tar.gz.minisig"
+else
+  curl --proto '=https' --proto-redir '=https' -fsSL --retry 2 "$download" -o "$lab/baseline.tar.gz"
+  curl --proto '=https' --proto-redir '=https' -fsSL --retry 2 "$download.minisig" -o "$lab/baseline.tar.gz.minisig"
+fi
 minisign -Vm "$lab/baseline.tar.gz" -p "$source_root/infra/release/minisign.pub"
 install -d /opt/outpost/releases
 tar --no-same-owner -xzf "$lab/baseline.tar.gz" -C "$lab"
@@ -122,16 +133,66 @@ test "$(systemctl show -p MainPID --value xray)" = "$before_xray"
 fixture verify
 echo "Signed baseline update passed without restarting Hysteria/Xray"
 
+# A full source has optional engines and methods; the destination has neither
+# their binaries nor their prior service state. Exercise actual provisioning.
+optional_ids=()
+while IFS= read -r engine; do
+  mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "$engine")
+  optional_ids+=("$engine"); optional_services+=("${info[0]}")
+  /opt/outpost/current/infra/scripts/update-engine "$engine" "${info[4]}" "${info[5]}" install-only
+done < <(/opt/outpost/current/bin/outpostctl engine-list --optional)
+fixture expanded
+systemctl start "${optional_services[@]}"
+for engine in "${optional_ids[@]}"; do /opt/outpost/current/infra/scripts/engine-health "$engine"; done
 /opt/outpost/current/infra/scripts/export-backup-plain /var/lib/outpost/backups/release-smoke.tar
 cp /var/lib/outpost/backups/release-smoke.tar "$lab/backup.tar"
-systemctl stop outpost hysteria-server xray nginx
+systemctl stop outpost hysteria-server xray nginx "${optional_services[@]}"
+systemctl disable "${optional_services[@]}"
+for engine in "${optional_ids[@]}"; do
+  mapfile -t info < <(/opt/outpost/current/bin/outpostctl engine-info "$engine")
+  rm -rf "/opt/outpost/engines/$engine"
+  rm -f "/etc/outpost/engines/${info[1]}"
+done
 rm -f /var/lib/outpost/outpost.sqlite /var/lib/outpost/outpost.sqlite-wal /var/lib/outpost/outpost.sqlite-shm /var/lib/outpost/master.key
 sed -i 's/OUTPOST_PUBLIC_IP=203.0.113.42/OUTPOST_PUBLIC_IP=203.0.113.77/' /etc/outpost/outpost.env
 /opt/outpost/current/infra/scripts/outpostctl migrate
-head -c 32 /dev/urandom >/var/lib/outpost/master.key
-chmod 0600 /var/lib/outpost/master.key
+test ! -e /var/lib/outpost/master.key
 chown -R outpost:outpost /var/lib/outpost
+/opt/outpost/current/infra/scripts/restore-backup "$lab/backup.tar" --check
+test ! -e /var/lib/outpost/master.key
+
+# Force a late listener-health failure, after data/key and optional binaries
+# have been replaced, and verify a retry starts from the original empty state.
+health=/opt/outpost/current/infra/scripts/engine-health
+cp -a "$health" "$lab/engine-health"
+printf '#!/bin/sh\n: >"%s/health-failed"\nexit 1\n' "$lab" >"$health"
+if /opt/outpost/current/infra/scripts/restore-backup "$lab/backup.tar"; then
+  echo "Restore ignored listener-health failure" >&2; exit 1
+fi
+test -f "$lab/health-failed"
+cp -a "$lab/engine-health" "$health"
+test ! -e /var/lib/outpost/master.key
+test "$(sqlite3 /var/lib/outpost/outpost.sqlite 'SELECT COUNT(*) FROM owners;')" = 0
+for index in "${!optional_ids[@]}"; do
+  test ! -e "/opt/outpost/engines/${optional_ids[$index]}/current"
+  if systemctl is-active --quiet "${optional_services[$index]}"; then echo "Optional engine remained active after rollback" >&2; exit 1; fi
+  if systemctl is-enabled --quiet "${optional_services[$index]}"; then echo "Optional engine remained enabled after rollback" >&2; exit 1; fi
+done
+echo "Late restore failure rolled back the empty database, absent key and optional runtimes"
+
 /opt/outpost/current/infra/scripts/restore-backup "$lab/backup.tar"
 ready
 fixture restored
+systemctl is-enabled --quiet outpost-firewall
+for index in "${!optional_ids[@]}"; do
+  engine=${optional_ids[$index]}
+  systemctl is-enabled --quiet "${optional_services[$index]}"
+  /opt/outpost/current/infra/scripts/engine-health "$engine"
+  chain="OUTPOST_IN_${engine^^}"; chain=${chain//-/_}
+  iptables -C ufw-user-input -j "$chain"
+  while IFS= read -r endpoint; do
+    test -n "$endpoint" || continue
+    iptables -C "$chain" -p "${endpoint#*/}" --dport "${endpoint%/*}" -j ACCEPT
+  done < <(/opt/outpost/current/bin/outpostctl engine-public-ports "$engine")
+done
 echo "Full backup restore passed and kept the destination server IP"

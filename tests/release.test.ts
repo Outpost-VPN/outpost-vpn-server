@@ -73,7 +73,7 @@ describe("release trust chain", () => {
   test("obtains the trusted IP certificate before exposing the setup application", async () => {
     const installer = await Bun.file(resolve(root, "infra/scripts/install")).text();
     const certificate = installer.indexOf('--ip-address "$public_ip"');
-    const services = installer.indexOf("systemctl enable --now nginx outpost-agent outpost");
+    const services = installer.indexOf("systemctl enable --now nginx outpost-firewall outpost-agent outpost");
     expect(certificate).toBeGreaterThan(0);
     expect(services).toBeGreaterThan(certificate);
     expect(installer).toContain("--preferred-profile shortlived");

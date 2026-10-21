@@ -32,10 +32,17 @@ curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/o
 Для field test конкретного pre-release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.7 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.8 bash /tmp/outpost-install
 ```
 
 Bootstrap устанавливает `curl`, CA certificates и Minisign, определяет release, скачивает archive и signature с GitHub и проверяет встроенным public key до запуска release installer. Release installer повторно проверяет подпись, затем ставит Nginx, UFW, SQLite/age, pinned tunnel engines и актуальный Certbot из официального snap. Ubuntu 24.04 содержит Certbot 2.9, а IP certificates требуют Certbot 5.4+; поэтому apt-версия Certbot не используется.
+
+Вызовы Certbot из installer/finalizer выполняются в системной Snap tracking scope,
+чтобы завершение root login session не прерывало выпуск сертификата. Обычная
+Snap confinement сохраняется. Проверка этого сценария на отдельной Ubuntu VM с
+установленным Certbot: создайте `/etc/outpost-release-lab` и выполните
+`sudo env OUTPOST_RELEASE_LAB=1 bash scripts/integration-certbot.sh infra/scripts/run-certbot`.
+Тест останавливает `user@0`, поэтому предназначен только для одноразовой VM.
 
 `apt-get update` обновляет только индекс пакетов, а `apt-get install` добавляет зависимости Outpost. Installer не выполняет `full-upgrade`, не меняет kernel и не перезагружает VPS.
 
@@ -144,6 +151,14 @@ binaries и TLS certificates не включаются. Restore сохраняе
 текущую версию Outpost, пересобирает Nginx для нового сервера и возвращает
 credentials из копии. Поэтому прежние subscription URLs и клиентские профили
 продолжают работать, если тот же домен направлен на новый IP.
+
+На пустой установке `master.key` ещё может отсутствовать: restore сам переносит
+ключ из копии. Недостающие дополнительные движки скачиваются в версиях из
+бэкапа через штатную проверку официальных assets и SHA-256 (для AWG bundles —
+также Minisign); поэтому нужен доступ к GitHub. Уже установленные на целевом
+VPS движки сохраняются. Restore пересобирает ingress из восстановленных configs,
+запускает установленные движки и включает их и firewall в автозагрузку.
+При ошибке возвращаются прежние данные, наличие ключа, symlinks и состояния служб.
 
 ## MCP
 

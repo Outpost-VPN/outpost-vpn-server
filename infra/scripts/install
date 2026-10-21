@@ -4,7 +4,7 @@ set -euo pipefail
 release_archive=${1:-}
 release_signature=${2:-"${release_archive}.minisig"}
 release_public_key="RWQIi2TPWGnwEuL3XnEdwUYwcd194z3YYWM3sDdZNMhfEPf5xsFAk1FY"
-certbot=/snap/bin/certbot
+certbot="$(cd "$(dirname "$0")" && pwd)/run-certbot"
 acme_webroot=/var/www/outpost-acme
 release_tmp=
 version=
@@ -29,7 +29,7 @@ install_certbot_snap() {
 
 rollback_install() {
   echo "Installation failed; rolling back Outpost files and services" >&2
-  systemctl disable --now outpost outpost-agent xray hysteria-server >/dev/null 2>&1 || true
+  systemctl disable --now outpost outpost-agent xray hysteria-server outpost-firewall >/dev/null 2>&1 || true
   if test -n "$public_ip" && test -x "$certbot"; then
     "$certbot" delete --non-interactive --cert-name "$public_ip" >/dev/null 2>&1 || true
   fi
@@ -98,7 +98,7 @@ apt-get install -y --no-install-recommends nginx snapd ufw unzip curl ca-certifi
 systemctl enable --now snapd.socket
 snap wait system seed.loaded
 snap install core >/dev/null 2>&1 || snap refresh core >/dev/null
-if ! test -x "$certbot"; then
+if ! test -x /snap/bin/certbot; then
   install_certbot_snap
 else
   snap refresh certbot >/dev/null || true
@@ -206,7 +206,7 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 443/udp
 ufw --force enable
-systemctl enable --now nginx outpost-agent outpost
+systemctl enable --now nginx outpost-firewall outpost-agent outpost
 
 for _ in {1..30}; do
   curl -fsS http://127.0.0.1:8181/readyz >/dev/null && break

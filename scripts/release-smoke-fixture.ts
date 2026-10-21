@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import YAML from "yaml";
 
 // This fixture is only used by integration-release.sh on a disposable runner.
-if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted") {
-  throw new Error("Release smoke fixtures require a disposable GitHub-hosted runner");
+const localLab = process.env.OUTPOST_RELEASE_LAB === "1" && existsSync("/etc/outpost-release-lab");
+if (!localLab && (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted")) {
+  throw new Error("Release smoke fixtures require a disposable runner");
 }
 const [mode, source] = Bun.argv.slice(2);
-if (!source || !["seed", "baseline", "verify", "restored"].includes(mode!)) throw new Error("Expected fixture mode and source directory");
+if (!source || !["seed", "baseline", "expanded", "verify", "restored"].includes(mode!)) throw new Error("Expected fixture mode and source directory");
 const root = resolve(source);
 const { OutpostDatabase } = await import(join(root, "src/server/db/database.ts"));
 const { HttpApplication } = await import(join(root, "src/server/http.ts"));
@@ -70,8 +71,21 @@ try {
     const apiToken = app.auth.createApiToken("release-smoke", ["system:read"]).token;
     writeFileSync(record, JSON.stringify({ identity: hash(identity()), path: new URL(link.url).pathname, apiToken }), { mode: 0o600 });
     console.log("Legacy fixture created with owner, passkey, active connections and engine presets");
-  } else if (mode === "baseline") {
+  } else if (mode === "baseline" || mode === "expanded") {
     const saved = JSON.parse(readFileSync(record, "utf8"));
+    if (mode === "expanded") {
+      const {engineIds} = await import(join(root, "src/shared/engines.ts"));
+      const {defaultMethods} = await import(join(root, "src/shared/connection-methods.ts"));
+      const {config} = await import(join(root, "src/server/config.ts"));
+      db.engines.recoverInstallations();
+      db.setSetting("connection_methods", defaultMethods(engineIds, {xhttp:config.xhttpPath, grpc:config.grpcService}));
+      const {EngineConfigService} = await import(join(root, "src/server/adapters/engines.ts"));
+      const {EngineRuntimeService} = await import(join(root, "src/server/services/engine-runtime.ts"));
+      await new EngineConfigService(db).reconcilePresets(app.connections.activeCredentials(), "release-smoke", Object.fromEntries(engineIds.map((id: string) => [id,false])));
+      await new EngineRuntimeService(db).prepareRecovery();
+      saved.identity = hash(identity());
+      saved.restoreIdentity = restoreIdentity();
+    }
     const {applications, advancedDefinitions} = await import(join(root, "src/server/adapters/catalog.ts"));
     const profiles: Profile[] = [];
     for (const credential of app.connections.activeCredentials()) {
@@ -85,10 +99,11 @@ try {
     }
     for (const profile of profiles) profile.fingerprint = await profileFingerprint(profile);
     writeFileSync(record, JSON.stringify({...saved, profiles}), {mode: 0o600});
-    console.log(`Recorded ${profiles.length} existing subscription responses from the actual beta.4 server`);
+    console.log(`Recorded ${profiles.length} subscription responses from ${mode === "baseline" ? "the actual beta.4 server" : "the full restore source"}`);
   } else {
     const saved = JSON.parse(readFileSync(record, "utf8"));
     if (hash(identity()) !== saved.identity) throw new Error("Owner, passkey, credentials or master key changed");
+    if (mode === "restored" && restoreIdentity() !== saved.restoreIdentity) throw new Error("Restored credentials, methods or routes changed");
     if (!saved.profiles?.length) throw new Error("Missing baseline subscription responses");
     for (const profile of saved.profiles as Profile[]) {
       if (await profileFingerprint(profile) !== profile.fingerprint) {
@@ -107,8 +122,14 @@ try {
     if (!settings.ok) throw new Error(`Preserved API token failed: HTTP ${settings.status}`);
     if (mode === "restored" && config.publicIp !== "203.0.113.77") throw new Error("Restore replaced the destination server's IP");
     if (db.raw.query("PRAGMA integrity_check").get().integrity_check !== "ok") throw new Error("Database integrity failed");
-    console.log(`Identity, ${saved.profiles.length} legacy subscription responses, API token and SQLite verified (${mode})`);
+    console.log(`Identity, ${saved.profiles.length} subscription responses, API token and SQLite verified (${mode})`);
   }
 } finally {
   db.close();
+}
+
+function restoreIdentity() {
+  return hash({credentials:app.connections.activeCredentials(), methods:db.methods.list(),
+    drafts:db.raw.query("SELECT * FROM route_drafts ORDER BY position").all(),
+    revisions:db.raw.query("SELECT * FROM route_revisions ORDER BY version").all()});
 }
