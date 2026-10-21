@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import YAML from "yaml";
-import { binary, command, waitForPort, freePorts, ProcessGroup } from "./lib/native-integration";
+import { binary, command, expectBody, waitForPort, freePorts, ProcessGroup } from "./lib/native-integration";
 import { renderEngine } from "../src/server/adapters/engines";
 import { defaultEngineTemplates } from "../src/server/adapters/engine-presets";
 import { mihomoRenderer, singBoxRenderer, type SubscriptionContext } from "../src/server/adapters/subscriptions";
@@ -35,8 +35,9 @@ async function verifyClient(child: Bun.Subprocess, name: string, valid: boolean,
   try {
     await waitForPort(proxyPort!);
     try {
-      body = await command([curl, "--noproxy", "", "-fsS", "--max-time", String(timeout),
-        "--socks5-hostname", `127.0.0.1:${proxyPort}`, `http://127.0.0.1:${origin.port}/`]);
+      const argv = [curl, "--noproxy", "", "-fsS", "--max-time", String(timeout),
+        "--socks5-hostname", `127.0.0.1:${proxyPort}`, `http://127.0.0.1:${origin.port}/`];
+      body = valid ? await expectBody(argv, "verified-outpost-origin") : await command(argv);
     } catch (error) {
       failure = error;
     }
