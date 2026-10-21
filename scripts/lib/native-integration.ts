@@ -36,7 +36,7 @@ export async function expectBody(argv: string[], expected: string, attempts = 20
     const [stdout, stderr, code] = await Promise.all([
       new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
     ]);
-    if (code === 0 && stdout.includes(expected)) return;
+    if (code === 0 && stdout.includes(expected)) return stdout;
     last = stderr.trim() || stdout.trim() || `exit ${code}`;
     await Bun.sleep(200);
   }
