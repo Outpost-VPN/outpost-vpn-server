@@ -45,6 +45,8 @@ masquerade:
     rewriteHost: true
 `.trim();
 
+const hysteriaPresetV3 = `${hysteriaPresetV2}\nspeedTest: true`;
+
 const xrayPresetV1 = JSON.stringify({
   log: { loglevel: "warning" },
   stats: "{{OUTPOST_STATS}}",
@@ -141,7 +143,7 @@ export const defaultSingBoxTemplate = JSON.stringify({...JSON.parse(singBoxPrese
 export const defaultAmneziaTemplate = JSON.stringify({ server: "{{OUTPOST_AWG_SERVER}}", peers: "{{OUTPOST_AWG_PEERS}}" }, null, 2);
 
 const presets: Record<EngineName, ReadonlyMap<number, string>> = {
-  hysteria: new Map([[1, hysteriaPresetV1], [2, hysteriaPresetV2]]),
+  hysteria: new Map([[1, hysteriaPresetV1], [2, hysteriaPresetV2], [3, hysteriaPresetV3]]),
   xray: new Map([[1, xrayPresetV1], [2, xrayPresetV2]]),
   mihomo: new Map([[1, defaultMihomoTemplate]]),
   "sing-box": new Map([[1, singBoxPresetV1], [2, defaultSingBoxTemplate]]),
@@ -149,14 +151,14 @@ const presets: Record<EngineName, ReadonlyMap<number, string>> = {
 };
 
 export const currentEnginePresetVersions: Record<EngineName, number> = {
-  hysteria: 2,
+  hysteria: 3,
   xray: 2,
   mihomo: 1,
   "sing-box": 2,
   amneziawg: 1,
 };
 
-export const defaultHysteriaTemplate = hysteriaPresetV2;
+export const defaultHysteriaTemplate = hysteriaPresetV3;
 export const defaultXrayTemplate = xrayPresetV2;
 export const defaultEngineTemplates: Record<EngineName, string> = {
   hysteria: defaultHysteriaTemplate, xray: defaultXrayTemplate,

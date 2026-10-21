@@ -25,6 +25,10 @@ type EventDefinition = {
 export type JournalScope = "all" | "important" | "errors" | "changes";
 
 export type JournalQuery = {
+  from?: string;
+  to?: string;
+  engine?: string;
+  connectionId?: string;
   scope?: JournalScope;
   category?: JournalCategory | JournalCategory[];
   q?: string;
@@ -190,6 +194,10 @@ export class JournalService {
     const limit = Math.max(1, Math.min(100, Math.trunc(query.limit ?? 50)));
     const clauses: string[] = [];
     const values: SqlValue[] = [];
+    if (query.from) {clauses.push("events.occurred_at >= ?"); values.push(query.from);}
+    if (query.to) {clauses.push("events.occurred_at <= ?"); values.push(query.to);}
+    if (query.engine) {clauses.push("(events.source = ? OR (events.subject_type = 'engine' AND events.subject_id = ?))"); values.push(query.engine, query.engine);}
+    if (query.connectionId) {clauses.push("events.subject_type = 'connection' AND events.subject_id = ?"); values.push(query.connectionId);}
     const categories = Array.isArray(query.category) ? query.category : query.category ? [query.category] : [];
     if (categories.length) {
       clauses.push(`events.category IN (${categories.map(() => "?").join(", ")})`);

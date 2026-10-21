@@ -1,4 +1,5 @@
 listen: :443
+speedTest: true
 tls:
   cert: /etc/letsencrypt/live/__DOMAIN__/fullchain.pem
   key: /etc/letsencrypt/live/__DOMAIN__/privkey.pem

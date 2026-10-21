@@ -6,6 +6,7 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
+    "diagnose": "bun scripts/diagnose.ts",
     "dev": "OUTPOST_DEMO=1 OUTPOST_DATA_DIR=.data bun --watch src/server/index.ts",
     "dev:web": "bun run assets && bunx bimba src/web/app.imba --outdir public --watch",
     "build": "bun run build:web && bun run build:server && bun run build:cli",

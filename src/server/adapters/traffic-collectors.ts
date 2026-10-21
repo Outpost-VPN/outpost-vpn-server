@@ -106,8 +106,8 @@ export class MihomoCollector implements TrafficCollector {
     if (!response.ok) throw new Error(`Mihomo telemetry: HTTP ${response.status}`);
     const snapshot = await response.json() as {connections: Array<{
       id: string; metadata: {inboundUser?: string}; upload: number; download: number;
-    }>};
-    return sessionSnapshot(snapshot.connections.map((session) => ({...session, user: session.metadata.inboundUser})));
+    }> | null};
+    return sessionSnapshot((snapshot.connections ?? []).map((session) => ({...session, user: session.metadata.inboundUser})));
   }
 }
 

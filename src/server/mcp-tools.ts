@@ -5,6 +5,7 @@ import { z } from "zod";
 import { version } from "../version";
 import type { OutpostApi } from "../shared/api";
 import { settingsPatchSchema } from "../shared/settings";
+import {diagnosticSchema, eventQuerySchema, trafficQuerySchema, queryString} from "../shared/diagnostics";
 
 type Result = { content: Array<{ type: "text"; text: string }> };
 
@@ -33,9 +34,38 @@ export function createMcpServer(api: OutpostApi) {
   server.registerTool("traffic_get", {
     title: "Трафик",
     description: "Показывает агрегированный трафик по подключениям.",
-    inputSchema: { period: z.enum(["24h", "7d", "30d", "all"]).default("30d") },
+    inputSchema: { period: z.enum(["24h", "7d", "30d", "all"]).default("30d"), ...trafficQuerySchema.shape },
     annotations: { readOnlyHint: true },
-  }, async ({ period }) => result(await api.get(`/api/v1/traffic?period=${period}`)));
+  }, async (input) => result(await api.get(`/api/v1/traffic?${queryString(input)}`)));
+
+  server.registerTool("system_metrics_get", {
+    title: "Ресурсы VPS", description: "CPU/steal, доступная RAM/swap, диск, ресурсы служб и сетевые счётчики с историей и свежестью. Требует system:read. Неизмеренные показатели возвращаются как null.",
+    annotations: {readOnlyHint: true},
+  }, async () => result(await api.get("/api/v1/system/metrics")));
+  server.registerTool("connection_diagnostics_get", {
+    title: "Диагностика подключения", description: "Presence по движкам, здоровье и ошибки сборщиков, причина unknown. includeEvents читает очищенные transport events за последний час без адресов и credentials. Требует connections:read.",
+    inputSchema: {connection_id: z.string().uuid(), includeEvents: z.boolean().default(false)}, annotations: {readOnlyHint: true},
+  }, async ({connection_id, includeEvents}) => result(await api.get(`/api/v1/connections/${connection_id}/diagnostics?includeEvents=${includeEvents}`)));
+  server.registerTool("events_get", {
+    title: "Журнал событий", description: "Фильтрованный журнал Outpost с пагинацией по времени, движку и подключению. Требует system:read.",
+    inputSchema: eventQuerySchema.shape, annotations: {readOnlyHint: true},
+  }, async input => result(await api.get(`/api/v1/system/events?${queryString(input)}`)));
+  server.registerTool("operations_get", {
+    title: "Результаты операций", description: "Состояние и сохранённый результат операции по ID либо последние операции. Требует operations:read.",
+    inputSchema: {operation_id: z.string().uuid().optional()}, annotations: {readOnlyHint: true},
+  }, async ({operation_id}) => result(await api.get(operation_id ? `/api/v1/operations/${operation_id}` : "/api/v1/operations")));
+  server.registerTool("diagnostic_run", {
+    title: "Запустить исследование сети", description: "Ограниченные DNS/TCP/TLS/HTTP/ICMP, download/upload, сравнение протоколов и Hysteria speedtest. Требует diagnostics:run. Возвращает operation ID. vantage=server измеряет VPS→origin; client требует отдельный outpostctl diagnose на устройстве, connections:secret для получения private profiles. Один прогон одновременно, максимум 256MiB/180s transfer budget. Службы не перезапускаются.",
+    inputSchema: diagnosticSchema.shape, annotations: {destructiveHint: false, idempotentHint: false},
+  }, async input => result(await api.post("/api/v1/diagnostics", input)));
+  server.registerTool("diagnostic_get", {
+    title: "Результат исследования", description: "Сохранённые этапы, точка измерения и синхронные ресурсы VPS. Требует diagnostics:read. ICMP loss/TCP retransmits/UDP drops не являются универсальным QUIC loss.",
+    inputSchema: {diagnostic_id: z.string().uuid(), includeSamples: z.boolean().default(false)}, annotations: {readOnlyHint: true},
+  }, async ({diagnostic_id, includeSamples}) => result(await api.get(`/api/v1/diagnostics/${diagnostic_id}?includeSamples=${includeSamples}`)));
+  server.registerTool("diagnostic_cancel", {
+    title: "Остановить исследование", description: "Отменяет диагностическую операцию, останавливает её пробы и сохраняет уже собранный результат. Требует diagnostics:run.",
+    inputSchema: {diagnostic_id: z.string().uuid()}, annotations: {destructiveHint: false, idempotentHint: true},
+  }, async ({diagnostic_id}) => result(await api.post(`/api/v1/diagnostics/${diagnostic_id}/cancel`)));
 
   server.registerTool("connections_list", {
     title: "Подключения",

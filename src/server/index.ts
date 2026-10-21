@@ -22,6 +22,7 @@ console.info(`Outpost ${config.version} слушает ${server.url.origin}${con
 
 const trafficTimer = setInterval(() => void app.collectTraffic(), 5_000);
 const monitoringTimer = setInterval(() => void app.collectMonitoring(), 60_000);
+const resourcesTimer = setInterval(() => void app.monitoring.resources.sample(), 5_000);
 const connectionSyncTimer = setInterval(() => void app.syncConnections(), 5_000);
 const rulesetTimer = setInterval(() => void app.refreshRulesets(), config.rulesetCheckHours * 60 * 60 * 1_000);
 const updateTimer = setInterval(() => void app.checkUpdates(), config.updateCheckHours * 60 * 60 * 1_000);
@@ -37,6 +38,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
     clearInterval(trafficTimer);
     clearInterval(monitoringTimer);
+    clearInterval(resourcesTimer);
     clearInterval(connectionSyncTimer);
     clearInterval(rulesetTimer);
     clearInterval(updateTimer);

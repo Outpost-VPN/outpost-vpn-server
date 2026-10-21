@@ -87,6 +87,17 @@ describe("technology subscription renderers", () => {
     }
   });
 
+  test("leaves Hysteria client bandwidth adaptive for different access networks", () => {
+    const mihomo = YAML.parse(mihomoRenderer.render(context).body).proxies.find((proxy: {type: string}) => proxy.type === "hysteria2");
+    const singBox = JSON.parse(singBoxRenderer.render(context).body).outbounds.find((outbound: {type: string}) => outbound.type === "hysteria2");
+    expect(mihomo).toBeDefined();
+    expect(singBox).toBeDefined();
+    expect(mihomo.up).toBeUndefined();
+    expect(mihomo.down).toBeUndefined();
+    expect(singBox.up_mbps).toBeUndefined();
+    expect(singBox.down_mbps).toBeUndefined();
+  });
+
   test("links includes Hysteria, XHTTP and gRPC plus INCY-compatible headers", () => {
     const output = linksRenderer.render(context);
     const links = output.body.trim().split("\n");

@@ -95,6 +95,7 @@ describe("connection presence telemetry", () => {
     xray.error = new Error("unavailable");
     await traffic.collect(new Date(start.getTime() + 25 * 60 * 60 * 1000));
     expect(connections.get(connectionId).presence?.status).toBe("unknown");
+    expect(connections.get(connectionId).last_seen_at).toBe(start.toISOString());
     expect(new JournalService(fixture.db).list().events.some((event) => event.type === "connection.offline_long")).toBeFalse();
   });
 

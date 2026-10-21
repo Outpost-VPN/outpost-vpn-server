@@ -425,7 +425,7 @@ tag outpost-gauge
 
 	<self>
 		<canvas>
-		<strong> "{value}%"
+		<strong> value == null ? '—' : "{value}%"
 
 	css self
 		pos:relative w:102px h:56px d:grid ai:end jc:center fl:0 0 102px

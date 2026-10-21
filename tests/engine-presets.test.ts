@@ -11,6 +11,11 @@ import { now } from "../src/server/db/database";
 import { database } from "./helpers";
 
 describe("versioned engine presets", () => {
+  test("enables authenticated Hysteria speedtest while retaining an explicit user opt-out", () => {
+    const previous = enginePreset("hysteria", 2)!;
+    expect(parseEngineTemplate("hysteria", mergeEnginePreset("hysteria", previous, 2).template)).toMatchObject({speedTest: true});
+    expect(parseEngineTemplate("hysteria", mergeEnginePreset("hysteria", `${previous}\nspeedTest: false`, 2).template)).toMatchObject({speedTest: false});
+  });
   test("adds the protected sing-box API while preserving existing settings", () => {
     const previous = JSON.parse(enginePreset("sing-box", 1)!);
     previous.log.level = "error";
@@ -153,7 +158,7 @@ describe("versioned engine presets", () => {
         acl: { inline: string[] };
       };
 
-      expect(rolledBack.presetVersion).toBe(2);
+      expect(rolledBack.presetVersion).toBe(currentEnginePresetVersions.hysteria);
       expect(merged.masquerade.proxy.url).toBe("https://example.com/");
       expect(merged.acl.inline).toEqual(["reject(all, udp/443)"]);
     } finally {

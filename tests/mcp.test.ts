@@ -7,6 +7,57 @@ import { HttpApplication } from "../src/server/http";
 import { database } from "./helpers";
 import { tokenScopes } from "../src/shared/api-scopes";
 
+test("MCP diagnostics expose scoped reads and client operation lifecycle without leaking secrets", async () => {
+  const fixture = database(), app = new HttpApplication(fixture.db);
+  const reader = app.auth.createApiToken("Diagnostic reader", [...tokenScopes.read]).token;
+  const manager = app.auth.createApiToken("Diagnostic manager", [...tokenScopes.manage]).token;
+  const api = new OutpostApi({url: "http://localhost", token: manager}, request => app.fetch(request));
+  const server = createMcpServer(api), client = new Client({name: "diagnostics-test", version: "1"});
+  const [transport, peer] = InMemoryTransport.createLinkedPair();
+  const content = (value: Awaited<ReturnType<Client["callTool"]>>) => JSON.parse((value.content as Array<{text: string}>)[0]!.text);
+  let operationId: string | undefined;
+  try {
+    await server.connect(peer); await client.connect(transport);
+    const tools = (await client.listTools()).tools.map(tool => tool.name);
+    expect(tools).toEqual(expect.arrayContaining(["system_metrics_get", "connection_diagnostics_get", "events_get", "operations_get", "diagnostic_run", "diagnostic_get", "diagnostic_cancel"]));
+    const metrics = content(await client.callTool({name: "system_metrics_get", arguments: {}}));
+    expect(metrics).toHaveProperty("sampledAt"); expect(metrics).toHaveProperty("stale");
+    expect(JSON.stringify(metrics)).not.toContain("xhttp-change-me");
+    const connection = app.connections.create({name: "Diagnostic test"}); app.connections.completeActivation(connection.id, 1, "test");
+    const detail = content(await client.callTool({name: "connection_diagnostics_get", arguments: {connection_id: connection.id}}));
+    expect(detail.connectionId).toBe(connection.id); expect(detail.telemetry.length).toBeGreaterThan(0);
+    expect(JSON.stringify(detail)).not.toContain(app.connections.credentials(connection.id).hysteria.password);
+    const time = new Date(Date.now() - 60_000);
+    app.traffic.recordCumulative("xray", {connectionId: connection.id, upload: 10, download: 20}, time);
+    const filtered = content(await client.callTool({name: "traffic_get", arguments: {connectionId: connection.id, includeSeries: false}}));
+    expect(filtered.connections).toHaveLength(1); expect(filtered.series).toEqual([]); expect(filtered.totals).toEqual({upload: 10, download: 20});
+    const events = content(await client.callTool({name: "events_get", arguments: {connectionId: connection.id, limit: 1}}));
+    expect(events.events).toHaveLength(1); expect(events.events[0].subject.id).toBe(connection.id);
+    const started = content(await client.callTool({name: "diagnostic_run", arguments: {kind: "reachability", vantage: "client"}}));
+    operationId = started.id;
+    expect(started.runner.command).toContain(started.id);
+    expect(content(await client.callTool({name: "operations_get", arguments: {operation_id: started.id}})).kind).toBe("diagnostic");
+    expect(content(await client.callTool({name: "diagnostic_cancel", arguments: {diagnostic_id: started.id}})).status).toBe("cancelled");
+    expect(content(await client.callTool({name: "diagnostic_get", arguments: {diagnostic_id: started.id}})).status).toBe("cancelled");
+    const readApi = new OutpostApi({url: "http://localhost", token: reader}, request => app.fetch(request));
+    await expect(readApi.post("/api/v1/diagnostics", {kind: "speed"})).rejects.toThrow("403");
+    await expect(readApi.post(`/api/v1/diagnostics/${started.id}/claim`)).rejects.toThrow("403");
+    const runnerToken = app.auth.createApiToken("Limited runner", ["diagnostics:run"]).token;
+    const runnerApi = new OutpostApi({url: "http://localhost", token: runnerToken}, request => app.fetch(request));
+    const limitedJob = await runnerApi.post<{id: string}>("/api/v1/diagnostics", {kind: "reachability", vantage: "client"});
+    operationId = limitedJob.id;
+    await expect(runnerApi.post(`/api/v1/diagnostics/${limitedJob.id}/claim`)).rejects.toThrow("403");
+    const large = new ReadableStream({start(controller) {controller.enqueue(new Uint8Array(1024 * 1024 + 1)); controller.close();}});
+    const rejected = await app.fetch(new Request(`http://localhost/api/v1/diagnostics/${limitedJob.id}/report`, {
+      method: "POST", headers: {authorization: `Bearer ${manager}`}, body: large,
+    }));
+    expect(rejected.status).toBe(413);
+  } finally {
+    if (operationId) app.diagnostics.cancel(operationId, "test");
+    await Bun.sleep(5); await client.close(); await server.close(); fixture.close();
+  }
+});
+
 test("MCP settings use the same persisted, validated and scoped API as the panel", async () => {
   const fixture = database();
   const app = new HttpApplication(fixture.db);

@@ -1,11 +1,11 @@
 const read = [
   "status:read", "traffic:read", "connections:read", "routes:read",
-  "operations:read", "system:read", "settings:read", "engines:read",
+  "operations:read", "system:read", "settings:read", "engines:read", "diagnostics:read",
 ] as const;
 
 const manage = [
   ...read, "connections:write", "connections:secret", "connections:rotate",
-  "routes:write", "operations:write", "settings:write", "engines:write",
+  "routes:write", "operations:write", "settings:write", "engines:write", "diagnostics:run",
 ] as const;
 
 export const tokenScopes = {read, manage};

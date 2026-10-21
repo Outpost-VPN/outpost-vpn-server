@@ -10,13 +10,14 @@ import { engineIds, engines, engineMetadata, serviceNames, type EngineId } from 
 import { ServiceError } from "./connections";
 import { JournalService, type JournalQuery } from "./journal";
 import { ApplicationUpdateService } from "./application-updates";
+import type {ResourceService} from "./resources";
 
 
 export class SystemService {
   readonly journal: JournalService;
   readonly updates: ApplicationUpdateService;
 
-  constructor(private db: OutpostDatabase, journal?: JournalService, updates?: ApplicationUpdateService) {
+  constructor(private db: OutpostDatabase, journal?: JournalService, updates?: ApplicationUpdateService, private resources?: ResourceService) {
     this.journal = journal ?? new JournalService(db);
     this.updates = updates ?? new ApplicationUpdateService(db);
   }
@@ -69,10 +70,10 @@ export class SystemService {
       backups,
       rulesets,
       uptime: Math.floor(uptime()),
-      metrics: {
-        cpu: monitored.metrics?.cpu ?? { percent: 0 },
-        memory: monitored.metrics?.memory ?? { used: 0, total: 0, percent: 0 },
-        disk: monitored.metrics?.disk ?? { used: 0, total: 0, percent: 0 },
+      metrics: (!config.demo ? this.resources?.metrics() : null) ?? {
+        cpu: monitored.metrics?.cpu ?? { percent: null },
+        memory: monitored.metrics?.memory ?? { used: null, total: null, percent: null },
+        disk: monitored.metrics?.disk ?? { used: null, total: null, percent: null },
         network: {
           download: monitored.metrics?.network?.download ?? 0,
           upload: monitored.metrics?.network?.upload ?? 0,
