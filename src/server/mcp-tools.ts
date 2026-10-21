@@ -43,7 +43,7 @@ export function createMcpServer(api: OutpostApi) {
     annotations: {readOnlyHint: true},
   }, async () => result(await api.get("/api/v1/system/metrics")));
   server.registerTool("connection_diagnostics_get", {
-    title: "Диагностика подключения", description: "Presence по движкам, здоровье и ошибки сборщиков, причина unknown. includeEvents читает очищенные transport events за последний час без адресов и credentials. Требует connections:read.",
+    title: "Диагностика подключения", description: "Presence по движкам, здоровье и ошибки сборщиков, причина unknown. includeEvents читает очищенные transport events за час: type/reason, исходный level, count и related для сгруппированных последствий idle disconnect. Отмена потока client_cancelled_stream и тайм-аут upstream_connect_timeout различаются. Без адресов и credentials. Требует connections:read.",
     inputSchema: {connection_id: z.string().uuid(), includeEvents: z.boolean().default(false)}, annotations: {readOnlyHint: true},
   }, async ({connection_id, includeEvents}) => result(await api.get(`/api/v1/connections/${connection_id}/diagnostics?includeEvents=${includeEvents}`)));
   server.registerTool("events_get", {
