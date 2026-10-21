@@ -48,6 +48,8 @@ type Request struct {
 
 func Validate(request Request) error {
 	switch request.Action {
+	case "network.ping":
+		return validatePing(request.Payload)
 	case "logs.read":
 		engine, ok := request.Payload["engine"].(string)
 		id, validID := request.Payload["connectionId"].(string)

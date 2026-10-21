@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"io"
 	"os/exec"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,21 +21,30 @@ type connectionEvent struct {
 	Reason    string `json:"reason"`
 }
 
+const maxJournalBytes = 512 * 1024
+const maxJournalLines = 1000
+
+type connectionEvents struct {
+	Events    []connectionEvent `json:"events"`
+	Truncated bool              `json:"truncated"`
+}
+
 // Only normalized events leave the privileged boundary. Addresses, destinations,
 // credentials and arbitrary journald text are never returned to the application.
 func normalizeConnectionEvent(message, connection string) (string, string, bool) {
 	identity := false
+	start := strings.Index(message, "{")
+	if start < 0 {
+		return "", "", false
+	}
+	var fields map[string]any
+	if json.Unmarshal([]byte(message[start:]), &fields) != nil {
+		return "", "", false
+	}
 	for _, key := range []string{"id", "user", "email"} {
-		start := strings.Index(message, "{")
-		if start < 0 {
-			continue
-		}
-		var fields map[string]any
-		if json.Unmarshal([]byte(message[start:]), &fields) == nil {
-			value, ok := fields[key].(string)
-			if ok && (value == connection || strings.HasPrefix(value, connection+".") && strings.HasSuffix(value, "@outpost.local")) {
-				identity = true
-			}
+		value, ok := fields[key].(string)
+		if ok && (value == connection || strings.HasPrefix(value, connection+".") && strings.HasSuffix(value, "@outpost.local")) {
+			identity = true
 		}
 	}
 	if !identity {
@@ -55,12 +67,57 @@ func normalizeConnectionEvent(message, connection string) (string, string, bool)
 	return event, reason, true
 }
 
-func readConnectionEvents(payload map[string]any) (string, error) {
+// journalctl supplies newest first. Only bounded, normalized events survive;
+// a budget stops older input while retaining the latest observations.
+func scanConnectionEvents(input io.Reader, engine, connection string, limit int) (connectionEvents, error) {
+	result := connectionEvents{Events: []connectionEvent{}}
+	bounded := &io.LimitedReader{R: input, N: maxJournalBytes + 1}
+	scanner := bufio.NewScanner(bounded)
+	scanner.Buffer(make([]byte, 4096), maxJournalBytes+2)
+	bytes, lines := 0, 0
+	for scanner.Scan() {
+		bytes += len(scanner.Bytes()) + 1
+		if bytes > maxJournalBytes {
+			result.Truncated = true
+			break
+		}
+		lines++
+		var entry struct {
+			Message   string `json:"MESSAGE"`
+			Timestamp string `json:"__REALTIME_TIMESTAMP"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &entry) == nil {
+			event, reason, ok := normalizeConnectionEvent(entry.Message, connection)
+			micros, err := strconv.ParseInt(entry.Timestamp, 10, 64)
+			if ok && err == nil && micros > 0 {
+				if len(result.Events) == limit {
+					result.Truncated = true
+					break
+				}
+				result.Events = append(result.Events, connectionEvent{micros / 1000, engine, event, reason})
+			}
+		}
+		if lines == maxJournalLines {
+			result.Truncated = true
+			break
+		}
+	}
+	if bounded.N == 0 {
+		result.Truncated = true
+	}
+	if err := scanner.Err(); err != nil && !result.Truncated {
+		return result, err
+	}
+	slices.Reverse(result.Events)
+	return result, nil
+}
+
+func readConnectionEvents(parent context.Context, payload map[string]any) (string, error) {
 	engine := payload["engine"].(string)
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 4*time.Second)
 	defer cancel()
 	since := time.UnixMilli(int64(payload["since"].(float64))).UTC().Format(time.RFC3339)
-	cmd := exec.CommandContext(ctx, "journalctl", "--unit="+policy.Engines[engine].Service, "--since="+since, "--until=now", "--output=json", "--lines=1000", "--no-pager")
+	cmd := exec.CommandContext(ctx, "journalctl", "--unit="+policy.Engines[engine].Service, "--since="+since, "--until=now", "--output=json", "--output-fields=MESSAGE,__REALTIME_TIMESTAMP", "--reverse", "--lines=1000", "--no-pager")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", err
@@ -68,41 +125,20 @@ func readConnectionEvents(payload map[string]any) (string, error) {
 	if err = cmd.Start(); err != nil {
 		return "", err
 	}
-	raw, readErr := io.ReadAll(io.LimitReader(stdout, 512*1024+1))
-	if readErr != nil || len(raw) > 512*1024 {
-		_ = cmd.Process.Kill()
+	result, readErr := scanConnectionEvents(stdout, engine, payload["connectionId"].(string), int(payload["limit"].(float64)))
+	if result.Truncated || readErr != nil {
+		cancel()
 	}
 	err = cmd.Wait()
-	if err != nil {
+	if parent.Err() != nil {
+		return "", parent.Err()
+	}
+	if readErr != nil {
+		return "", readErr
+	}
+	if err != nil && !result.Truncated {
 		return "", err
 	}
-	rows := []connectionEvent{}
-	for _, line := range strings.Split(string(raw), "\n") {
-		var entry struct {
-			Message   string `json:"MESSAGE"`
-			Timestamp string `json:"__REALTIME_TIMESTAMP"`
-		}
-		if json.Unmarshal([]byte(line), &entry) != nil {
-			continue
-		}
-		event, reason, ok := normalizeConnectionEvent(entry.Message, payload["connectionId"].(string))
-		if !ok {
-			continue
-		}
-		var micros int64
-		for _, c := range entry.Timestamp {
-			if c < '0' || c > '9' {
-				micros = 0
-				break
-			}
-			micros = micros*10 + int64(c-'0')
-		}
-		rows = append(rows, connectionEvent{micros / 1000, engine, event, reason})
-	}
-	limit := int(payload["limit"].(float64))
-	if len(rows) > limit {
-		rows = rows[len(rows)-limit:]
-	}
-	encoded, err := json.Marshal(map[string]any{"events": rows, "truncated": len(raw) > 512*1024})
+	encoded, err := json.Marshal(result)
 	return string(encoded), err
 }

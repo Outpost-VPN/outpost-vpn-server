@@ -450,14 +450,19 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export async function callAgent(request: { action: string; payload: Record<string, unknown> }, socketPath = config.agentSocket) {
+export async function callAgent(request: { action: string; payload: Record<string, unknown> }, socketPath = config.agentSocket, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   return new Promise<Record<string, unknown>>((resolve, reject) => {
     const socket = createConnection(socketPath);
     let response = "";
-    const timeout = request.action === "telemetry.read" ? 4_000 : request.action === "setup.finalize" || request.action === "update.apply" || request.action === "backup.restore"
+    const timeout = request.action === "network.ping" ? 40_000 : request.action === "telemetry.read" ? 4_000 : request.action === "setup.finalize" || request.action === "update.apply" || request.action === "backup.restore"
       ? 180_000
       : request.action === "engine.update" ? 240_000 : 30_000;
     socket.setTimeout(timeout);
+    const abort = () => socket.destroy(new Error("root-agent request cancelled"));
+    signal?.addEventListener("abort", abort, {once: true});
+    socket.once("close", () => signal?.removeEventListener("abort", abort));
+    if (signal?.aborted) abort();
     // Bun closes the readable side after net.Socket.end(), so a delayed agent
     // reply is lost. The newline terminates the request without half-closing it.
     socket.on("connect", () => socket.write(`${JSON.stringify(request)}\n`));

@@ -79,7 +79,17 @@ func handle(connection net.Conn) {
 		write(connection, response{OK: false, Error: err.Error()})
 		return
 	}
-	output, err := execute(request)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if request.Action == "network.ping" || request.Action == "logs.read" {
+		// Closing the API socket cancels only diagnostic child processes.
+		go func() {
+			var extra [1]byte
+			_, _ = connection.Read(extra[:])
+			cancel()
+		}()
+	}
+	output, err := execute(ctx, request)
 	if err != nil {
 		write(connection, response{OK: false, Error: err.Error(), Output: output})
 		return
@@ -87,10 +97,12 @@ func handle(connection net.Conn) {
 	write(connection, response{OK: true, Output: output})
 }
 
-func execute(request policy.Request) (string, error) {
+func execute(ctx context.Context, request policy.Request) (string, error) {
 	switch request.Action {
 	case "logs.read":
-		return readConnectionEvents(request.Payload)
+		return readConnectionEvents(ctx, request.Payload)
+	case "network.ping":
+		return probePing(ctx, request.Payload)
 	case "telemetry.read":
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
