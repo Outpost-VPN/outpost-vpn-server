@@ -14,11 +14,11 @@ revoke a passkey; revocation also ends sessions created with that passkey.
 Proxy users should receive individual connections and subscription links instead
 of panel access.
 
-> **Status:** `0.2.0-beta.8` fixes clean-VPS installation and complete backup
-> recovery, including optional runtime provisioning, service startup and firewall
-> recovery. Installation and restore procedures are in
-> [deployment](docs/DEPLOYMENT.md); transport validation is tracked in
-> [protocol expansion](docs/PROTOCOL-EXPANSION.md).
+> **Status:** `0.2.0-beta.9` adds resource and network diagnostics through MCP,
+> preserves last activity when presence is unknown, and fixes large gRPC uploads.
+> It includes the clean-VPS installation and full backup recovery fixes from beta.8.
+> See [diagnostics](docs/DIAGNOSTICS.md) and [deployment](docs/DEPLOYMENT.md).
+> Updating can briefly restart Hysteria to enable authenticated speed tests.
 
 ## Supported protocols
 
@@ -108,7 +108,7 @@ beside existing services or selecting alternative public ports is not supported.
 To install this beta instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.8 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.9 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,

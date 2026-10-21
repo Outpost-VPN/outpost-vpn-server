@@ -32,7 +32,7 @@ curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/o
 Для field test конкретного pre-release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.8 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.9 bash /tmp/outpost-install
 ```
 
 Bootstrap устанавливает `curl`, CA certificates и Minisign, определяет release, скачивает archive и signature с GitHub и проверяет встроенным public key до запуска release installer. Release installer повторно проверяет подпись, затем ставит Nginx, UFW, SQLite/age, pinned tunnel engines и актуальный Certbot из официального snap. Ubuntu 24.04 содержит Certbot 2.9, а IP certificates требуют Certbot 5.4+; поэтому apt-версия Certbot не используется.
@@ -101,7 +101,10 @@ Minisign-подпись ключом из уже установленного re
 возвращения `/healthz` именно с целевой версией. Статус операции фиксируется в
 SQLite самим привилегированным updater и после старта появляется в журнале.
 Hysteria и Xray продолжают работать, если обновлению не требуется безопасное
-согласование их versioned presets.
+согласование их versioned presets. В beta.9 Hysteria preset v3 включает
+authenticated speedTest: его применение может кратко перезапустить Hysteria.
+Явный пользовательский `speedTest: false` сохраняется. Выбирайте время
+обновления с учётом этого перерыва.
 
 CLI ниже остаётся recovery/developer-путём для локально собранного подписанного
 archive:

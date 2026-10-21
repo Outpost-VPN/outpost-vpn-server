@@ -102,6 +102,7 @@ try {
     console.log(`Recorded ${profiles.length} subscription responses from ${mode === "baseline" ? "the actual beta.4 server" : "the full restore source"}`);
   } else {
     const saved = JSON.parse(readFileSync(record, "utf8"));
+    if (mode === "verify" && YAML.parse(readFileSync("/etc/outpost/engines/hysteria.yaml", "utf8")).speedTest !== true) throw new Error("Hysteria speedtest preset was not applied");
     if (hash(identity()) !== saved.identity) throw new Error("Owner, passkey, credentials or master key changed");
     if (mode === "restored" && restoreIdentity() !== saved.restoreIdentity) throw new Error("Restored credentials, methods or routes changed");
     if (!saved.profiles?.length) throw new Error("Missing baseline subscription responses");
