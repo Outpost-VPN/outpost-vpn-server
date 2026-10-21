@@ -161,6 +161,8 @@ server {
     # The random gRPC service path is a credential-adjacent transport secret.
     location ^~ /__GRPC_SERVICE__/ {
         access_log off;
+        # A streaming tunnel has no fixed request-body size.
+        client_max_body_size 0;
         grpc_pass grpc://127.0.0.1:10001;
         grpc_read_timeout 1h;
         grpc_send_timeout 1h;

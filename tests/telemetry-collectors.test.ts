@@ -17,6 +17,39 @@ const active = (connections: ConnectionService, name: string) => {
 };
 
 describe("all-engine user telemetry", () => {
+  test("treats Mihomo null connections as an empty snapshot and preserves last activity after disconnect", async () => {
+    const fixture = database();
+    try {
+      const connections = new ConnectionService(fixture.db), user = active(connections, "User");
+      for (const id of engineIds) fixture.db.engines.recordInstallation(id, engines[id].version);
+      let sessions: Array<{id: string; metadata: {inboundUser: string}; upload: number; download: number}> | null = [
+        {id: "session", metadata: {inboundUser: user}, upload: 10, download: 50},
+      ];
+      const url = serve(() => Response.json({connections: sessions}));
+      const mihomo = new MihomoCollector(url, "fixture");
+      const collectors = engineIds.map((id): TrafficCollector => id === "mihomo" ? mihomo : {
+        id, async collect() {return {traffic: [], online: {}};},
+      });
+      const service = new TrafficService(fixture.db, collectors), at = new Date();
+      await service.collect(at);
+      expect(connections.get(user).presence?.status).toBe("online");
+
+      sessions = null;
+      expect(await mihomo.collect()).toEqual({traffic: [], online: {}});
+      await service.collect(new Date(at.getTime() + 5_000));
+      await service.collect(new Date(at.getTime() + 10_000));
+      expect(connections.get(user)).toMatchObject({
+        first_seen_at: at.toISOString(), last_seen_at: at.toISOString(), presence: {status: "offline"},
+      });
+      expect(fixture.db.raw.query("SELECT status, failures FROM monitor_states WHERE key = 'telemetry:mihomo'").get())
+        .toEqual({status: "available", failures: 0});
+      expect(service.overview("all").totals).toEqual({upload: 10, download: 50});
+
+      sessions = [];
+      expect(await mihomo.collect()).toEqual({traffic: [], online: {}});
+    } finally {fixture.close();}
+  });
+
   test("persists independent sessions and sums every engine without recounting a panel restart", async () => {
     const fixture = database();
     try {

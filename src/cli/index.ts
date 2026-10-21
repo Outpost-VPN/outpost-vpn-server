@@ -12,11 +12,15 @@ import { EngineRuntimeService } from "../server/services/engine-runtime";
 import { ConnectionService } from "../server/services/connections";
 import { OutpostApi } from "../shared/api";
 import {EngineReleases} from "../server/adapters/engine-releases";
+import {diagnose} from "./diagnose";
 
 const [command = "help", ...args] = Bun.argv.slice(2);
 
 try {
   switch (command) {
+    case "diagnose":
+      await diagnose(args);
+      break;
     case "engine-release-info": {
       const [engine, version, checksum] = args;
       if (!isEngine(engine) || !version) throw new Error("Unknown engine/version");
@@ -198,6 +202,7 @@ function help() {
   console.log(`Outpost CLI
 
 outpostctl doctor --url https://proxy.example.com
+outpostctl diagnose --operation UUID --interface en0 [--mihomo /path/to/mihomo] [--sing-box /path/to/sing-box] [--hysteria /path/to/hysteria]
 outpostctl deploy root@server
 outpostctl update root@server --bundle release.tar.gz [--signature release.tar.gz.minisig]
 outpostctl backup export backup.age

@@ -2,7 +2,7 @@ import type { OutpostDatabase } from "../db/database";
 import type { EngineId, PresenceStatus, TrafficPoint } from "../models";
 import {telemetryEngines} from "../../shared/engines";
 import { JournalService } from "./journal";
-import {ConnectionService} from "./connections";
+import {ConnectionService, ServiceError} from "./connections";
 
 export interface TelemetrySnapshot {
   traffic: TrafficPoint[];
@@ -93,44 +93,47 @@ export class TrafficService {
     return { upload, download, activity: Boolean(cursor && !reset && (upload > 0 || download > 0)), reset };
   }
 
-  overview(period: TrafficPeriod = "30d", timeZone = "UTC") {
-    const reference = new Date();
-    const since = periodStart(period, timeZone, reference);
-    const filter = since ? "WHERE traffic_samples.bucket_at >= ?" : "";
-    const params = since ? [since] as [string] : [] as [];
-    const totals = this.db.raw.query<{ upload: number; download: number }, [string] | []>(`
-      SELECT COALESCE(SUM(upload), 0) AS upload, COALESCE(SUM(download), 0) AS download
-      FROM traffic_samples ${filter}
-    `).get(...params) ?? { upload: 0, download: 0 };
-    const connectionRows = this.db.raw.query<{
-      connection_id: string; name: string; upload: number; download: number;
-    }, [string] | []>(`
-      SELECT connections.id AS connection_id, connections.name,
-        COALESCE(SUM(traffic_samples.upload), 0) AS upload,
-        COALESCE(SUM(traffic_samples.download), 0) AS download
-      FROM connections LEFT JOIN traffic_samples ON traffic_samples.connection_id = connections.id
-        ${since ? "AND traffic_samples.bucket_at >= ?" : ""}
-      WHERE connections.archived_at IS NULL
-      GROUP BY connections.id ORDER BY upload + download DESC
+  overview(period: TrafficPeriod = "30d", timeZone = "UTC", options: {
+    connectionId?: string; from?: string; to?: string; includeSeries?: boolean; resolution?: "auto" | "5m" | "1h" | "1d"; maxPoints?: number;
+  } = {}) {
+    const reference = new Date(), since = options.from ?? periodStart(period, timeZone, reference), until = options.to ?? reference.toISOString();
+    if ((since && !Number.isFinite(Date.parse(since))) || !Number.isFinite(Date.parse(until)) || (since && Date.parse(since) > Date.parse(until))) throw new ServiceError(400, "Invalid traffic time range");
+    const clauses = ["bucket_at <= ?"], params: Array<string | number> = [until];
+    if (since) {clauses.push("bucket_at >= ?"); params.push(since);}
+    if (options.connectionId) {clauses.push("connection_id = ?"); params.push(options.connectionId);}
+    const where = `WHERE ${clauses.join(" AND ")}`;
+    const totals = this.db.raw.query<{upload: number; download: number}, Array<string | number>>(`
+      SELECT COALESCE(SUM(upload),0) AS upload, COALESCE(SUM(download),0) AS download FROM traffic_samples ${where}
+    `).get(...params)!;
+    const rows = this.db.raw.query<{connection_id: string; upload: number; download: number}, Array<string | number>>(`
+      SELECT connection_id,SUM(upload) AS upload,SUM(download) AS download FROM traffic_samples ${where} GROUP BY connection_id
     `).all(...params);
-    const connectionSeries = this.db.raw.query<{
-      connection_id: string; bucket_at: string; upload: number; download: number;
-    }, [string] | []>(`
-      SELECT connection_id, bucket_at, SUM(upload) AS upload, SUM(download) AS download
-      FROM traffic_samples ${filter}
-      GROUP BY connection_id, bucket_at ORDER BY bucket_at
+    const earliest = since ?? this.db.raw.query<{at: string | null}, Array<string | number>>(`SELECT MIN(bucket_at) AS at FROM traffic_samples ${where}`).get(...params)?.at ?? until;
+    const maxPoints = Math.max(1, Math.min(1000, options.maxPoints ?? 200));
+    const requested = {"5m": 300_000, "1h": 3_600_000, "1d": 86_400_000}[options.resolution as "5m" | "1h" | "1d"];
+    const originMs = requested ? 0 : Math.floor(Date.parse(earliest) / 300_000) * 300_000;
+    const resolutionMs = requested ?? Math.max(300_000, Math.ceil((Date.parse(until) - originMs + 1) / maxPoints / 300_000) * 300_000);
+    const seriesRows = options.includeSeries === false ? [] : this.db.raw.query<{connection_id: string; at: number; upload: number; download: number}, Array<string | number>>(`
+      SELECT connection_id,CAST((unixepoch(bucket_at)*1000-${originMs})/${resolutionMs} AS INTEGER)*${resolutionMs}+${originMs} AS at,
+        SUM(upload) AS upload,SUM(download) AS download FROM traffic_samples ${where} GROUP BY connection_id,at ORDER BY at
     `).all(...params);
-    const connections = connectionRows.map((connection) => ({
-      ...connection,
-      series: connectionSeries.filter((point) => point.connection_id === connection.connection_id)
-        .map(({ connection_id: _connectionId, ...point }) => point),
-    }));
-    const series = this.db.raw.query<{ bucket_at: string; upload: number; download: number }, [string] | []>(`
-      SELECT bucket_at, SUM(upload) AS upload, SUM(download) AS download
-      FROM traffic_samples ${filter}
-      GROUP BY bucket_at ORDER BY bucket_at
-    `).all(...params);
-    return { period, from: since, to: reference.toISOString(), totals, connections, series, coveredEngines: telemetryEngines };
+    const seriesFor = (id?: string) => {
+      const points = new Map<number, {bucket_at: string; upload: number; download: number}>();
+      for (const row of seriesRows) {
+        if (id && row.connection_id !== id) continue;
+        const point = points.get(row.at) ?? {bucket_at: new Date(row.at).toISOString(), upload: 0, download: 0};
+        point.upload += row.upload; point.download += row.download; points.set(row.at, point);
+      }
+      const values = [...points.values()];
+      if (values.length > maxPoints && requested) throw new ServiceError(400, "Traffic series exceeds maxPoints; use auto resolution");
+      return values;
+    };
+    const connections = this.connections.list().filter(c => !c.archived_at && (!options.connectionId || c.id === options.connectionId)).map(c => ({
+      connection_id: c.id, name: c.name, upload: rows.find(row => row.connection_id === c.id)?.upload ?? 0,
+      download: rows.find(row => row.connection_id === c.id)?.download ?? 0, series: seriesFor(c.id),
+    })).sort((a,b) => b.upload + b.download - a.upload - a.download);
+    return {period, from: since, to: until, totals, connections, series: seriesFor(), resolutionMs,
+      coveredEngines: telemetryEngines, retention: {fiveMinuteHours: 48, hourlyDays: 90}};
   }
 
   compact(reference = new Date()) {

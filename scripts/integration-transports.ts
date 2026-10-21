@@ -1,6 +1,7 @@
 import { binary, command, expectBody, waitForPort, freePorts, listen, ProcessGroup } from "./lib/native-integration";
-import { createServer } from "node:net";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import YAML from "yaml";
@@ -20,15 +21,17 @@ const nginx = binary("OUTPOST_NGINX_BINARY", "nginx");
 const curl = binary("OUTPOST_CURL_BINARY", "curl");
 const openssl = binary("OUTPOST_OPENSSL_BINARY", "openssl");
 const body = "Outpost transport integration\n";
-const origin = createServer((socket) => {
-  socket.once("data", () => socket.end([
-    "HTTP/1.1 200 OK",
-    "Content-Type: text/plain",
-    `Content-Length: ${Buffer.byteLength(body)}`,
-    "Connection: close",
-    "",
-    body,
-  ].join("\r\n")));
+const origin = createServer((request, response) => {
+  const hash = createHash("sha256");
+  let received = 0;
+  request.on("data", (chunk: Buffer) => {
+    received += chunk.length;
+    hash.update(chunk);
+  });
+  request.on("end", () => {
+    response.setHeader("Content-Type", "text/plain");
+    response.end(request.method === "POST" ? `Uploaded ${received} bytes: ${hash.digest("hex")}\n` : body);
+  });
 });
 const originPort = await listen(origin);
 
@@ -78,6 +81,9 @@ try {
   await Promise.all([waitForPort(xhttpPort), waitForPort(grpcPort)]);
 
   const nginxConfig = join(directory, "nginx.conf");
+  const template = readFileSync(join(root, "infra/nginx/outpost.conf.template"), "utf8");
+  const grpcLocation = template.match(/    location \^~ \/__GRPC_SERVICE__\/ \{[\s\S]*?\n    \}/)?.[0];
+  if (!grpcLocation) throw new Error("Production gRPC location not found");
   writeFileSync(nginxConfig, `
 daemon off;
 pid ${join(directory, "nginx.pid")};
@@ -96,9 +102,7 @@ http {
       proxy_buffering off;
       proxy_request_buffering off;
     }
-    location ^~ /${grpcService}/ {
-      grpc_pass grpc://127.0.0.1:${grpcPort};
-    }
+${grpcLocation.replaceAll("__GRPC_SERVICE__", grpcService).replaceAll("__DOMAIN__", "localhost").replace("127.0.0.1:10001", `127.0.0.1:${grpcPort}`)}
   }
 }
 `);
@@ -147,6 +151,17 @@ async function verifyXrayTransport(
   const child = launch([xray, "run", "-config", clientConfig]);
   await waitForPort(socksPort);
   await expectBody([curl, "--noproxy", "", "--silent", "--show-error", "--fail", "--max-time", "8", "--socks5-hostname", `127.0.0.1:${socksPort}`, `http://127.0.0.1:${originPort}/`], "Outpost transport integration");
+  if (network === "grpc") {
+    const payload = Buffer.alloc(2 * 1024 * 1024, 0x5a);
+    const upload = join(directory, "grpc-upload.bin");
+    writeFileSync(upload, payload);
+    const digest = createHash("sha256").update(payload).digest("hex");
+    await expectBody([
+      curl, "--noproxy", "", "--silent", "--show-error", "--fail", "--max-time", "8",
+      "--socks5-hostname", `127.0.0.1:${socksPort}`, "--header", "Expect:",
+      "--data-binary", `@${upload}`, `http://127.0.0.1:${originPort}/upload`,
+    ], `Uploaded ${payload.length} bytes: ${digest}`, 1);
+  }
   child.kill();
   await child.exited;
 }

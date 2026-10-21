@@ -210,11 +210,6 @@ tag outpost-home-connections
 	def scale connection
 		Math.max(0, Math.min(100, usage(connection) / maximum * 100))
 
-	def activity connection
-		return t('connection.suspended') if connection.suspended_at
-		return t('Онлайн') if fmt.connectionOnline(connection)
-		fmt.seen(connection)
-
 	def connectionspage
 		store.goto('/connections')
 
@@ -238,7 +233,7 @@ tag outpost-home-connections
 					<div.usage>
 						<div.bar><span [w:{scale(connection)}%]>
 						<b> fmt.bytes(usage(connection))
-					<span.activity .online=fmt.connectionOnline(connection) .paused=!!connection.suspended_at> activity(connection)
+					<span.activity .online=fmt.connectionOnline(connection) .paused=!!connection.suspended_at title=fmt.connectionPresence(connection)> fmt.activity(connection)
 
 	css self
 		d:block mt:18px px:24px pb:24px

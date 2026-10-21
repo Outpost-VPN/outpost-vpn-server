@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed engines.json
@@ -46,6 +48,16 @@ type Request struct {
 
 func Validate(request Request) error {
 	switch request.Action {
+	case "logs.read":
+		engine, ok := request.Payload["engine"].(string)
+		id, validID := request.Payload["connectionId"].(string)
+		since, validSince := request.Payload["since"].(float64)
+		limit, validLimit := request.Payload["limit"].(float64)
+		now := float64(time.Now().UnixMilli())
+		if !ok || !isEngine(engine) || !validID || !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`).MatchString(id) || !validSince || since < now-86400000 || since > now || !validLimit || limit < 1 || limit > 100 || limit != float64(int(limit)) || len(request.Payload) != 4 {
+			return errors.New("invalid managed connection log query")
+		}
+		return nil
 	case "telemetry.read":
 		if request.Payload["engine"] != "amneziawg" || len(request.Payload) != 1 {
 			return errors.New("only managed AmneziaWG telemetry is allowed")

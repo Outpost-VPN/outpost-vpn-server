@@ -128,10 +128,17 @@ minisign -S -W -s "$lab/test.key" -m /var/lib/outpost/incoming/update.tar.gz
   /var/lib/outpost/incoming/update.tar.gz.minisig "$version"
 ready
 test "$(basename "$(readlink -f /opt/outpost/current)")" = "$version"
-test "$(systemctl show -p MainPID --value hysteria-server)" = "$before_hysteria"
+after_hysteria=$(systemctl show -p MainPID --value hysteria-server)
+test "$after_hysteria" -gt 0
+# Preset v3 deliberately enables authenticated speedtest on this default fixture.
+test "$after_hysteria" != "$before_hysteria"
 test "$(systemctl show -p MainPID --value xray)" = "$before_xray"
 fixture verify
-echo "Signed baseline update passed without restarting Hysteria/Xray"
+OUTPOST_RESTART_HYSTERIA=1 OUTPOST_RESTART_XRAY=1 \
+  /opt/outpost/current/infra/scripts/outpostctl reconcile-engine-presets
+test "$(systemctl show -p MainPID --value hysteria-server)" = "$after_hysteria"
+test "$(systemctl show -p MainPID --value xray)" = "$before_xray"
+echo "Signed baseline update passed with Hysteria preset migration and idempotent reconciliation; Xray stayed running"
 
 # A full source has optional engines and methods; the destination has neither
 # their binaries nor their prior service state. Exercise actual provisioning.

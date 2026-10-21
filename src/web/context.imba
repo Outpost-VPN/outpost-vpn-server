@@ -88,12 +88,14 @@ export const fmt = {
 		return 'globe' if name == 'nginx'
 		'circles-three-plus'
 	bytes: do(value)
+		return '—' if value == null
 		const amount = Number(value or 0)
 		return t('0 Б') if !amount
 		const units = [t('Б'), t('КБ'), t('МБ'), t('ГБ'), t('ТБ')]
 		const index = Math.max(0, Math.min(Math.floor(Math.log(amount) / Math.log(1024)), units.length - 1))
 		"{new Intl.NumberFormat(intl!, {maximumFractionDigits: index > 2 ? 1 : 0}).format(amount / Math.pow(1024, index))} {units[index]}"
 	rate: do(value)
+		return '—' if value == null
 		const amount = Number(value or 0) * 8
 		return t('0 бит/с') unless amount
 		const units = [t('бит/с'), t('Кбит/с'), t('Мбит/с'), t('Гбит/с')]
@@ -118,6 +120,14 @@ export const fmt = {
 		return t('Архивируем') if connection.status == 'archiving'
 		return t('Статус неизвестен') if connection.presence == 'unknown'
 		t('Не в сети')
+	activity: do(connection)
+		return t('connection.suspended') if connection.suspended_at
+		return t('Готовим подключение') if connection.status == 'provisioning'
+		return t('Перевыпускаем ссылку') if connection.status == 'rotating'
+		return t('Архивируем') if connection.status == 'archiving'
+		return t('Онлайн') if fmt.connectionOnline(connection)
+		return t('Активность неизвестна') if connection.presence == 'unknown' and !connection.last_seen_at
+		fmt.seen(connection)
 	seen: do(connection)
 		return t('В сети') if fmt.connectionOnline(connection)
 		return t('Не использовалось') unless connection.last_seen_at

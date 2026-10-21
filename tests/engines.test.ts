@@ -19,6 +19,18 @@ import {engineApi, engineApiSecret} from "../src/server/adapters/engine-api";
 import {runtimePorts} from "../src/server/adapters/engine-ports";
 
 describe("protected engine templates", () => {
+  test("keeps Hysteria installation and runtime defaults free of fixed bandwidth targets", () => {
+    const templates = [
+      renderHysteria(defaultHysteriaTemplate),
+      readFileSync(resolve(import.meta.dir, "../infra/config/hysteria.yaml.template"), "utf8"),
+    ];
+    for (const template of templates) {
+      const profile = YAML.parse(template);
+      expect(profile.bandwidth).toBeUndefined();
+      expect(profile.ignoreClientBandwidth).toBeUndefined();
+    }
+  });
+
   test("keeps the authenticated sing-box telemetry service on loopback and out of public ingress", () => {
     const template = defaultEngineTemplates["sing-box"];
     const rendered = renderEngine("sing-box", template, [], []);

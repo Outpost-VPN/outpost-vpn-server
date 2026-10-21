@@ -94,7 +94,7 @@ rollback_armed=1
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends nginx snapd ufw unzip curl ca-certificates age sqlite3 minisign openssl iproute2 iptables
+apt-get install -y --no-install-recommends nginx snapd ufw unzip curl ca-certificates age sqlite3 minisign openssl iproute2 iptables iputils-ping
 systemctl enable --now snapd.socket
 snap wait system seed.loaded
 snap install core >/dev/null 2>&1 || snap refresh core >/dev/null

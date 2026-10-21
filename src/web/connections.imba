@@ -81,15 +81,6 @@ tag outpost-connections
 		return t('подключения') if mod10 >= 2 and mod10 <= 4 and (mod100 < 12 or mod100 > 14)
 		t('подключений')
 
-	def activity connection
-		return t('connection.suspended') if connection.suspended_at
-		return t('Готовим подключение') if connection.status == 'provisioning'
-		return t('Перевыпускаем ссылку') if connection.status == 'rotating'
-		return t('Архивируем') if connection.status == 'archiving'
-		return t('Онлайн') if fmt.connectionOnline(connection)
-		return t('Активность неизвестна') if connection.presence == 'unknown'
-		fmt.seen(connection)
-
 	def traffic connection
 		fmt.connectionTrafficRow(connection, store.data.traffic)
 
@@ -157,7 +148,7 @@ tag outpost-connections
 								<outpost-avatar value=connection.avatar size="48">
 								<div>
 									<button.name-button type="button" @click.stop=(do edit(connection)) aria-label=t('Редактировать {name}', {name: connection.name})> connection.name
-									<small.connection-state .online=fmt.connectionOnline(connection) .paused=!!connection.suspended_at .pending=(connection.presence == 'unknown' or connection.status != 'active')> activity(connection)
+									<small.connection-state .online=fmt.connectionOnline(connection) .paused=!!connection.suspended_at .pending=(connection.presence == 'unknown' or connection.status != 'active') title=fmt.connectionPresence(connection)> fmt.activity(connection)
 							<div.trend>
 								<outpost-line-chart points=trend(connection) mini=true tone="neutral">
 							<div.traffic>

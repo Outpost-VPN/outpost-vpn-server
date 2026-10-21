@@ -1,6 +1,7 @@
 export type ApiOptions = {
   url: string;
   token?: string;
+  timeoutMs?: number;
 };
 
 export class OutpostApi {
@@ -17,6 +18,7 @@ export class OutpostApi {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      ...(this.options.timeoutMs ? {signal: AbortSignal.timeout(this.options.timeoutMs)} : {}),
     }));
     const text = await response.text();
     const payload = text ? safeJson(text) : null;

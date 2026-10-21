@@ -66,6 +66,7 @@ const previews: Record<OperationAction, (payload: Record<string, unknown>, conte
 
 export class OperationService {
   private listeners = new Set<(event: unknown) => void>();
+  private tasks = new Map<string, AbortController>();
   private journal: JournalService;
 
   constructor(
@@ -78,18 +79,76 @@ export class OperationService {
   ) {
     this.journal = journal ?? new JournalService(db);
     this.reconcileUpdates();
+    this.db.raw.query("UPDATE operations SET status = 'failed', error = 'Diagnostic interrupted by application restart', updated_at = ? WHERE kind = 'diagnostic' AND status IN ('queued', 'running')").run(now());
+  }
+
+  get(id: string, includeSamples = false) {
+    const operation = this.rows(id, includeSamples)[0];
+    if (!operation) throw new ServiceError(404, "Operation not found");
+    return operation;
+  }
+
+  private rows(id?: string, includeSamples = false) {
+    const result = includeSamples ? "result_json" : "CASE WHEN kind='diagnostic' THEN json_remove(result_json,'$.resources') ELSE result_json END AS result_json";
+    return this.db.raw.query<{
+      id: string; kind: string; status: string; progress: number; message: string; result_json: string | null;
+      error: string | null; created_at: string; updated_at: string;
+    }, string[]>(`SELECT id,kind,status,progress,message,error,created_at,updated_at,${result} FROM operations
+      ${id ? "WHERE id = ?" : "ORDER BY created_at DESC LIMIT 50"}`).all(...(id ? [id] : [])).map(row => {
+      const {result_json, ...operation} = row;
+      return {...operation, result: result_json ? JSON.parse(result_json) : null};
+    });
+  }
+
+  runDiagnostic(input: unknown, actor: string, run: (signal: AbortSignal, report: (result: unknown, progress?: number) => void) => Promise<unknown>) {
+    const operation = this.db.raw.transaction(() => {
+      const operation = this.enqueue("diagnostic", {request: input});
+      this.db.audit({actor, action: "diagnostic.run", resource: "operation", resourceId: operation.id, after: input});
+      return operation;
+    })();
+    const controller = new AbortController();
+    this.tasks.set(operation.id, controller);
+    void Promise.resolve().then(async () => {
+      if (controller.signal.aborted) {this.tasks.delete(operation.id); return;}
+      this.update(operation.id, "running", 0, "Diagnostic running", {request: input});
+      try {
+        const result = await run(controller.signal, (result, progress = 0) => {
+          if (!controller.signal.aborted) this.update(operation.id, "running", progress, "Diagnostic running", result);
+        });
+        if (!controller.signal.aborted) this.update(operation.id, "completed", 100, "Diagnostic completed", result);
+      } catch {
+        if (!controller.signal.aborted) {
+          this.db.raw.query("UPDATE operations SET status = 'failed', error = 'Diagnostic failed; inspect recorded stages', updated_at = ? WHERE id = ?").run(now(), operation.id);
+          this.emit(this.get(operation.id));
+        }
+      } finally {this.tasks.delete(operation.id);}
+    });
+    return this.get(operation.id);
+  }
+
+  cancelDiagnostic(id: string, actor: string) {
+    const operation = this.get(id);
+    if (operation.kind !== "diagnostic") throw new ServiceError(400, "Only diagnostics can be cancelled");
+    if (!["queued", "running"].includes(operation.status)) return operation;
+    this.db.raw.transaction(() => {
+      this.db.raw.query("UPDATE operations SET status = 'cancelled', message = 'Diagnostic cancelled', updated_at = ? WHERE id = ?").run(now(), id);
+      this.db.audit({actor, action: "diagnostic.cancel", resource: "operation", resourceId: id});
+    })();
+    this.tasks.get(id)?.abort();
+    this.emit(this.get(id));
+    return this.get(id);
+  }
+
+  private enqueue(kind: string, result: unknown = null) {
+    const operation = {id: crypto.randomUUID(), kind, status: "queued", progress: 0, message: "operation.queued"};
+    this.db.raw.query("INSERT INTO operations (id,kind,status,progress,message,result_json,created_at,updated_at) VALUES (?,?,'queued',0,?,?,?,?)")
+      .run(operation.id, kind, operation.message, result === null ? null : JSON.stringify(result), now(), now());
+    return operation;
   }
 
   list() {
     this.reconcileUpdates();
-    return this.db.raw.query<{
-      id: string; kind: string; status: string; progress: number; message: string; result_json: string | null;
-      error: string | null; created_at: string; updated_at: string;
-    }, []>("SELECT * FROM operations ORDER BY created_at DESC LIMIT 50").all().map((row) => ({
-      ...row,
-      result: row.result_json ? JSON.parse(row.result_json) : null,
-      result_json: undefined,
-    }));
+    return this.rows();
   }
 
   preview(action: OperationAction, payload: Record<string, unknown>, actor = "owner") {
@@ -116,13 +175,9 @@ export class OperationService {
       throw new ServiceError(409, "Подтверждение недействительно, истекло или не соответствует операции");
     }
     this.validate(action, payload);
-    const operation = { id: crypto.randomUUID(), kind: action, status: "queued", progress: 0, message: "operation.queued" };
-    this.db.raw.transaction(() => {
+    const operation = this.db.raw.transaction(() => {
       this.db.raw.query("UPDATE confirmations SET used_at = ? WHERE id = ?").run(now(), confirmationId);
-      this.db.raw.query(`
-        INSERT INTO operations (id, kind, status, progress, message, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(operation.id, operation.kind, operation.status, operation.progress, operation.message, now(), now());
+      const operation = this.enqueue(action);
       const auditId = this.db.audit({ actor, action: `${action}.confirm`, resource: "operation", resourceId: operation.id, after: redactPayload(action, payload) });
       const startedType = operationEvent(action, "started");
       if (startedType) {
@@ -135,6 +190,7 @@ export class OperationService {
           data: operationData(action, payload),
         });
       }
+      return operation;
     })();
     void this.execute(operation.id, action, payload, actor);
     return operation;

@@ -26,7 +26,7 @@ import { OperationService } from "./services/operations";
 import { SystemService } from "./services/system";
 import { EngineRuntimeService } from "./services/engine-runtime";
 import { EngineConfigService } from "./adapters/engines";
-import { JournalService, type JournalScope } from "./services/journal";
+import { JournalService } from "./services/journal";
 import type { JournalCategory } from "./models";
 import type {ProtocolId} from "../shared/protocols";
 import { MonitoringService, prepareSetupMonitoring } from "./services/monitoring";
@@ -37,6 +37,10 @@ import { DashboardEvents, type DashboardReason } from "./services/dashboard-even
 import { metadata, type Locale } from "../shared/i18n";
 import { errorCode, languageCookie, localize, localizePresentation, requestLanguage } from "./i18n";
 import { handleMcp } from "./mcp";
+import {readJsonBody as readJson} from "./http-body";
+import {DiagnosticService} from "./services/diagnostics";
+import {ConnectionDiagnostics} from "./services/connection-diagnostics";
+import {eventQuerySchema, trafficQuerySchema} from "../shared/diagnostics";
 
 type Owner = { id: string; timezone: string; language: Locale; scopes?: string[] };
 type Handler = (context: RequestContext) => Response | Promise<Response>;
@@ -68,6 +72,8 @@ export class HttpApplication {
   readonly setup: SetupService;
   readonly rulesets: RuleSetService;
   readonly dashboardEvents: DashboardEvents;
+  readonly diagnostics: DiagnosticService;
+  readonly connectionDiagnostics: ConnectionDiagnostics;
   private registry: Route[] = [];
 
   constructor(
@@ -99,8 +105,10 @@ export class HttpApplication {
       const stored = this.engineConfigs.state(engine)[engine]!;
       return this.engineConfigs.apply(engine, stored.template, this.activeCredentials(), "system:install", "engine.config_applied", undefined, undefined, false);
     }, (task) => this.connectionSync.reconcile(task));
-    this.system = new SystemService(db, this.journal);
     this.monitoring = new MonitoringService(db, this.journal, undefined, undefined, { setup: config.setup });
+    this.system = new SystemService(db, this.journal, undefined, this.monitoring.resources);
+    this.diagnostics = new DiagnosticService(db, this.operations, this.monitoring.resources, this.connections);
+    this.connectionDiagnostics = new ConnectionDiagnostics(db, this.connections);
     this.operations.subscribe(() => this.dashboardEvents.publish("operations"));
     this.registerRoutes();
   }
@@ -161,7 +169,7 @@ export class HttpApplication {
           params,
           owner,
           language,
-          json: () => readJson(request),
+          json: <T>() => readJson<T>(request),
         });
         const reason = dashboardMutation(request.method, url.pathname, endpoint.public, response.status);
         if (reason) this.dashboardEvents.publish(reason);
@@ -258,6 +266,7 @@ export class HttpApplication {
     });
 
     this.get("/api/v1/connections", false, () => json({ connections: publicConnections(this.connections.list()) }));
+    this.get("/api/v1/connections/:id/diagnostics", false, async ctx => json(await this.connectionDiagnostics.get(ctx.params.id!, ctx.url.searchParams.get("includeEvents") === "true")));
     this.post("/api/v1/connections", false, async (ctx) => {
       const created = this.connections.create(await ctx.json(), actor(ctx));
       const state = await this.connectionSync.activate(created.id);
@@ -319,18 +328,24 @@ export class HttpApplication {
       return json(await this.rulesets.refresh(true));
     });
 
-    this.get("/api/v1/traffic", false, (ctx) => json(this.traffic.overview(period(ctx.url.searchParams.get("period")), ctx.owner?.timezone)));
+    this.get("/api/v1/traffic", false, (ctx) => {
+      const options = trafficQuerySchema.parse(queryOptions(ctx.url, ["connectionId", "from", "to", "includeSeries", "resolution", "maxPoints"]));
+      if (options.connectionId) this.connections.get(options.connectionId);
+      return json(this.traffic.overview(period(ctx.url.searchParams.get("period")), ctx.owner?.timezone, options));
+    });
+    this.get("/api/v1/system/metrics", false, async () => {
+      const resources = this.monitoring.resources;
+      if (!resources.current().sampledAt || resources.current().ageMs! >= 5_000) await resources.sample();
+      return json(resources.current());
+    });
     this.get("/api/v1/system", false, async (ctx) => {
       await this.monitoring.refreshServices();
       return json(localizePresentation(await this.system.state(), ctx.language));
     });
     this.get("/api/v1/system/events", false, (ctx) => {
-      const scope = journalScope(ctx.url.searchParams.get("scope"));
       const category = journalCategories(ctx.url.searchParams.get("category"));
-      const q = ctx.url.searchParams.get("q") ?? undefined;
-      const before = optionalPositiveInteger(ctx.url.searchParams.get("before"));
-      const limit = optionalPositiveInteger(ctx.url.searchParams.get("limit"));
-      return json(this.journal.list({ scope, category, q, before, limit, language: ctx.language }));
+      const options = eventQuerySchema.parse(queryOptions(ctx.url, ["scope", "engine", "connectionId", "from", "to", "q", "before", "limit"]));
+      return json(this.journal.list({ ...options, category, language: ctx.language }));
     });
     this.get("/api/v1/engines", false, () => json({versions: this.db.engines.versions(), releases: this.db.engines.releaseChecks(), definitions: engineMetadata, capabilities: this.methods.state().capabilities}));
     this.post("/api/v1/engines/check", false, async (ctx) => json(await this.db.engines.checkReleases(actor(ctx))));
@@ -386,6 +401,20 @@ export class HttpApplication {
 
     this.get("/api/v1/operations", false, (ctx) => json({ operations: localizePresentation(this.operations.list(), ctx.language) }));
     this.get("/api/v1/operations/events", false, (ctx) => this.operationEvents(ctx.language));
+    this.get("/api/v1/operations/:id", false, ctx => json(this.operations.get(ctx.params.id!, ctx.url.searchParams.get("includeSamples") === "true")));
+    this.post("/api/v1/diagnostics", false, async ctx => json(this.diagnostics.run(await ctx.json(), actor(ctx)), 202));
+    this.get("/api/v1/diagnostics/:id", false, ctx => json(this.diagnostics.get(ctx.params.id!, ctx.url.searchParams.get("includeSamples") === "true")));
+    this.post("/api/v1/diagnostics/:id/cancel", false, ctx => json(this.diagnostics.cancel(ctx.params.id!, actor(ctx))));
+    this.post("/api/v1/diagnostics/:id/claim", false, ctx => {
+      requireApiScope(ctx, "connections:secret");
+      return json(this.diagnostics.claim(ctx.params.id!, actor(ctx)));
+    });
+    this.post("/api/v1/diagnostics/:id/report", false, async ctx => {
+      const body = await ctx.json<{reportToken: string; report: unknown; complete?: boolean}>();
+      if (typeof body.reportToken !== "string" || body.reportToken.length > 200) throw new ServiceError(400, "Invalid report token");
+      if (body.complete !== undefined && typeof body.complete !== "boolean") throw new ServiceError(400, "Invalid completion flag");
+      return json(this.diagnostics.report(ctx.params.id!, actor(ctx), body.reportToken, body.report, body.complete));
+    });
     this.get("/api/v1/backups/:name", false, (ctx) => this.backupDownload(ctx.params.name!));
     this.post("/api/v1/operations/preview", false, async (ctx) => {
       const body = await ctx.json<{ action: Parameters<OperationService["preview"]>[0]; payload?: Record<string, unknown> }>();
@@ -699,6 +728,14 @@ function publicConnection<T extends { presence?: { status?: unknown } }>(connect
   return { ...visible, presence: presence?.status ?? "unknown" };
 }
 
+function queryOptions(url: URL, names: string[]) {
+  return Object.fromEntries(names.flatMap(name => {
+    const value = url.searchParams.get(name);
+    if (value === null) return [];
+    return [[name, ["before", "limit", "maxPoints"].includes(name) ? Number(value) : name === "includeSeries" && ["true", "false"].includes(value) ? value === "true" : value]];
+  }));
+}
+
 function publicConnections<T extends { presence?: { status?: unknown } }>(connections: T[]) {
   return connections.map(publicConnection);
 }
@@ -737,12 +774,6 @@ async function contentResponse(
   }
   headers.set("content-length", String(Buffer.byteLength(body)));
   return new Response(head ? null : body, { headers });
-}
-
-async function readJson(request: Request) {
-  const length = Number(request.headers.get("content-length") ?? "0");
-  if (length > 1024 * 1024) throw new ServiceError(413, "Запрос слишком большой");
-  try { return await request.json(); } catch { throw new ServiceError(400, "Ожидался корректный JSON"); }
 }
 
 function errorResponse(error: unknown, requestId: string, language: Locale) {
@@ -824,6 +855,7 @@ function authorized(method: string, path: string, scopes: string[]) {
   if (/^\/api\/v1\/connections\/[^/]+\/rotate$/.test(path)) return scopes.includes("connections:rotate");
   const read = method === "GET";
   const required = path === "/api/v1/status" ? "status:read"
+    : path.startsWith("/api/v1/diagnostics") ? `diagnostics:${read ? "read" : "run"}`
     : path.startsWith("/api/v1/dashboard") ? "owner:session"
     : path === "/api/v1/me" ? `settings:${read ? "read" : "write"}`
     : path.startsWith("/api/v1/connections") ? `connections:${read ? "read" : "write"}`
@@ -845,21 +877,10 @@ function period(value: string | null): TrafficPeriod {
   return periods.includes(value as TrafficPeriod) ? value as TrafficPeriod : "30d";
 }
 
-function journalScope(value: string | null): JournalScope {
-  const scopes: JournalScope[] = ["all", "important", "errors", "changes"];
-  return scopes.includes(value as JournalScope) ? value as JournalScope : "all";
-}
-
 function journalCategories(value: string | null): JournalCategory[] | undefined {
   const categories: JournalCategory[] = ["connections", "routes", "engines", "maintenance", "security", "system"];
   const selected = (value ?? "").split(",").filter((item) => categories.includes(item as JournalCategory)) as JournalCategory[];
   return selected.length ? [...new Set(selected)] : undefined;
-}
-
-function optionalPositiveInteger(value: string | null) {
-  if (!value) return undefined;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function engineName(value: string) {

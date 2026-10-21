@@ -35,6 +35,11 @@ No `command`, `args`, `npx`, or `outpostctl mcp` process is required.
 | `outpost_status` | `status:read` |
 | `settings_get`, `settings_update` | `settings:read`, `settings:write` respectively |
 | `traffic_get` | `traffic:read` |
+| `system_metrics_get`, `events_get` | `system:read` |
+| `connection_diagnostics_get` | `connections:read` |
+| `operations_get` | `operations:read` |
+| `diagnostic_get` | `diagnostics:read` |
+| `diagnostic_run`, `diagnostic_cancel` | `diagnostics:run` |
 | `connections_list`, `connection_create` | `connections:read`, `connections:write` respectively |
 | `connection_subscription` | `connections:secret` |
 | `routes_get` | `routes:read` |
@@ -47,6 +52,11 @@ validation, scopes, audit actors, and the preview/confirmation contract for
 sensitive operations. Network settings are described in
 [CLIENT-NETWORK.md](CLIENT-NETWORK.md). They apply to the next subscription
 response; devices still need to refresh and apply their profiles.
+
+Resource snapshots, connection/collector diagnostics, filtered journal/traffic,
+saved operation results, active network probes and the optional client runner are
+documented in [DIAGNOSTICS.md](DIAGNOSTICS.md). Reading and launching diagnostics
+use distinct scopes. Existing API tokens are not expanded automatically.
 
 ## Transport and deployment
 

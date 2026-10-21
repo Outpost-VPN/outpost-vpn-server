@@ -1,11 +1,12 @@
 {
   "name": "outpost-vpn-server",
-  "version": "0.2.0-beta.8",
+  "version": "0.2.0-beta.9",
   "packageManager": "bun@1.4.2",
   "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
+    "diagnose": "bun scripts/diagnose.ts",
     "dev": "OUTPOST_DEMO=1 OUTPOST_DATA_DIR=.data bun --watch src/server/index.ts",
     "dev:web": "bun run assets && bunx bimba src/web/app.imba --outdir public --watch",
     "build": "bun run build:web && bun run build:server && bun run build:cli",

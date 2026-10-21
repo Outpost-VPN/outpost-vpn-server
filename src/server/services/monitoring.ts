@@ -1,12 +1,11 @@
 import { engines, engineIds, serviceNames } from "../../shared/engines";
-import { readFileSync, statfsSync } from "node:fs";
-import { cpus, freemem, loadavg, totalmem } from "node:os";
 import { connect as tcpConnect, isIP } from "node:net";
 import { connect as tlsConnect } from "node:tls";
 import { config } from "../config";
 import type { OutpostDatabase } from "../db/database";
 import type { JournalSeverity } from "../models";
 import { JournalService } from "./journal";
+import {ResourceService, diskUsage} from "./resources";
 
 const monitoredServices = serviceNames;
 const setupServices = ["outpost", "nginx"] as const;
@@ -17,15 +16,15 @@ const setupMonitorKeys = [
 
 export type MonitoringSnapshot = {
   services: Record<string, boolean>;
-  diskPercent: number;
+  diskPercent: number | null;
   disk?: { used: number; total: number };
   tlsDays: number | null;
   tlsExpiresAt?: string | null;
   tlsError?: string | null;
   transports?: { xhttp: boolean; grpc: boolean };
   metrics?: {
-    cpu: { percent: number };
-    memory: { used: number; total: number; percent: number };
+    cpu: { percent: number | null };
+    memory: { used: number; total: number; percent: number | null };
     network?: { received: number; transmitted: number };
   };
 };
@@ -54,6 +53,7 @@ type ServiceStates = Record<string, boolean>;
 export class MonitoringService {
   private journal: JournalService;
   private setup: boolean;
+  readonly resources = new ResourceService();
 
   constructor(
     private db: OutpostDatabase,
@@ -68,6 +68,8 @@ export class MonitoringService {
 
   async collect(reference = new Date()) {
     const snapshot = await this.probe();
+    if (!snapshot.metrics) await this.resources.sample();
+    const metrics = snapshot.metrics ? null : this.resources.metrics();
     const previous = this.db.setting<{ metrics?: { network?: NetworkMetric }; transports?: { xhttp: boolean; grpc: boolean } }>("monitor_snapshot", {});
     const overrides = config.demo ? this.db.setting<Record<string, boolean>>("demo_service_states", {}) : {};
     const services = { ...snapshot.services, ...overrides };
@@ -80,7 +82,7 @@ export class MonitoringService {
         this.observeService(`vless-${protocol}`, !methods.some((method) => method.engine === "xray" && method.protocol === protocol && method.enabled) || snapshot.transports[protocol], observedAt);
       }
     }
-    this.observeThreshold(
+    if (snapshot.diskPercent !== null) this.observeThreshold(
       "system:disk",
       snapshot.diskPercent >= 95 ? "critical" : snapshot.diskPercent >= 85 ? "warning" : snapshot.diskPercent < 80 ? "healthy" : "hold",
       observedAt,
@@ -106,7 +108,7 @@ export class MonitoringService {
         expiresAt: snapshot.tlsExpiresAt ?? (snapshot.tlsDays === null ? null : new Date(reference.getTime() + snapshot.tlsDays * 24 * 60 * 60 * 1000).toISOString()),
         error: snapshot.tlsDays === null ? snapshot.tlsError ?? "Не удалось проверить TLS-сертификат" : null,
       },
-      metrics: {
+      metrics: metrics ?? {
         cpu: snapshot.metrics?.cpu ?? { percent: 0 },
         memory: snapshot.metrics?.memory ?? { used: memoryUsed, total: memoryTotal, percent: percent(memoryUsed, memoryTotal) },
         disk: { used: snapshot.disk?.used ?? 0, total: snapshot.disk?.total ?? 0, percent: snapshot.diskPercent },
@@ -257,16 +259,16 @@ async function defaultProbe(): Promise<MonitoringSnapshot> {
   const [services, tls, xhttp, grpc] = await Promise.all([
     defaultServiceProbe(), certificate(), tcpPort(10000), tcpPort(10001),
   ]);
-  const disk = diskUsage(config.dataDir);
+  let disk: ReturnType<typeof diskUsage> | undefined;
+  try {disk = diskUsage(config.dataDir);} catch {}
   return {
     services,
-    diskPercent: disk.percent,
+    diskPercent: disk?.percent ?? null,
     disk,
     tlsDays: tls.days,
     tlsExpiresAt: tls.expiresAt,
     tlsError: tls.error,
     transports: { xhttp, grpc },
-    metrics: resourceMetrics(),
   };
 }
 
@@ -285,29 +287,6 @@ async function systemdActive(service: string) {
   } catch {
     return false;
   }
-}
-
-function diskUsage(path: string) {
-  try {
-    const value = statfsSync(path);
-    const total = Number(value.blocks) * Number(value.bsize);
-    const free = Number(value.bavail) * Number(value.bsize);
-    const used = Math.max(0, total - free);
-    return { used, total, percent: percent(used, total) };
-  } catch {
-    return { used: 0, total: 0, percent: 0 };
-  }
-}
-
-function resourceMetrics() {
-  const memoryTotal = totalmem();
-  const memoryUsed = Math.max(0, memoryTotal - freemem());
-  const cpuPercent = Math.max(0, Math.min(100, Math.round(loadavg()[0]! / Math.max(1, cpus().length) * 100)));
-  return {
-    cpu: { percent: cpuPercent },
-    memory: { used: memoryUsed, total: memoryTotal, percent: percent(memoryUsed, memoryTotal) },
-    network: networkUsage(),
-  };
 }
 
 function networkMetric(current: { received: number; transmitted: number } | undefined, previous: NetworkMetric | undefined, reference: Date): NetworkMetric {
@@ -329,24 +308,6 @@ function networkMetric(current: { received: number; transmitted: number } | unde
   const upload = elapsed ? Math.max(0, Math.round((transmitted - previous!.transmitted) / elapsed)) : 0;
   const history = [...(previous?.history ?? []), { download, upload, sampledAt }].slice(-20);
   return { download, upload, received, transmitted, sampledAt, history };
-}
-
-function networkUsage() {
-  try {
-    let received = 0;
-    let transmitted = 0;
-    for (const line of readFileSync("/proc/net/dev", "utf8").split("\n").slice(2)) {
-      const [rawName, rawValues] = line.split(":");
-      const name = rawName?.trim();
-      if (!name || name === "lo" || !rawValues) continue;
-      const values = rawValues.trim().split(/\s+/).map(Number);
-      received += values[0] ?? 0;
-      transmitted += values[8] ?? 0;
-    }
-    return { received, transmitted };
-  } catch {
-    return { received: 0, transmitted: 0 };
-  }
 }
 
 function percent(value: number, total: number) {

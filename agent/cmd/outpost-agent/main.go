@@ -89,6 +89,8 @@ func handle(connection net.Conn) {
 
 func execute(request policy.Request) (string, error) {
 	switch request.Action {
+	case "logs.read":
+		return readConnectionEvents(request.Payload)
 	case "telemetry.read":
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
