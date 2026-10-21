@@ -16,7 +16,7 @@ Outpost распространяется по AGPL-3.0-only. Следующие 
 | TypeScript | 5.9.3 | Apache-2.0 |
 | age Go library / CLI | 1.3.1 | BSD-3-Clause |
 | Hysteria 2 | 2.13.0 | MIT |
-| Xray-core | 26.10.17 (upstream prerelease) | MPL-2.0 |
+| Xray-core | 26.7.28 (upstream prerelease) | MPL-2.0 |
 | Nginx | Ubuntu 24.04 package | BSD-2-Clause |
 | Certbot | official snap, 5.4+ | Apache-2.0 |
 | SagerNet sing-geosite rule sets | exact upstream commit in each `sources.json` | GPL-3.0-or-later |

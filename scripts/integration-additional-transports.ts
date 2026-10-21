@@ -134,6 +134,7 @@ try {
       for (const listener of profile.listeners) listener.listen = "127.0.0.1";
       profile.rules.unshift("IP-CIDR,127.0.0.1/32,DIRECT,no-resolve");
     } else {
+      profile.log = {level: "debug"};
       profile.services[0].listen_port = (await freePorts(1))[0];
       for (const listener of profile.inbounds) listener.listen = "127.0.0.1";
       profile.route.rules.unshift({ ip_cidr: ["127.0.0.1/32"], action: "route", outbound: "direct" });
@@ -154,7 +155,7 @@ try {
         if (proxy.type === "vless") proxy.uuid = "00000000-0000-4000-8000-000000000000";
         else proxy.password += "-invalid";
       }
-      writeFileSync(path, YAML.stringify({"mixed-port": proxyPort, "bind-address": "127.0.0.1", mode: "rule", "log-level": "warning", proxies: [proxy], rules: ["MATCH," + proxy.name]}), {mode: 0o600});
+      writeFileSync(path, YAML.stringify({"mixed-port": proxyPort, "bind-address": "127.0.0.1", mode: "rule", "log-level": "debug", proxies: [proxy], rules: ["MATCH," + proxy.name]}), {mode: 0o600});
       const child = processes.launch([mihomo, "-d", home, "-f", path]);
       await verifyClient(child, method.name, valid, 3);
     }

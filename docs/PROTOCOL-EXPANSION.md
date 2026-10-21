@@ -9,13 +9,14 @@ management from configurable listeners and client capabilities.
 
 ## Runtimes and ports
 
-Versions were selected from upstream releases on 2026-10-18 and pinned by SHA-256.
-They are reproducible selections, not an automatic “latest” policy.
+Versions are pinned by SHA-256 in `agent/internal/policy/engines.json`.
+On 2026-10-21 the unavailable Xray 26.10.17 asset was replaced with verified
+26.7.28. Release builds download and verify every external pin before packaging.
 
 | Runtime | Version | Transports | Default ports |
 |---|---|---|---|
 | Hysteria | 2.13.0 | Hysteria 2 | UDP 443 |
-| Xray | 26.10.17, upstream prerelease | VLESS XHTTP / gRPC through existing Nginx | TCP 443 |
+| Xray | 26.7.28, upstream prerelease | VLESS XHTTP / gRPC through existing Nginx | TCP 443 |
 | Mihomo, optional | 1.19.32 | AnyTLS, TrustTunnel HTTP/2 | TCP 1443, 2443 |
 | sing-box, optional | 1.14.3 | Naive HTTP/2 | TCP 3443 |
 | amneziawg-go / tools, optional | 3.1.20260828 / 3.1.20260812 | AmneziaWG 3.1 | UDP 51820 |
@@ -171,7 +172,7 @@ The user’s existing Lima instances and active Mac tunnel are outside these tes
 ## Primary references
 
 - [Hysteria 2.13.0](https://github.com/HyNetworks/hysteria/releases/tag/app/v2.13.0)
-- [Xray 26.10.17 prerelease](https://github.com/XTLS/Xray-core/releases/tag/v26.10.17)
+- [Xray 26.7.28 prerelease](https://github.com/XTLS/Xray-core/releases/tag/v26.7.28)
 - [Mihomo 1.19.32](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.32)
 - [AnyTLS listener](https://wiki.metacubex.one/en/config/inbound/listeners/anytls/)
 - [TrustTunnel listener](https://wiki.metacubex.one/en/config/inbound/listeners/trusttunnel/)

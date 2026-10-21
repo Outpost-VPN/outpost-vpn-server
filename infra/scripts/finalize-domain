@@ -4,14 +4,14 @@ set -euo pipefail
 domain=${1:-}
 public_ip=${2:-}
 env_file=/etc/outpost/outpost.env
-certbot=/snap/bin/certbot
+certbot=/opt/outpost/current/infra/scripts/run-certbot
 
 test "$(id -u)" -eq 0 || { echo "Run as root" >&2; exit 1; }
 [[ "$domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]] || { echo "Invalid domain" >&2; exit 1; }
 [[ "${domain##*.}" =~ [a-z] ]] || { echo "Domain suffix must contain a letter" >&2; exit 1; }
 [[ "$public_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || { echo "Invalid public IPv4" >&2; exit 1; }
 test "$domain" != "$public_ip" || { echo "A permanent domain is required" >&2; exit 1; }
-test -x "$certbot" || { echo "Modern Certbot is not installed" >&2; exit 1; }
+test -x /snap/bin/certbot || { echo "Modern Certbot is not installed" >&2; exit 1; }
 test -f "$env_file" || { echo "Outpost environment is missing" >&2; exit 1; }
 
 installed_ip=$(sed -n 's/^OUTPOST_PUBLIC_IP=//p' "$env_file")

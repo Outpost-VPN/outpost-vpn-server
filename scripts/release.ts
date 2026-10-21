@@ -13,6 +13,7 @@ rmSync(stage, { recursive: true, force: true });
 mkdirSync(join(stage, "bin"), { recursive: true });
 
 if (process.platform !== "linux" || process.arch !== "x64") throw new Error("Release builds require a Linux amd64 runner");
+await command(["bun", "scripts/verify-engine-pins.ts"]);
 await command(["bun", "scripts/build-amneziawg.ts"]);
 await command(["bun", "run", "build:web"]);
 await command(["bun", "build", "src/server/index.ts", "--compile", "--target=bun-linux-x64-baseline", `--outfile=${join(dist, "outpost")}`]);
