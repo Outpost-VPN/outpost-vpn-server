@@ -76,8 +76,18 @@ try {
     mkdirSync("/etc/systemd/system/hysteria-server.service.d", {recursive: true, mode: 0o755});
     writeFileSync("/etc/systemd/system/hysteria-server.service.d/release-smoke-journal.conf",
       "[Service]\nExecStartPost=/etc/outpost/release-smoke-journal\n", {mode: 0o644});
-    writeFileSync("/etc/outpost/release-smoke-journal",
-      `#!/bin/sh\nprintf '\\033[36mINFO\\033[0m\\tclient connected {"id":"${journalConnectionId}","addr":"release-smoke-private-address","password":"release-smoke-private-credential"}\\n'\n`, {mode: 0o700});
+    const journalRows = [
+      {level: "INFO", msg: "client connected"},
+      {level: "WARN", msg: "TCP error", error: "stream 4 canceled by remote with error code 0"},
+      {level: "WARN", msg: "TCP error", error: "dial tcp 203.0.113.123:443: i/o timeout"},
+      {level: "WARN", msg: "TCP error", error: "timeout: no recent network activity"},
+      {level: "INFO", msg: "client disconnected", error: "timeout: no recent network activity"},
+      {level: "ERROR", msg: "TCP error", error: "timeout: no recent network activity"},
+    ];
+    writeFileSync("/etc/outpost/release-smoke-journal", "#!/bin/sh\n" + journalRows.map(({level, msg, error}) => {
+      const fields = {id: journalConnectionId, addr: "release-smoke-private-session-%s", password: "release-smoke-private-credential", ...(error ? {error} : {})};
+      return `printf '\\033[36m${level}\\033[0m\\t${msg} ${JSON.stringify(fields)}\\n' "$$"\n`;
+    }).join(""), {mode: 0o700});
     console.log("Legacy fixture created with owner, passkey, active connections and engine presets");
   } else if (mode === "baseline" || mode === "expanded") {
     const saved = JSON.parse(readFileSync(record, "utf8"));
@@ -138,11 +148,24 @@ try {
     if (journal?.status !== "available" || !journal.events.some((event: any) => event.type === "connected" && event.reason === "connected")) {
       throw new Error("Installed API did not decode the Hysteria journal MESSAGE byte array");
     }
+    for (const reason of ["client_cancelled_stream", "upstream_connect_timeout"]) {
+      if (!journal.events.some((event: any) => event.reason === reason && event.level === "warn" && event.count === 1)) {
+        throw new Error(`Installed API lost transport reason/level: ${reason}`);
+      }
+    }
+    const idle = journal.events.find((event: any) => event.type === "disconnected" && event.reason === "idle_timeout" && event.count === 3);
+    if (idle?.level !== "info" || idle.firstSampledAt > idle.sampledAt || idle.lastSampledAt < idle.sampledAt ||
+      idle.related?.length !== 2 || !["warn", "error"].every(level => idle.related.some((row: any) => row.type === "error" && row.level === level && row.count === 1))) {
+      throw new Error("Installed API did not group idle disconnect consequences with their original levels");
+    }
     const normalized = JSON.stringify(journal.events);
-    if (normalized.includes("release-smoke-private") || normalized.includes("\\u001b") || journal.events.some((event: any) => Object.keys(event).sort().join(",") !== "engine,reason,sampledAt,type")) {
+    const eventFields = ["engine", "reason", "sampledAt", "type", "level", "count", "firstSampledAt", "lastSampledAt", "related"];
+    if (normalized.includes("release-smoke-private") || normalized.includes("203.0.113.123") || normalized.includes("\\u001b") ||
+      journal.events.some((event: any) => Object.keys(event).some(key => !eventFields.includes(key)) ||
+        event.related?.some((row: any) => Object.keys(row).sort().join(",") !== "count,level,type"))) {
       throw new Error("Raw journal fields escaped the installed agent");
     }
-    console.log("Installed API decoded real journald ANSI/byte-array Hysteria events without exposing raw fields");
+    console.log("Installed API decoded real journald ANSI/byte-array Hysteria events, separated cancellation/connect timeout and grouped idle consequences with original levels, without exposing raw fields");
   } else {
     const saved = JSON.parse(readFileSync(record, "utf8"));
     if (mode === "verify" && YAML.parse(readFileSync("/etc/outpost/engines/hysteria.yaml", "utf8")).speedTest !== true) throw new Error("Hysteria speedtest preset was not applied");

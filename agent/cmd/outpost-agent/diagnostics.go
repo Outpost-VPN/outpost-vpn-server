@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,14 +18,38 @@ import (
 )
 
 type connectionEvent struct {
-	SampledAt int64  `json:"sampledAt"`
-	Engine    string `json:"engine"`
-	Type      string `json:"type"`
-	Reason    string `json:"reason"`
+	SampledAt      int64                    `json:"sampledAt"`
+	Engine         string                   `json:"engine"`
+	Type           string                   `json:"type"`
+	Reason         string                   `json:"reason"`
+	Level          string                   `json:"level"`
+	Count          int                      `json:"count"`
+	FirstSampledAt int64                    `json:"firstSampledAt,omitempty"`
+	LastSampledAt  int64                    `json:"lastSampledAt,omitempty"`
+	Related        []relatedConnectionEvent `json:"related,omitempty"`
+}
+
+type relatedConnectionEvent struct {
+	Type  string `json:"type"`
+	Level string `json:"level"`
+	Count int    `json:"count"`
+}
+
+// Correlation inputs never leave the privileged boundary, even as hashes.
+type journalConnectionEvent struct {
+	event   connectionEvent
+	address string
+	stream  bool
 }
 
 const maxJournalBytes = 512 * 1024
 const maxJournalLines = 1000
+const sessionEventWindowMs int64 = 1000
+
+var journalANSI = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+var consoleLogLevel = regexp.MustCompile(`^(?:\S+\s+)?(DEBUG|INFO|WARN|ERROR|DPANIC|PANIC|FATAL)(?:\s|$)`)
+var remoteStreamCancellation = regexp.MustCompile(`^stream [0-9]+ cancell?ed by remote with error code [0-9]+$`)
+var upstreamConnectTimeout = regexp.MustCompile(`^dial tcp[46]? \S+: i/o timeout$`)
 
 type connectionEvents struct {
 	Events    []connectionEvent `json:"events"`
@@ -55,15 +80,16 @@ func (message *journalMessage) UnmarshalJSON(raw []byte) error {
 
 // Only normalized events leave the privileged boundary. Addresses, destinations,
 // credentials and arbitrary journald text are never returned to the application.
-func normalizeConnectionEvent(message, connection string) (string, string, bool) {
+func normalizeConnectionEvent(message, connection string) (journalConnectionEvent, bool) {
+	message = strings.TrimSpace(message)
 	identity := false
 	start := strings.Index(message, "{")
 	if start < 0 {
-		return "", "", false
+		return journalConnectionEvent{}, false
 	}
 	var fields map[string]any
 	if json.Unmarshal([]byte(message[start:]), &fields) != nil {
-		return "", "", false
+		return journalConnectionEvent{}, false
 	}
 	for _, key := range []string{"id", "user", "email"} {
 		value, ok := fields[key].(string)
@@ -72,29 +98,123 @@ func normalizeConnectionEvent(message, connection string) (string, string, bool)
 		}
 	}
 	if !identity {
-		return "", "", false
+		return journalConnectionEvent{}, false
 	}
-	lower := strings.ToLower(message)
-	event, reason := "error", "transport_error"
-	if strings.Contains(lower, "client disconnected") {
-		event, reason = "disconnected", "closed"
-	} else if strings.Contains(lower, "client connected") {
-		return "connected", "connected", true
+	// Classify only the heading and error, never identity/address/destination
+	// fields. Both console (including ANSI) and structured JSON use this owner.
+	heading := journalANSI.ReplaceAllString(message[:start], "")
+	levelText, _ := fields["level"].(string)
+	if start == 0 {
+		heading, _ = fields["msg"].(string)
+	} else {
+		levelText = ""
+		if match := consoleLogLevel.FindStringSubmatch(heading); match != nil {
+			levelText = match[1]
+		}
 	}
-	if strings.Contains(lower, "no recent network activity") {
-		reason = "idle_timeout"
-	} else if strings.Contains(lower, "authentication") {
-		reason = "authentication_failed"
-	} else if strings.Contains(lower, "reset by peer") {
-		reason = "connection_reset"
+	heading = strings.ToLower(heading)
+	level := "unknown"
+	switch strings.ToLower(levelText) {
+	case "debug", "info", "warn", "error", "dpanic", "panic", "fatal":
+		level = strings.ToLower(levelText)
 	}
-	return event, reason, true
+	address, _ := fields["addr"].(string)
+	result := journalConnectionEvent{event: connectionEvent{Type: "error", Reason: "transport_error", Level: level, Count: 1}, address: address,
+		stream: strings.Contains(heading, "tcp error") || strings.Contains(heading, "udp error")}
+	if strings.Contains(heading, "client disconnected") {
+		result.event.Type, result.event.Reason = "disconnected", "closed"
+	} else if strings.Contains(heading, "client connected") {
+		result.event.Type, result.event.Reason = "connected", "connected"
+		return result, true
+	}
+	errText, _ := fields["error"].(string)
+	errText = strings.ToLower(errText)
+	switch {
+	case strings.Contains(errText, "no recent network activity"):
+		result.event.Reason = "idle_timeout"
+	case remoteStreamCancellation.MatchString(errText) && result.stream:
+		result.event.Reason = "client_cancelled_stream"
+	case upstreamConnectTimeout.MatchString(errText) && result.stream:
+		result.event.Reason = "upstream_connect_timeout"
+	case strings.Contains(errText, "authentication") || strings.Contains(heading, "authentication"):
+		result.event.Reason = "authentication_failed"
+	case strings.Contains(errText, "reset by peer"):
+		result.event.Reason = "connection_reset"
+	}
+	return result, true
+}
+
+func (event *connectionEvent) addRelated(other connectionEvent) {
+	if event.Count == 1 {
+		event.FirstSampledAt, event.LastSampledAt = event.SampledAt, event.SampledAt
+	}
+	event.Count++
+	event.FirstSampledAt = min(event.FirstSampledAt, other.SampledAt)
+	event.LastSampledAt = max(event.LastSampledAt, other.SampledAt)
+	for i := range event.Related {
+		row := &event.Related[i]
+		if row.Type == other.Type && row.Level == other.Level {
+			row.Count++
+			return
+		}
+	}
+	event.Related = append(event.Related, relatedConnectionEvent{other.Type, other.Level, 1})
+}
+
+// Only stream consequences of one observed idle disconnect are grouped. A
+// reconnect is a hard boundary; missing/ambiguous session evidence stays separate.
+func groupConnectionEvents(records []journalConnectionEvent) []connectionEvent {
+	type sessionKey struct {
+		address string
+		epoch   int
+	}
+	epochs := map[string]int{}
+	keys := make([]sessionKey, len(records))
+	roots := map[sessionKey][]int{}
+	for i, row := range records {
+		if row.event.Type == "connected" {
+			epochs[row.address]++
+		}
+		keys[i] = sessionKey{row.address, epochs[row.address]}
+		if row.address != "" && row.event.Type == "disconnected" && row.event.Reason == "idle_timeout" {
+			roots[keys[i]] = append(roots[keys[i]], i)
+		}
+	}
+	merged := make([]bool, len(records))
+	for i, row := range records {
+		if row.address == "" || !row.stream || row.event.Reason != "idle_timeout" {
+			continue
+		}
+		root := -1
+		for _, candidate := range roots[keys[i]] {
+			delta := row.event.SampledAt - records[candidate].event.SampledAt
+			if delta >= -sessionEventWindowMs && delta <= sessionEventWindowMs {
+				if root != -1 {
+					root = -1 // Two possible disconnects: do not guess.
+					break
+				}
+				root = candidate
+			}
+		}
+		if root != -1 {
+			records[root].event.addRelated(row.event)
+			merged[i] = true
+		}
+	}
+	events := make([]connectionEvent, 0, len(records))
+	for i, row := range records {
+		if !merged[i] {
+			events = append(events, row.event)
+		}
+	}
+	return events
 }
 
 // journalctl supplies newest first. Only bounded, normalized events survive;
 // a budget stops older input while retaining the latest observations.
 func scanConnectionEvents(input io.Reader, engine, connection string, limit int) (connectionEvents, error) {
 	result := connectionEvents{Events: []connectionEvent{}}
+	var records []journalConnectionEvent
 	bounded := &io.LimitedReader{R: input, N: maxJournalBytes + 1}
 	scanner := bufio.NewScanner(bounded)
 	scanner.Buffer(make([]byte, 4096), maxJournalBytes+2)
@@ -111,14 +231,11 @@ func scanConnectionEvents(input io.Reader, engine, connection string, limit int)
 			Timestamp string         `json:"__REALTIME_TIMESTAMP"`
 		}
 		if json.Unmarshal(scanner.Bytes(), &entry) == nil {
-			event, reason, ok := normalizeConnectionEvent(string(entry.Message), connection)
+			row, ok := normalizeConnectionEvent(string(entry.Message), connection)
 			micros, err := strconv.ParseInt(entry.Timestamp, 10, 64)
 			if ok && err == nil && micros > 0 {
-				if len(result.Events) == limit {
-					result.Truncated = true
-					break
-				}
-				result.Events = append(result.Events, connectionEvent{micros / 1000, engine, event, reason})
+				row.event.SampledAt, row.event.Engine = micros/1000, engine
+				records = append(records, row)
 			}
 		}
 		if lines == maxJournalLines {
@@ -132,7 +249,12 @@ func scanConnectionEvents(input io.Reader, engine, connection string, limit int)
 	if err := scanner.Err(); err != nil && !result.Truncated {
 		return result, err
 	}
-	slices.Reverse(result.Events)
+	slices.Reverse(records)
+	result.Events = groupConnectionEvents(records)
+	if len(result.Events) > limit {
+		result.Truncated = true
+		result.Events = result.Events[len(result.Events)-limit:]
+	}
 	return result, nil
 }
 

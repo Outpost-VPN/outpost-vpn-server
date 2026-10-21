@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "../src/server/mcp-tools";
@@ -6,6 +6,7 @@ import { OutpostApi } from "../src/shared/api";
 import { HttpApplication } from "../src/server/http";
 import { database } from "./helpers";
 import { tokenScopes } from "../src/shared/api-scopes";
+import {ConnectionDiagnostics} from "../src/server/services/connection-diagnostics";
 
 test("MCP diagnostics expose scoped reads and client operation lifecycle without leaking secrets", async () => {
   const fixture = database(), app = new HttpApplication(fixture.db);
@@ -27,6 +28,22 @@ test("MCP diagnostics expose scoped reads and client operation lifecycle without
     const detail = content(await client.callTool({name: "connection_diagnostics_get", arguments: {connection_id: connection.id}}));
     expect(detail.connectionId).toBe(connection.id); expect(detail.telemetry.length).toBeGreaterThan(0);
     expect(JSON.stringify(detail)).not.toContain(app.connections.credentials(connection.id).hysteria.password);
+    const journal = [
+      {sampledAt: 1700000001000, engine: "hysteria", type: "error", reason: "client_cancelled_stream", level: "warn", count: 1},
+      {sampledAt: 1700000002000, engine: "hysteria", type: "error", reason: "upstream_connect_timeout", level: "error", count: 1},
+      {sampledAt: 1700000003000, engine: "hysteria", type: "disconnected", reason: "idle_timeout", level: "info", count: 4,
+        firstSampledAt: 1700000002999, lastSampledAt: 1700000003001, related: [{type: "error", level: "warn", count: 3}]},
+    ];
+    const diagnostics = new ConnectionDiagnostics(fixture.db, app.connections, async request => {
+      expect(request.action).toBe("logs.read");
+      expect(request.payload).toMatchObject({connectionId: connection.id, limit: 25});
+      return {ok: true, output: JSON.stringify({events: request.payload.engine === "hysteria" ? journal : [], truncated: false})};
+    });
+    const read = spyOn(app.connectionDiagnostics, "get").mockImplementation((id, includeEvents) => diagnostics.get(id, includeEvents));
+    try {
+      const grouped = content(await client.callTool({name: "connection_diagnostics_get", arguments: {connection_id: connection.id, includeEvents: true}}));
+      expect(grouped.recentEvents.find((row: any) => row.engine === "hysteria")).toMatchObject({status: "available", events: journal, truncated: false});
+    } finally {read.mockRestore();}
     const time = new Date(Date.now() - 60_000);
     app.traffic.recordCumulative("xray", {connectionId: connection.id, upload: 10, download: 20}, time);
     const filtered = content(await client.callTool({name: "traffic_get", arguments: {connectionId: connection.id, includeSeries: false}}));

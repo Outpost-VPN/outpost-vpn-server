@@ -26,8 +26,9 @@ It returns the existing per-engine presence, its signal (`connections` or recent
 `traffic`), collector health/error, timestamp, sample age and stale status. With
 `includeEvents=true`, the agent reads newest first, at most 1000 managed-service
 journal lines / 512 KiB from the past hour, requesting only message and timestamp
-fields. It returns up to 25 latest normalized events per engine in chronological
-order: time, type and reason. Reaching a line, byte or event budget preserves
+fields. It returns up to 25 latest normalized events/groups per engine in
+chronological order. Grouping happens before the event limit. Reaching a line,
+byte or event budget preserves
 collected events with `truncated=true`; an actual journal failure is unavailable.
 String and numeric byte-array `MESSAGE` fields use the same event normalizer;
 journalctl uses byte arrays for messages containing ANSI control bytes. Invalid
@@ -37,6 +38,35 @@ Events require a structured user
 identity in the engine log; an empty result is not proof of no disconnect. Current
 Hysteria logs provide this identity. Requested sites and client addresses are
 discarded inside the privileged agent.
+
+Each event has numeric `sampledAt` (milliseconds), `engine`, `type`, `reason`,
+`level` and `count`. `type` describes the event (`connected`, `disconnected`,
+`error`); it is not severity. `level` preserves the source severity: `debug`,
+`info`, `warn`, `error`, `dpanic`, `panic` or `fatal`; absent/unrecognized levels
+are `unknown`. Console ANSI messages and structured JSON share one normalizer.
+Reasons use the error/heading, never destination or credential fields:
+
+- `client_cancelled_stream`: a stream cancelled by the remote client. This does
+  not itself mean the VPN session ended; Hysteria uses code 0 for ordinary stream
+  cleanup. Severity is preserved even for nonzero cancellation codes.
+- `upstream_connect_timeout`: an outbound `dial tcp` I/O timeout. Other I/O
+  timeouts retain `transport_error` rather than guessing the failed phase.
+- `idle_timeout`, `authentication_failed`, `connection_reset`, `connected`,
+  `closed` and the fallback `transport_error` retain their existing meanings.
+
+An observed `disconnected/idle_timeout` groups related TCP/UDP idle warnings
+within one second before/after that disconnect, using the private client endpoint
+only inside the agent. A reconnect is a hard boundary. Distinct endpoints,
+ambiguous disconnects, missing endpoints/roots and other reasons stay separate.
+This is bounded journal correlation, not a persistent QUIC session identifier.
+For a group, `sampledAt`, `type`, `reason` and `level` describe the disconnect;
+`count` includes that root and its consequences. `firstSampledAt`/`lastSampledAt`
+give the observed time span, and `related` contains `{type, level, count}` summaries
+of the consequences, preserving their original levels. All related events share
+the root's `idle_timeout` reason. A standalone event has `count: 1` and omits group
+fields. No client endpoint, hash, destination, raw error or credential is returned.
+Counts cover only the bounded captured records; `truncated=true` may indicate a
+partial group/window. The application journal from `events_get` is separate.
 
 `events_get` filters the Outpost application journal by `from`, `to` (UTC ISO),
 `engine`, `connectionId`, `scope`, `q`, `before`, and `limit` (1–100).

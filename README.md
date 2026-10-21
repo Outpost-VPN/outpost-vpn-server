@@ -14,9 +14,9 @@ revoke a passkey; revocation also ends sessions created with that passkey.
 Proxy users should receive individual connections and subscription links instead
 of panel access.
 
-> **Status:** `0.2.0-beta.11` decodes Hysteria journal messages stored as byte arrays
-> with ANSI, restoring normalized events that beta.10 silently skipped.
-> It includes beta.10 sandboxed ICMP/bounded journal fixes and all beta.8/beta.9 fixes.
+> **Status:** `0.2.0-beta.12` distinguishes client stream cancellation from upstream
+> connection timeouts, preserves log levels and groups idle-disconnect consequences.
+> It includes beta.11 ANSI/byte-array journal decoding and earlier diagnostic fixes.
 > See [diagnostics](docs/DIAGNOSTICS.md) and [deployment](docs/DEPLOYMENT.md).
 > Updating from beta.8 or earlier can briefly restart Hysteria to enable authenticated speed tests.
 
@@ -108,7 +108,7 @@ beside existing services or selecting alternative public ports is not supported.
 To install this beta instead of the latest stable release:
 
 ```bash
-curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.11 bash /tmp/outpost-install
+curl -fsSLo /tmp/outpost-install https://raw.githubusercontent.com/Outpost-VPN/outpost-vpn-server/main/infra/scripts/bootstrap && sudo env OUTPOST_VERSION=0.2.0-beta.12 bash /tmp/outpost-install
 ```
 
 See the [deployment guide](docs/DEPLOYMENT.md) for developer deployment,
