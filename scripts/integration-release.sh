@@ -150,8 +150,13 @@ test "$(systemctl show -p NoNewPrivileges --value outpost-agent)" = yes
 if runuser -u outpost -- setpriv --no-new-privs /usr/bin/ping -n -c 1 -W 1 11.0.0.1 >"$lab/unprivileged-ping.log" 2>&1; then
   echo "Smoke test failed to reproduce the unprivileged ping restriction" >&2; exit 1
 fi
+journalctl --sync
+journalctl --unit=hysteria-server --since=-5min --output=json --output-fields=MESSAGE --no-pager \
+  | jq -se 'any(.[]; (.MESSAGE | type) == "array")' >/dev/null
 fixture diagnostics
 ip address del 11.0.0.1/32 dev lo
+rm /etc/systemd/system/hysteria-server.service.d/release-smoke-journal.conf /etc/outpost/release-smoke-journal
+systemctl daemon-reload
 
 # A full source has optional engines and methods; the destination has neither
 # their binaries nor their prior service state. Exercise actual provisioning.

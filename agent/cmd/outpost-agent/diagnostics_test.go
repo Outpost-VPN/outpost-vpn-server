@@ -31,13 +31,67 @@ func journalFixture(t *testing.T, text string) map[string]any {
 
 func journalEntry(id, timestamp, padding string) string {
 	message := `INFO client connected {"id":"` + id + `","addr":"private-address","padding":"` + padding + `"}`
-	value, _ := json.Marshal(map[string]string{"MESSAGE": message, "__REALTIME_TIMESTAMP": timestamp})
+	return journalMessageEntry(message, timestamp)
+}
+
+func journalMessageEntry(message any, timestamp string) string {
+	value, _ := json.Marshal(map[string]any{"MESSAGE": message, "__REALTIME_TIMESTAMP": timestamp})
 	return string(value) + "\n"
+}
+
+func journalBytes(message string) []int {
+	// []byte marshals as base64 in Go; journalctl emits numeric byte arrays.
+	value := make([]int, len(message))
+	for i := range value {
+		value[i] = int(message[i])
+	}
+	return value
+}
+
+func TestJournalDecodesANSIStringAndByteMessages(t *testing.T) {
+	id := "44e566b6-4c98-41cf-bb7b-03dc56ab17fc"
+	connected := "\x1b[36mINFO\x1b[0m\tclient connected " + `{"id":"` + id + `","addr":"private-address","password":"private-credential","detail":"тест"}`
+	disconnected := "\x1b[34mINFO\x1b[0m\tclient disconnected " + `{"id":"` + id + `","error":"timeout: no recent network activity","reqAddr":"private-destination"}`
+	unrelated := "\x1b[36mINFO\x1b[0m\tclient connected " + `{"id":"other-client","addr":"` + id + `"}`
+	for _, bytes := range []bool{false, true} {
+		name := "string"
+		encode := func(message string) any { return message }
+		if bytes {
+			name = "byte array"
+			encode = func(message string) any { return journalBytes(message) }
+		}
+		t.Run(name, func(t *testing.T) {
+			input := journalMessageEntry(encode(disconnected), "1700000002000000") + journalMessageEntry(encode(unrelated), "1700000001500000") + journalMessageEntry(encode(connected), "1700000001000000")
+			output, err := readConnectionEvents(context.Background(), journalFixture(t, input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, _ := json.Marshal(connectionEvents{Events: []connectionEvent{
+				{1700000001000, "hysteria", "connected", "connected"},
+				{1700000002000, "hysteria", "disconnected", "idle_timeout"},
+			}})
+			if output != string(want) {
+				t.Fatalf("missing normalized events or leaked raw fields: %s", output)
+			}
+		})
+	}
+}
+
+func TestJournalSkipsInvalidMessagesWithoutDroppingFollowingEvents(t *testing.T) {
+	id := "44e566b6-4c98-41cf-bb7b-03dc56ab17fc"
+	invalidUTF8 := journalBytes("\xffINFO client connected " + `{"id":"` + id + `"}`)
+	for _, message := range []any{nil, true, 42, map[string]string{"id": id}, []int{-1}, []int{256}, []float64{1.5}, []string{"not a byte"}, invalidUTF8} {
+		input := journalMessageEntry(message, "1700000002000000") + journalEntry(id, "1700000001000000", "")
+		result, err := scanConnectionEvents(strings.NewReader(input), "hysteria", id, 25)
+		if err != nil || result.Truncated || len(result.Events) != 1 || result.Events[0].SampledAt != 1700000001000 {
+			t.Fatalf("invalid MESSAGE affected following events: %+v, %v", result, err)
+		}
+	}
 }
 
 func TestLargeJournalReturnsLatestNormalizedEvents(t *testing.T) {
 	id := "44e566b6-4c98-41cf-bb7b-03dc56ab17fc"
-	newest := journalEntry(id, "1700000002000000", "")
+	newest := journalMessageEntry(journalBytes("\x1b[36mINFO\x1b[0m\tclient connected "+`{"id":"`+id+`","addr":"private-address"}`), "1700000002000000")
 	text := newest + strings.Repeat(journalEntry("another-connection", "1700000001000000", strings.Repeat("private-content", 150)), 600)
 	text += journalEntry(id, "1700000000000000", "")
 	output, err := readConnectionEvents(context.Background(), journalFixture(t, text))
