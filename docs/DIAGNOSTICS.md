@@ -24,9 +24,12 @@ credentials and arbitrary journald text are not exposed by these reads.
 `connection_diagnostics_get` takes `connection_id` and optional `includeEvents`.
 It returns the existing per-engine presence, its signal (`connections` or recent
 `traffic`), collector health/error, timestamp, sample age and stale status. With
-`includeEvents=true`, the agent reads at most 1000 managed-service journal lines
-from the past hour and returns up to 25 normalized events per engine: time, type
-and reason. Unavailable journals are explicit. Events require a structured user
+`includeEvents=true`, the agent reads newest first, at most 1000 managed-service
+journal lines / 512 KiB from the past hour, requesting only message and timestamp
+fields. It returns up to 25 latest normalized events per engine in chronological
+order: time, type and reason. Reaching a line, byte or event budget preserves
+collected events with `truncated=true`; an actual journal failure is unavailable.
+Events require a structured user
 identity in the engine log; an empty result is not proof of no disconnect. Current
 Hysteria logs provide this identity. Requested sites and client addresses are
 discarded inside the privileged agent.
@@ -109,6 +112,14 @@ One diagnostic runs per VPS at a time. Limits: 1–30 seconds per transfer,
 launch: at most 256 MiB of transfer payload and 180 seconds of requested transfer
 time. Handshakes/control messages add overhead. Server jobs have a 240-second
 deadline. Child processes have deadlines/output limits and are killed on abort.
+
+Server ICMP uses the existing privileged agent's narrow `network.ping` operation:
+only a public literal IP and 1–30 packets, one probe at a time, fixed ping arguments,
+64 KiB stdout and a packet-count deadline. Closing the diagnostic socket cancels
+its child process. Application and agent keep `NoNewPrivileges=yes`; no changes
+to host ping groups or service capabilities are required. Application resolution
+and agent validation share the public-address policy. Client ICMP uses its local
+platform utility; both paths share the measurement parser, including 100% loss.
 
 ## Measuring from a device or independent machine
 

@@ -1,7 +1,7 @@
 import {parseDiagnosticRequest, diagnosticReportSchema, type DiagnosticRequest, type DiagnosticProfile, type DiagnosticReport, type DiagnosticStage} from "../../shared/diagnostics";
-import {runProbes} from "../../diagnostics/probes";
+import {runProbes, icmpMeasurement} from "../../diagnostics/probes";
 import type {OutpostDatabase} from "../db/database";
-import {OperationService} from "./operations";
+import {OperationService, callAgent} from "./operations";
 import {ConnectionService, ServiceError} from "./connections";
 import {ResourceService, summarizeResources, type ResourceSample} from "./resources";
 import {config} from "../config";
@@ -15,7 +15,7 @@ type ClientJob = {actor: string; request: DiagnosticRequest; claimed: boolean; e
 export class DiagnosticService {
   private clients = new Map<string, ClientJob>();
   constructor(private db: OutpostDatabase, private operations: OperationService, private resources: ResourceService,
-    private connections: ConnectionService, private probe = runProbes) {}
+    private connections: ConnectionService, private probe = runProbes, private agent = callAgent) {}
 
   run(input: unknown, actor: string) {
     if (this.db.raw.query<{count: number}, []>("SELECT COUNT(*) AS count FROM operations WHERE kind='diagnostic' AND status IN ('queued','running')").get()!.count >= 1)
@@ -96,7 +96,12 @@ export class DiagnosticService {
       void sample().then(() => report(state())).catch(() => {});
     }, 3_000);
     try {
-      if (request.vantage === "server") await this.probe(request, signal, async stage => {stages.push(stage); await sample(); report(state());});
+      if (request.vantage === "server") await this.probe(request, signal, async stage => {stages.push(stage); await sample(); report(state());}, {
+        icmp: async (address, count, signal) => {
+          const reply = await this.agent({action: "network.ping", payload: {address, count}}, config.agentSocket, signal);
+          return icmpMeasurement(JSON.parse(String(reply.output)));
+        },
+      });
       else {
         const job = this.clients.get(id)!;
         job.progress = () => report(state());

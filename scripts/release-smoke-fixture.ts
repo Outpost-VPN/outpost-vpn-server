@@ -9,7 +9,7 @@ if (!localLab && (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_EN
   throw new Error("Release smoke fixtures require a disposable runner");
 }
 const [mode, source] = Bun.argv.slice(2);
-if (!source || !["seed", "baseline", "expanded", "verify", "restored"].includes(mode!)) throw new Error("Expected fixture mode and source directory");
+if (!source || !["seed", "baseline", "expanded", "verify", "restored", "diagnostics"].includes(mode!)) throw new Error("Expected fixture mode and source directory");
 const root = resolve(source);
 const { OutpostDatabase } = await import(join(root, "src/server/db/database.ts"));
 const { HttpApplication } = await import(join(root, "src/server/http.ts"));
@@ -100,6 +100,28 @@ try {
     for (const profile of profiles) profile.fingerprint = await profileFingerprint(profile);
     writeFileSync(record, JSON.stringify({...saved, profiles}), {mode: 0o600});
     console.log(`Recorded ${profiles.length} subscription responses from ${mode === "baseline" ? "the actual beta.4 server" : "the full restore source"}`);
+  } else if (mode === "diagnostics") {
+    const {config} = await import(join(root, "src/server/config.ts"));
+    const token = app.auth.createApiToken("release-smoke-diagnostics", ["diagnostics:read", "diagnostics:run"]).token;
+    const headers = {host: config.domain, authorization: `Bearer ${token}`, "content-type": "application/json"};
+    // Hit the installed service over HTTP: this process runs as root, while the
+    // real API runs as outpost with NoNewPrivileges and must delegate to agent.
+    const start = await fetch("http://127.0.0.1:8181/api/v1/diagnostics", {
+      method: "POST", headers, body: JSON.stringify({kind: "latency", target: "http://11.0.0.1/", count: 3}),
+    });
+    if (start.status !== 202) throw new Error(`Diagnostic start failed: HTTP ${start.status}`);
+    let operation = await start.json() as any;
+    for (let i = 0; i < 100 && ["queued", "running"].includes(operation.status); i++) {
+      await Bun.sleep(100);
+      const response = await fetch(`http://127.0.0.1:8181/api/v1/diagnostics/${operation.id}`, {headers});
+      if (!response.ok) throw new Error(`Diagnostic read failed: HTTP ${response.status}`);
+      operation = await response.json();
+    }
+    const icmp = operation.result?.stages?.find((stage: any) => stage.type === "icmp");
+    if (operation.status !== "completed" || !icmp?.ok || icmp.metrics.sent !== 3 || icmp.metrics.received !== 3 || icmp.metrics.icmpLossPercent !== 0) {
+      throw new Error(`Sandboxed ICMP failed: ${JSON.stringify(icmp ?? {status: operation.status})}`);
+    }
+    console.log("Installed sandboxed API measured 3/3 ICMP replies through root-agent with unprivileged ping denied");
   } else {
     const saved = JSON.parse(readFileSync(record, "utf8"));
     if (mode === "verify" && YAML.parse(readFileSync("/etc/outpost/engines/hysteria.yaml", "utf8")).speedTest !== true) throw new Error("Hysteria speedtest preset was not applied");

@@ -10,11 +10,11 @@ import {database} from "./helpers";
 
 const fixtures: ReturnType<typeof database>[] = [];
 afterEach(() => {for (const fixture of fixtures.splice(0)) fixture.close();});
-const setup = (probe?: ConstructorParameters<typeof DiagnosticService>[4]) => {
+const setup = (probe?: ConstructorParameters<typeof DiagnosticService>[4], agent?: ConstructorParameters<typeof DiagnosticService>[5]) => {
   const fixture = database(); fixtures.push(fixture);
   const operations = new OperationService(fixture.db), connections = new ConnectionService(fixture.db);
   const resources = new ResourceService(() => {throw new Error("Unavailable in fixture");}, async () => []);
-  return {...fixture, operations, connections, diagnostics: new DiagnosticService(fixture.db, operations, resources, connections, probe)};
+  return {...fixture, operations, connections, diagnostics: new DiagnosticService(fixture.db, operations, resources, connections, probe, agent)};
 };
 async function settled(operations: OperationService, id: string) {
   for (let i = 0; i < 100; i++) {if (!["queued", "running"].includes(operations.get(id).status)) return operations.get(id); await Bun.sleep(5);}
@@ -22,6 +22,27 @@ async function settled(operations: OperationService, id: string) {
 }
 
 describe("bounded diagnostics", () => {
+  test("runs server ICMP through the agent and distinguishes loss from unavailable ICMP", async () => {
+    for (const row of [
+      {code: 0, output: "64 bytes from 1.1.1.1: time=10.0 ms\n64 bytes from 1.1.1.1: time=14.0 ms\n3 packets transmitted, 2 received, 33.3333% packet loss", expected: {ok: true, code: "measured", metrics: {sent: 3, received: 2, meanMs: 12, jitterMs: 4, icmpLossPercent: 33.3333}}},
+      {code: 1, output: "3 packets transmitted, 0 received, 100% packet loss", expected: {ok: false, code: "measured", metrics: {sent: 3, received: 0, meanMs: null, icmpLossPercent: 100}}},
+      {code: 2, output: "", expected: {ok: false, code: "icmp_unavailable", metrics: {sent: null, received: null, icmpLossPercent: null}}},
+    ]) {
+      let calls = 0;
+      const {diagnostics, operations} = setup(undefined, async (request, _socket, signal) => {
+        expect(request).toEqual({action: "network.ping", payload: {address: "1.1.1.1", count: 3}});
+        expect(signal?.aborted).toBeFalse();
+        calls++;
+        return {ok: true, output: JSON.stringify({code: row.code, output: row.output})};
+      });
+      const operation = diagnostics.run({kind: "latency", target: "https://1.1.1.1/", count: 3}, "test");
+      const result = await settled(operations, operation.id);
+      expect(result.status).toBe("completed");
+      expect(calls).toBe(1);
+      expect(result.result.stages.find((stage: any) => stage.type === "icmp")).toMatchObject(row.expected);
+    }
+  });
+
   test("reads only completed Hysteria JSON measurements, excluding progress and private log fields", () => {
     const output = [
       {msg: "downloading", bytes: 1000, speed: "999 Mbps", auth: "private"},
@@ -95,7 +116,7 @@ describe("bounded diagnostics", () => {
   test("enforces budgets, private target exclusions and safe report fields", async () => {
     expect(diagnosticSchema.safeParse({kind: "compare"}).success).toBeFalse();
     expect(diagnosticSchema.safeParse({kind: "speed", repeat: 3, byteLimit: 64 * 1024 * 1024, direction: "both"}).success).toBeFalse();
-    for (const address of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "192.168.1.1", "198.18.0.1", "::1", "::ffff:8.8.8.8", "fd00::1", "fe80::1"]) expect(publicAddress(address)).toBeFalse();
+    for (const address of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "168.63.129.16", "192.168.1.1", "198.18.0.1", "224.0.0.1", "::1", "::ffff:8.8.8.8", "fd00::1", "fe80::1", "2001:db8::1"]) expect(publicAddress(address)).toBeFalse();
     expect(publicAddress("1.1.1.1")).toBeTrue(); expect(publicAddress("2606:4700:4700::1111")).toBeTrue();
     await expect(resolveTarget("https://127.0.0.1/", "ipv4")).rejects.toThrow("public_addresses");
     await expect(resolveTarget("https://user:password@example.com/", "ipv4")).rejects.toThrow("without_credentials");

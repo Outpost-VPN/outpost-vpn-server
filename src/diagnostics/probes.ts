@@ -3,6 +3,7 @@ import {networkInterfaces} from "node:os";
 import {BlockList, connect, isIP} from "node:net";
 import {checkServerIdentity, connect as tlsConnect} from "node:tls";
 import type {DiagnosticRequest, DiagnosticStage} from "../shared/diagnostics";
+import addressPolicy from "../../agent/internal/policy/public-addresses.json";
 
 const blocked = new BlockList(), globalV6 = new BlockList();
 export class DiagnosticFailure extends Error {constructor(readonly code: string) {super(code);}}
@@ -10,10 +11,12 @@ export function failureCode(error: unknown) {
   const code = error instanceof DiagnosticFailure ? error.code : (error as NodeJS.ErrnoException | null)?.code;
   return typeof code === "string" && /^[A-Z_a-z0-9]{1,80}$/.test(code) ? code : "probe_unavailable";
 }
-for (const [address, prefix] of [["0.0.0.0",8],["10.0.0.0",8],["127.0.0.0",8],["169.254.0.0",16],["172.16.0.0",12],
-  ["192.0.0.0",24],["192.0.2.0",24],["192.168.0.0",16],["100.64.0.0",10],["198.18.0.0",15],["198.51.100.0",24],["203.0.113.0",24],["224.0.0.0",3],["168.63.129.16",32]] as const) blocked.addSubnet(address,prefix,"ipv4");
-for (const [address, prefix] of [["2001::",23],["2001:db8::",32],["2002::",16],["3fff::",20]] as const) blocked.addSubnet(address,prefix,"ipv6");
-globalV6.addSubnet("2000::",3,"ipv6");
+for (const prefix of addressPolicy.blocked) {
+  const [address, bits] = prefix.split("/");
+  blocked.addSubnet(address!, Number(bits), isIP(address!) === 6 ? "ipv6" : "ipv4");
+}
+const [globalAddress, globalBits] = addressPolicy.ipv6Global.split("/");
+globalV6.addSubnet(globalAddress!, Number(globalBits), "ipv6");
 export function publicAddress(address: string) {
   const family = isIP(address);
   return family === 4 ? !blocked.check(address,"ipv4") : family === 6 && globalV6.check(address,"ipv6") && !blocked.check(address,"ipv6");
@@ -123,6 +126,10 @@ export async function latency(target: ProbeTarget, count: number, signal: AbortS
     // macOS ping6 uses -W for a different ICMP query, without a timeout argument.
     ...(!mac || !ipv6 ? ["-W", mac ? "1000" : "1"] : []), target.address];
   const {code, output} = await command(argv, signal, count * 1200 + 2000);
+  return icmpMeasurement({code, output});
+}
+
+export function icmpMeasurement({code, output}: {code: number; output: string}) {
   const summary = output.match(/(\d+) packets transmitted,\s*(\d+) (?:packets )?received[^\n]*?([\d.]+)% packet loss/);
   const timings = [...output.matchAll(/time[=<]([\d.]+)\s*ms/g)].map(m => Number(m[1]));
   const mean = timings.length ? timings.reduce((a, b) => a + b, 0) / timings.length : null;
@@ -134,7 +141,8 @@ export async function latency(target: ProbeTarget, count: number, signal: AbortS
 }
 
 export async function runProbes(request: DiagnosticRequest, signal: AbortSignal, emit: (stage: DiagnosticStage) => Promise<void> | void,
-  options: {interface?: string; socksPort?: number; methodId?: string; curl?: string; dnsServer?: string} = {}) {
+  options: {interface?: string; socksPort?: number; methodId?: string; curl?: string; dnsServer?: string;
+    icmp?: (address: string, count: number, signal: AbortSignal) => Promise<ReturnType<typeof icmpMeasurement>>} = {}) {
   const publish = (stage: DiagnosticStage) => emit({...stage, ...(options.methodId ? {methodId: options.methodId} : {}), metrics: {...stage.metrics,
     measurementPath: request.vantage === "server" ? "server-to-origin" : options.socksPort ? "client-via-vpn-to-origin" : "client-to-origin"}});
   const stage = async (type: DiagnosticStage["type"], run: () => Promise<Pick<DiagnosticStage, "ok" | "code" | "metrics">>, attempt?: number) => {
@@ -148,7 +156,10 @@ export async function runProbes(request: DiagnosticRequest, signal: AbortSignal,
   let target: ProbeTarget | undefined;
   const resolved = await stage("dns", async () => {target = await resolveTarget(request.target, request.family, {...options, signal}); return {ok: true, metrics: {address: target.address, family: request.family}};});
   if (!resolved || !target) return;
-  if (request.kind === "latency") {await stage("icmp", () => latency(target!, request.count, signal, options.interface)); return;}
+  if (request.kind === "latency") {
+    await stage("icmp", () => options.icmp ? options.icmp(target!.address, request.count, signal) : latency(target!, request.count, signal, options.interface));
+    return;
+  }
   if (request.kind === "reachability") {
     if (options.interface) {
       const sampledAt = Date.now(), result = await transfer(target, request, "http", signal, options);

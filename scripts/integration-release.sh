@@ -140,6 +140,19 @@ test "$(systemctl show -p MainPID --value hysteria-server)" = "$after_hysteria"
 test "$(systemctl show -p MainPID --value xray)" = "$before_xray"
 echo "Signed baseline update passed with Hysteria preset migration and idempotent reconciliation; Xray stayed running"
 
+# Reproduce the VPS restriction only on this disposable host. A public literal
+# routed locally avoids external ICMP filtering and makes the probe deterministic.
+apt-get install -y --no-install-recommends iputils-ping
+ip address add 11.0.0.1/32 dev lo
+sysctl -q -w 'net.ipv4.ping_group_range=1 0'
+test "$(systemctl show -p NoNewPrivileges --value outpost)" = yes
+test "$(systemctl show -p NoNewPrivileges --value outpost-agent)" = yes
+if runuser -u outpost -- setpriv --no-new-privs /usr/bin/ping -n -c 1 -W 1 11.0.0.1 >"$lab/unprivileged-ping.log" 2>&1; then
+  echo "Smoke test failed to reproduce the unprivileged ping restriction" >&2; exit 1
+fi
+fixture diagnostics
+ip address del 11.0.0.1/32 dev lo
+
 # A full source has optional engines and methods; the destination has neither
 # their binaries nor their prior service state. Exercise actual provisioning.
 optional_ids=()
