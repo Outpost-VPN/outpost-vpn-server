@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import YAML from "yaml";
 
@@ -69,7 +69,15 @@ try {
     writeFileSync("/etc/outpost/engines/xray.json", renderXray(defaultXrayTemplate, credentials), { mode: 0o640 });
     const link = app.connections.subscription(credentials[0].connectionId);
     const apiToken = app.auth.createApiToken("release-smoke", ["system:read"]).token;
-    writeFileSync(record, JSON.stringify({ identity: hash(identity()), path: new URL(link.url).pathname, apiToken }), { mode: 0o600 });
+    const journalConnectionId = credentials[0].connectionId;
+    writeFileSync(record, JSON.stringify({ identity: hash(identity()), path: new URL(link.url).pathname, apiToken, journalConnectionId }), { mode: 0o600 });
+    // A lab-only startup hook writes through the real service journal. ANSI
+    // makes journalctl emit a numeric MESSAGE array, as on the production VPS.
+    mkdirSync("/etc/systemd/system/hysteria-server.service.d", {recursive: true, mode: 0o755});
+    writeFileSync("/etc/systemd/system/hysteria-server.service.d/release-smoke-journal.conf",
+      "[Service]\nExecStartPost=/etc/outpost/release-smoke-journal\n", {mode: 0o644});
+    writeFileSync("/etc/outpost/release-smoke-journal",
+      `#!/bin/sh\nprintf '\\033[36mINFO\\033[0m\\tclient connected {"id":"${journalConnectionId}","addr":"release-smoke-private-address","password":"release-smoke-private-credential"}\\n'\n`, {mode: 0o700});
     console.log("Legacy fixture created with owner, passkey, active connections and engine presets");
   } else if (mode === "baseline" || mode === "expanded") {
     const saved = JSON.parse(readFileSync(record, "utf8"));
@@ -102,7 +110,7 @@ try {
     console.log(`Recorded ${profiles.length} subscription responses from ${mode === "baseline" ? "the actual beta.4 server" : "the full restore source"}`);
   } else if (mode === "diagnostics") {
     const {config} = await import(join(root, "src/server/config.ts"));
-    const token = app.auth.createApiToken("release-smoke-diagnostics", ["diagnostics:read", "diagnostics:run"]).token;
+    const token = app.auth.createApiToken("release-smoke-diagnostics", ["diagnostics:read", "diagnostics:run", "connections:read"]).token;
     const headers = {host: config.domain, authorization: `Bearer ${token}`, "content-type": "application/json"};
     // Hit the installed service over HTTP: this process runs as root, while the
     // real API runs as outpost with NoNewPrivileges and must delegate to agent.
@@ -122,6 +130,19 @@ try {
       throw new Error(`Sandboxed ICMP failed: ${JSON.stringify(icmp ?? {status: operation.status})}`);
     }
     console.log("Installed sandboxed API measured 3/3 ICMP replies through root-agent with unprivileged ping denied");
+    const saved = JSON.parse(readFileSync(record, "utf8"));
+    const response = await fetch(`http://127.0.0.1:8181/api/v1/connections/${saved.journalConnectionId}/diagnostics?includeEvents=true`, {headers});
+    if (!response.ok) throw new Error(`Connection diagnostics failed: HTTP ${response.status}`);
+    const diagnostics = await response.json() as any;
+    const journal = diagnostics.recentEvents?.find((row: any) => row.engine === "hysteria");
+    if (journal?.status !== "available" || !journal.events.some((event: any) => event.type === "connected" && event.reason === "connected")) {
+      throw new Error("Installed API did not decode the Hysteria journal MESSAGE byte array");
+    }
+    const normalized = JSON.stringify(journal.events);
+    if (normalized.includes("release-smoke-private") || normalized.includes("\\u001b") || journal.events.some((event: any) => Object.keys(event).sort().join(",") !== "engine,reason,sampledAt,type")) {
+      throw new Error("Raw journal fields escaped the installed agent");
+    }
+    console.log("Installed API decoded real journald ANSI/byte-array Hysteria events without exposing raw fields");
   } else {
     const saved = JSON.parse(readFileSync(record, "utf8"));
     if (mode === "verify" && YAML.parse(readFileSync("/etc/outpost/engines/hysteria.yaml", "utf8")).speedTest !== true) throw new Error("Hysteria speedtest preset was not applied");

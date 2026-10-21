@@ -29,6 +29,10 @@ journal lines / 512 KiB from the past hour, requesting only message and timestam
 fields. It returns up to 25 latest normalized events per engine in chronological
 order: time, type and reason. Reaching a line, byte or event budget preserves
 collected events with `truncated=true`; an actual journal failure is unavailable.
+String and numeric byte-array `MESSAGE` fields use the same event normalizer;
+journalctl uses byte arrays for messages containing ANSI control bytes. Invalid
+messages and non-UTF-8 byte arrays are skipped. ANSI and raw message fields stay
+inside the privileged agent.
 Events require a structured user
 identity in the engine log; an empty result is not proof of no disconnect. Current
 Hysteria logs provide this identity. Requested sites and client addresses are

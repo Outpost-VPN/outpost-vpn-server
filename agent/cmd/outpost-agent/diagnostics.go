@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Outpost-VPN/outpost-vpn-server/agent/internal/policy"
 )
@@ -27,6 +29,28 @@ const maxJournalLines = 1000
 type connectionEvents struct {
 	Events    []connectionEvent `json:"events"`
 	Truncated bool              `json:"truncated"`
+}
+
+type journalMessage string
+
+// journalctl encodes messages containing control bytes (including ANSI) as
+// numeric byte arrays. Decode both forms before the shared event normalizer.
+func (message *journalMessage) UnmarshalJSON(raw []byte) error {
+	var text string
+	if len(raw) > 0 && raw[0] == '[' {
+		var octets []byte
+		if err := json.Unmarshal(raw, &octets); err != nil {
+			return err
+		}
+		if !utf8.Valid(octets) {
+			return errors.New("journal MESSAGE is not valid UTF-8")
+		}
+		text = string(octets)
+	} else if err := json.Unmarshal(raw, &text); err != nil {
+		return err
+	}
+	*message = journalMessage(text)
+	return nil
 }
 
 // Only normalized events leave the privileged boundary. Addresses, destinations,
@@ -83,11 +107,11 @@ func scanConnectionEvents(input io.Reader, engine, connection string, limit int)
 		}
 		lines++
 		var entry struct {
-			Message   string `json:"MESSAGE"`
-			Timestamp string `json:"__REALTIME_TIMESTAMP"`
+			Message   journalMessage `json:"MESSAGE"`
+			Timestamp string         `json:"__REALTIME_TIMESTAMP"`
 		}
 		if json.Unmarshal(scanner.Bytes(), &entry) == nil {
-			event, reason, ok := normalizeConnectionEvent(entry.Message, connection)
+			event, reason, ok := normalizeConnectionEvent(string(entry.Message), connection)
 			micros, err := strconv.ParseInt(entry.Timestamp, 10, 64)
 			if ok && err == nil && micros > 0 {
 				if len(result.Events) == limit {
